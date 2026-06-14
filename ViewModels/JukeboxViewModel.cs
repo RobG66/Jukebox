@@ -88,7 +88,7 @@ public partial class JukeboxViewModel : ViewModelBase, IAsyncDisposable
     private string _totalTimeString = "0:00";
 
     [ObservableProperty]
-    private bool _isAutoHideEnabled = true;
+    private bool _isAutoHideEnabled = false;
 
     [ObservableProperty]
     private bool _isControlBarVisible = true;

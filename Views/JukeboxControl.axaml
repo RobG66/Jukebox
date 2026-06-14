@@ -235,7 +235,7 @@
                 </Grid>
 
                 <!-- Transport Buttons Row -->
-                <Grid Grid.Row="1" ColumnDefinitions="Auto, Auto, Auto, *, 120">
+                <Grid Grid.Row="1" ColumnDefinitions="Auto, Auto, Auto, *, Auto">
 
                     <!-- Playlist toggle button -->
                     <Button Grid.Column="0"
@@ -322,7 +322,7 @@
                 <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <!-- Volume Slider -->
                     <Slider Minimum="0" Maximum="100" Value="{Binding Volume}"
-                            Width="80"
+                            Width="80" VerticalAlignment="Center"
                             Margin="0,0,10,0"
                             ToolTip.Tip="Volume" />
                             
