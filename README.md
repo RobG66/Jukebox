@@ -28,6 +28,25 @@ The Jukebox accepts the following switches on startup:
 * `-file [path]`: Provide a direct file or directory path to automatically load into the playlist and begin playing.
 * `-forcevisualizer`: Force the visualizer to render even if the media type is not strictly detected as audio.
 
+## Embedding as a UserControl
+
+While the Jukebox is primarily designed as a standalone executable, it is also compiled as a standard Avalonia class library. This means you can embed the entire Jukebox player directly into your own Avalonia application's UI!
+
+To do this, reference `Jukebox.dll` in your project and embed the `JukeboxControl` in your XAML:
+
+```xml
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:jukebox="clr-namespace:Jukebox.Views;assembly=Jukebox">
+        
+    <!-- Embed the Jukebox player anywhere in your UI -->
+    <jukebox:JukeboxControl DataContext="{Binding MyJukeboxViewModel}" />
+    
+</Window>
+```
+
+*Note: When embedded as a UserControl, command-line window properties (like `-fullscreen` or `-stayontop`) are ignored. Your host application is responsible for managing the window state.*
+
 ## Dependencies
 
 * **.NET 8.0**
