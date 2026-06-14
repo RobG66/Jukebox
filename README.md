@@ -68,3 +68,11 @@ mv temp_vis/ProjectM ./ProjectM
 # Delete the temporary git repository
 rm -rf temp_vis
 ```
+
+---
+
+## 🔗 External Links & Requirements
+
+* **[Gamelist-Manager](https://github.com/RobG66/Gamelist-Manager)**: The parent front-end application designed to launch and interface with this standalone Jukebox.
+* **[Avalonia UI](https://avaloniaui.net/)**: The cross-platform UI framework powering the Jukebox interface.
+* **[LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp)**: The cross-platform audio and video playback engine binding.
