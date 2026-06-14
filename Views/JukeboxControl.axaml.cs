@@ -24,16 +24,65 @@ public partial class JukeboxControl : UserControl
     private readonly DispatcherTimer _mousePoller = new();
     private POINT _lastMousePos;
 
+    private JukeboxViewModel? _boundViewModel;
+
     public JukeboxControl()
     {
         InitializeComponent();
 
         AttachedToVisualTree += OnAttachedToVisualTree;
         DetachedFromVisualTree += OnDetachedFromVisualTree;
+        DataContextChanged += OnDataContextChanged;
 
         _mousePoller.Interval = TimeSpan.FromMilliseconds(100);
         _mousePoller.Tick += OnMousePollerTick;
         _mousePoller.Start();
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        WireViewModel();
+    }
+
+    private void WireViewModel()
+    {
+        if (DataContext is JukeboxViewModel vm)
+        {
+            if (_boundViewModel == vm) return;
+            UnwireViewModel();
+            _boundViewModel = vm;
+
+            vm.SetProjectMControl(ProjectMView);
+            
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel != null)
+            {
+                vm.SetStorageProvider(topLevel.StorageProvider);
+            }
+
+            vm.MediaPlayerCreated += OnMediaPlayerCreated;
+            vm.ErrorOccurred += OnErrorOccurred;
+            vm.CloseRequested += OnCloseRequested;
+            vm.PropertyChanged += OnViewModelPropertyChanged;
+
+            vm.RequestPlayer();
+        }
+        else
+        {
+            UnwireViewModel();
+        }
+    }
+
+    private void UnwireViewModel()
+    {
+        if (_boundViewModel != null)
+        {
+            _boundViewModel.MediaPlayerCreated -= OnMediaPlayerCreated;
+            _boundViewModel.ErrorOccurred -= OnErrorOccurred;
+            _boundViewModel.CloseRequested -= OnCloseRequested;
+            _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel = null;
+        }
     }
 
     private void OnMousePollerTick(object? sender, EventArgs e)
@@ -64,16 +113,10 @@ public partial class JukeboxControl : UserControl
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        if (DataContext is JukeboxViewModel vm)
+        WireViewModel();
+        if (_boundViewModel != null && TopLevel.GetTopLevel(this) is { } topLevel)
         {
-            vm.SetProjectMControl(ProjectMView);
-            vm.SetStorageProvider(TopLevel.GetTopLevel(this)?.StorageProvider);
-            vm.MediaPlayerCreated += OnMediaPlayerCreated;
-            vm.ErrorOccurred += OnErrorOccurred;
-            vm.CloseRequested += OnCloseRequested;
-            vm.PropertyChanged += OnViewModelPropertyChanged;
-
-            vm.RequestPlayer();
+            _boundViewModel.SetStorageProvider(topLevel.StorageProvider);
         }
     }
 
@@ -86,14 +129,11 @@ public partial class JukeboxControl : UserControl
     {
         VideoView.MediaPlayer = null;
 
-        if (DataContext is JukeboxViewModel vm)
+        if (_boundViewModel != null)
         {
-            vm.MediaPlayerCreated -= OnMediaPlayerCreated;
-            vm.ErrorOccurred -= OnErrorOccurred;
-            vm.CloseRequested -= OnCloseRequested;
-            vm.PropertyChanged -= OnViewModelPropertyChanged;
-            _ = vm.DisposeAsync();
+            _ = _boundViewModel.DisposeAsync();
         }
+        UnwireViewModel();
     }
 
     private void OnCloseRequested(object? sender, EventArgs e)
