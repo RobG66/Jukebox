@@ -100,7 +100,7 @@
                                     <!-- Length -->
                                     <TextBlock Grid.Column="1" Text="{Binding Duration}" FontSize="{DynamicResource GlobalSmallFontSize}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,5,0"/>
                                     <!-- Resolution -->
-                                    <TextBlock Grid.Column="2" Text="{Binding Resolution}" IsVisible="{ReflectionBinding $parent[UserControl].DataContext.HasVideoInPlaylist}" Width="70" FontSize="{DynamicResource GlobalSmallFontSize}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,5,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Resolution}" IsVisible="{Binding $parent[UserControl].((vm:JukeboxViewModel)DataContext).HasVideoInPlaylist}" Width="70" FontSize="{DynamicResource GlobalSmallFontSize}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,5,0"/>
                                     <!-- Bitrate -->
                                     <TextBlock Grid.Column="3" Text="{Binding Bitrate}" FontSize="{DynamicResource GlobalSmallFontSize}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,5,0"/>
                                 </Grid>
