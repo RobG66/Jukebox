@@ -1,0 +1,19 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Jukebox.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Jukebox/Styles/TransparentButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
+    </Application.Styles>
+
+    <Application.Resources>
+        <!-- Hardcoded Jukebox theme colors to decouple from Gamelist Manager -->
+        <SolidColorBrush x:Key="PanelBackground">#181818</SolidColorBrush>
+        <SolidColorBrush x:Key="PanelBorder">#333333</SolidColorBrush>
+        <SolidColorBrush x:Key="SubtleTextBrush">#AAAAAA</SolidColorBrush>
+        <x:Double x:Key="GlobalSmallFontSize">12</x:Double>
+    </Application.Resources>
+</Application>
