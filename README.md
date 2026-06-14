@@ -30,7 +30,41 @@ The Jukebox accepts the following switches on startup:
 
 ## Dependencies
 
-* .NET 10.0
+* **.NET 8.0**
 * Avalonia UI
 * LibVLCSharp
-* Jukebox-Visualizations (Local Project Reference)
+* [Jukebox-Visualizations](https://github.com/RobG66/Jukebox-Visualizations) (Referenced as a companion library)
+
+---
+
+## 🎨 Visualizations Setup (ProjectM)
+
+In order for the music visualizer to work, the `Jukebox` requires the massive preset library (`.milk` files), textures, and unmanaged native dlls from the companion `Jukebox-Visualizations` repository. These assets must be placed inside a `ProjectM` folder **directly next to the Jukebox executable** (`Jukebox.exe`).
+
+If you are setting up the Jukebox manually, you can quickly download and place the required `ProjectM` folder by running the following commands from your terminal. 
+
+**Make sure you open your terminal inside the exact folder where the Jukebox application is located.**
+
+### For Windows (PowerShell):
+```powershell
+# Clone the visualizations repository to a temporary folder
+git clone --depth 1 https://github.com/RobG66/Jukebox-Visualizations.git temp_vis
+
+# Move the massive ProjectM asset folder into the Jukebox directory
+Move-Item -Path "temp_vis\ProjectM" -Destination ".\ProjectM" -Force
+
+# Delete the temporary git repository
+Remove-Item -Recurse -Force temp_vis
+```
+
+### For Linux / macOS (Bash):
+```bash
+# Clone the visualizations repository to a temporary folder
+git clone --depth 1 https://github.com/RobG66/Jukebox-Visualizations.git temp_vis
+
+# Move the massive ProjectM asset folder into the Jukebox directory
+mv temp_vis/ProjectM ./ProjectM
+
+# Delete the temporary git repository
+rm -rf temp_vis
+```
