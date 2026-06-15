@@ -40,5 +40,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Jukebox-Visualizations\JukeboxVisualizations.csproj" />
     <ProjectReference Include="..\Avalonia.Controls.DataGrid\src\Avalonia.Controls.DataGrid\Avalonia.Controls.DataGrid.csproj" />
+    <ProjectReference Include="..\Avalonia.Controls.TreeDataGrid\src\Avalonia.Controls.TreeDataGrid\Avalonia.Controls.TreeDataGrid.csproj" />
   </ItemGroup>
 </Project>

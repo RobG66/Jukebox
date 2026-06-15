@@ -1,10 +1,15 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.ObjectModel;
+using System.IO;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LibVLCSharp.Shared;
+using Avalonia.Controls;
+using Avalonia.Controls.Models.TreeDataGrid;
+using Avalonia.Controls.Selection;
 
 namespace Jukebox.ViewModels;
 
@@ -16,6 +21,8 @@ public class JukeboxTrack
     public string FilePath { get; set; } = string.Empty;
     public bool IsSelected { get; set; }
 }
+
+
 
 public partial class JukeboxViewModel : ViewModelBase, IDisposable
 {
@@ -37,6 +44,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public JukeboxViewModel()
     {
         _ = InitializeVlcAsync();
+        _ = LoadVisualizersAsync();
     }
 
     private Task InitializeVlcAsync()
@@ -152,16 +160,100 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _controlBarHeight = 65;
     
     [ObservableProperty] private bool _isPlaylistVisible;
+
+    // -------------------------------------------------------------
+    // VISUALIZERS
+    // -------------------------------------------------------------
+    
+    [ObservableProperty] private string? _selectedVisualizerPath;
+    
+    public HierarchicalTreeDataGridSource<VisualizerNodeViewModel>? VisualizerSource { get; private set; }
+
+    private async Task LoadVisualizersAsync()
+    {
+        var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM");
+        if (!Directory.Exists(rootFolder)) return;
+
+        var rootNodes = new ObservableCollection<VisualizerNodeViewModel>();
+
+        await Task.Run(() =>
+        {
+            var directories = Directory.GetDirectories(rootFolder);
+            foreach (var dir in directories)
+            {
+                var folderName = Path.GetFileName(dir);
+                if (folderName == "win-x64" || folderName == "textures") continue; // skip binaries and assets
+
+                var folderVm = new VisualizerFolderViewModel(folderName, dir);
+                PopulateFolder(folderVm, dir);
+                if (folderVm.Children.Count > 0)
+                {
+                    Avalonia.Threading.Dispatcher.UIThread.Invoke(() => rootNodes.Add(folderVm));
+                }
+            }
+        });
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            VisualizerSource = new HierarchicalTreeDataGridSource<VisualizerNodeViewModel>(rootNodes)
+            {
+                Columns =
+                {
+                    new HierarchicalExpanderColumn<VisualizerNodeViewModel>(
+                        new TextColumn<VisualizerNodeViewModel, string>("Visualizations", x => x.Name),
+                        x => x is VisualizerFolderViewModel f ? f.Children : null,
+                        x => x.IsDirectory)
+                }
+            };
+
+            VisualizerSource.RowSelection!.SelectionChanged += VisualizerSelectionChanged;
+            OnPropertyChanged(nameof(VisualizerSource));
+        });
+    }
+
+    private void PopulateFolder(VisualizerFolderViewModel parent, string path)
+    {
+        foreach (var dir in Directory.GetDirectories(path))
+        {
+            var folderVm = new VisualizerFolderViewModel(Path.GetFileName(dir), dir);
+            PopulateFolder(folderVm, dir);
+            if (folderVm.Children.Count > 0)
+                parent.Children.Add(folderVm);
+        }
+
+        foreach (var file in Directory.GetFiles(path, "*.milk"))
+        {
+            parent.Children.Add(new VisualizerFileViewModel(Path.GetFileNameWithoutExtension(file), file));
+        }
+    }
+
+    private void VisualizerSelectionChanged(object? sender, TreeSelectionModelSelectionChangedEventArgs<VisualizerNodeViewModel> e)
+    {
+        var selected = e.SelectedItems?.FirstOrDefault();
+        if (selected is VisualizerFileViewModel fileVm)
+        {
+            SelectedVisualizerPath = fileVm.Path;
+        }
+    }
+
+    // -------------------------------------------------------------
+
     [ObservableProperty] private bool _isPickerVisible;
 
     partial void OnIsPlaylistVisibleChanged(bool value)
     {
-        if (value) IsPickerVisible = false;
+        if (value) 
+        {
+            IsPickerVisible = false;
+        }
     }
 
     partial void OnIsPickerVisibleChanged(bool value)
     {
-        if (value) IsPlaylistVisible = false;
+        if (value) 
+        {
+            IsPlaylistVisible = false;
+        }
     }
 
     [ObservableProperty] private string _currentTimeString = "0:00";
