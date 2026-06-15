@@ -22,14 +22,7 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            try
-            {
-                Core.Initialize();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("WARNING: LibVLC initialization failed. Video playback will not be available.");
-            }
+            // Core.Initialize() has been moved to JukeboxViewModel to prevent GUI freeze.
 
             var vm = new JukeboxViewModel();
             var window = new JukeboxView { DataContext = vm };
@@ -102,6 +95,11 @@ public partial class App : Application
             }
 
             desktop.MainWindow = window;
+
+            desktop.Exit += (sender, e) => 
+            {
+                vm?.Dispose();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();
