@@ -8,14 +8,92 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using Avalonia.Input;
 
 namespace Jukebox.Views;
 
 public partial class JukeboxControl : UserControl
 {
+    private Avalonia.Threading.DispatcherTimer _inactivityTimer;
+
     public JukeboxControl()
     {
         InitializeComponent();
+        
+        _inactivityTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _inactivityTimer.Tick += (s, e) => 
+        {
+            if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled)
+            {
+                vm.ControlBarHeight = 0;
+            }
+            _inactivityTimer.Stop();
+        };
+
+        this.PointerMoved += (s, e) => ResetInactivity();
+        this.PointerEntered += (s, e) => ResetInactivity();
+        
+        DataContextChanged += OnDataContextChanged;
+        Loaded += (s, e) => 
+        {
+            ProjectMDisplay.StartEngine();
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel != null)
+            {
+                topLevel.AddHandler(InputElement.KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+            }
+        };
+        Unloaded += (s, e) => 
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel != null)
+            {
+                topLevel.RemoveHandler(InputElement.KeyDownEvent, OnPreviewKeyDown);
+            }
+        };
+    }
+
+    private void ResetInactivity()
+    {
+        if (DataContext is JukeboxViewModel vm)
+        {
+            vm.ControlBarHeight = 65;
+            _inactivityTimer.Stop();
+            if (vm.IsAutoHideEnabled)
+            {
+                _inactivityTimer.Start();
+            }
+        }
+    }
+
+    private void OnPreviewKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            if (DataContext is JukeboxViewModel vm)
+            {
+                bool handled = false;
+                if (vm.IsPlaylistVisible) { vm.IsPlaylistVisible = false; handled = true; }
+                if (vm.IsEqVisible) { vm.IsEqVisible = false; handled = true; }
+                if (vm.IsPickerVisible) { vm.IsPickerVisible = false; handled = true; }
+                if (handled) e.Handled = true;
+            }
+        }
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm)
+        {
+            vm.PcmDataAvailable += (s, buffer) => ProjectMDisplay.FeedPcm(buffer);
+            vm.VisualizerViewModel.PropertyChanged += (s, args) =>
+            {
+                if (args.PropertyName == nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath) && !string.IsNullOrEmpty(vm.VisualizerViewModel.SelectedVisualizerPath))
+                {
+                    ProjectMDisplay.LoadPreset(vm.VisualizerViewModel.SelectedVisualizerPath);
+                }
+            };
+        }
     }
 
     private async void AddFiles_Click(object? sender, RoutedEventArgs e)
@@ -132,7 +210,7 @@ public partial class JukeboxControl : UserControl
         {
             foreach (var track in tracks)
             {
-                vm.Playlist.Add(track);
+                vm.PlaylistViewModel.Playlist.Add(track);
             }
         });
     }
@@ -151,6 +229,15 @@ public partial class JukeboxControl : UserControl
                     vm.PlayCommand.Execute(null);
                 }
             }
+        }
+    }
+
+    private void VisualizerTreeDataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm && vm.VisualizerViewModel.VisualizerSource?.RowSelection?.SelectedItems?.FirstOrDefault() is VisualizerFileViewModel fileVm)
+        {
+            vm.VisualizerViewModel.SelectedVisualizerPath = fileVm.Path;
+            ProjectMDisplay.LoadPreset(fileVm.Path);
         }
     }
 }

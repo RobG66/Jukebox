@@ -32,20 +32,28 @@
                 <!-- Left Info (Panel Toggles) -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="10,0,10,0">
                     <!-- Playlist Button -->
-                    <ToggleButton IsChecked="{Binding IsPlaylistVisible, Mode=TwoWay}"
+                    <Button Command="{Binding TogglePlaylistCommand}"
                                   Classes="transparentbutton"
                                   Width="40" Height="40"
                                   ToolTip.Tip="Playlist">
                         <Image Source="avares://Jukebox/Assets/Buttons/menu.png" Width="20" Height="20"/>
-                    </ToggleButton>
+                    </Button>
                     
                     <!-- Visualizations Button -->
-                    <ToggleButton IsChecked="{Binding IsPickerVisible, Mode=TwoWay}"
+                    <Button Command="{Binding TogglePickerCommand}"
                                   Classes="transparentbutton"
                                   Width="40" Height="40"
                                   ToolTip.Tip="Visualizations">
                         <Image Source="avares://Jukebox/Assets/Icons/visualizer.png" Width="20" Height="20"/>
-                    </ToggleButton>
+                    </Button>
+
+                    <!-- EQ Button -->
+                    <Button Command="{Binding ToggleEqCommand}"
+                                  Classes="transparentbutton"
+                                  Width="40" Height="40"
+                                  ToolTip.Tip="Equalizer">
+                        <TextBlock Text="🎚️" FontSize="18" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- Center Transport buttons -->
@@ -54,17 +62,17 @@
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
 
-                    <!-- Random ToggleButton -->
-                    <ToggleButton IsChecked="{Binding IsRandomPlayback, Mode=TwoWay}"
+                    <!-- Random Button -->
+                    <Button Command="{Binding ToggleRandomCommand}"
                                   Margin="5,3,15,3"
                                   Classes="transparentbutton"
-                                  IsEnabled="{Binding HasMultipleTracks}"
+                                  IsEnabled="{Binding PlaylistViewModel.HasMultipleTracks}"
                                   ToolTip.Tip="Randomize Playback">
                         <Image Source="avares://Jukebox/Assets/Buttons/random.png" Width="20" Height="20"/>
-                    </ToggleButton>
+                    </Button>
 
                     <Button Command="{Binding PreviousCommand}"
-                            IsEnabled="{Binding HasMultipleTracks}"
+                            IsEnabled="{Binding PlaylistViewModel.HasMultipleTracks}"
                             Margin="5,3,5,3"
                             Classes="transparentbutton"
                             ToolTip.Tip="Previous">
@@ -99,7 +107,7 @@
                     </Button>
 
                     <Button Command="{Binding NextCommand}"
-                            IsEnabled="{Binding HasMultipleTracks}"
+                            IsEnabled="{Binding PlaylistViewModel.HasMultipleTracks}"
                             Margin="5,3,5,3"
                             Classes="transparentbutton"
                             ToolTip.Tip="Next">
@@ -111,14 +119,13 @@
                 <!-- Right side buttons -->
                 <!-- Right side buttons -->
                 <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <!-- Auto-Hide ToggleButton -->
-                    <ToggleButton IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}"
+                    <!-- Auto-Hide ToggleSwitch -->
+                    <ToggleSwitch IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}"
+                                  OnContent="Auto-Hide"
+                                  OffContent="Auto-Hide"
+                                  Margin="10,0,15,0"
                                   VerticalAlignment="Center"
-                                  Margin="0,0,15,0"
-                                  Classes="transparentbutton"
-                                  ToolTip.Tip="Automatically hide controls">
-                        <Image Source="avares://Jukebox/Assets/Buttons/autohide.png" Width="20" Height="20"/>
-                    </ToggleButton>
+                                  ToolTip.Tip="Automatically hide controls" />
 
                     <!-- Volume Slider -->
                     <Slider Minimum="0" Maximum="100" Value="{Binding Volume}"

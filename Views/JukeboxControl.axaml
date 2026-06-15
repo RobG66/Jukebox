@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
              xmlns:localViews="using:Jukebox.Views"
+             xmlns:vis="using:JukeboxVisualizations.Controls"
              xmlns:vlc="clr-namespace:LibVLCSharp.Avalonia;assembly=LibVLCSharp.Avalonia"
              mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="720"
              x:Class="Jukebox.Views.JukeboxControl"
@@ -51,10 +52,10 @@
                                     <Button Classes="transparentbutton" Background="Transparent" Width="30" Height="30" ToolTip.Tip="Add Folder" Click="AddFolder_Click">
                                         <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
                                     </Button>
-                                    <Button Classes="transparentbutton" Background="Transparent" Width="30" Height="30" ToolTip.Tip="Remove Selected" Command="{Binding RemoveSelectedCommand}" CommandParameter="{Binding #PlaylistDataGrid.SelectedItems}">
+                                    <Button Classes="transparentbutton" Background="Transparent" Width="30" Height="30" ToolTip.Tip="Remove Selected" Command="{Binding PlaylistViewModel.RemoveSelectedCommand}" CommandParameter="{Binding #PlaylistDataGrid.SelectedItems}">
                                         <Image Source="avares://Jukebox/Assets/Buttons/remove.png" Width="20" Height="20"/>
                                     </Button>
-                                    <Button Classes="transparentbutton" Background="Transparent" Width="30" Height="30" ToolTip.Tip="Clear Playlist" Command="{Binding ClearPlaylistCommand}">
+                                    <Button Classes="transparentbutton" Background="Transparent" Width="30" Height="30" ToolTip.Tip="Clear Playlist" Command="{Binding PlaylistViewModel.ClearPlaylistCommand}">
                                         <Image Source="avares://Jukebox/Assets/Buttons/x.png" Width="16" Height="16"/>
                                     </Button>
                                 </StackPanel>
@@ -63,7 +64,7 @@
                             </StackPanel>
 
                             <DataGrid x:Name="PlaylistDataGrid" Grid.Row="1" 
-                                      ItemsSource="{Binding Playlist}" 
+                                      ItemsSource="{Binding PlaylistViewModel.Playlist}" 
                                       AutoGenerateColumns="False" 
                                       IsReadOnly="True" 
                                       SelectionMode="Extended"
@@ -89,20 +90,75 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             
-                            <StackPanel Grid.Row="0" Margin="10,0,10,10">
+                            <StackPanel Grid.Row="0" Margin="10,0,10,10" Spacing="5">
                                 <TextBlock Text="🎇 Visualizations" Foreground="White" FontSize="20" FontWeight="Bold"/>
-                                <TextBlock Text="Select a ProjectM preset" Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+                                <TextBlock Text="Double click to apply selected visualization" Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+                                
+                                <Border Background="#22FFFFFF" CornerRadius="4" Padding="10" Margin="0,5,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <ToggleSwitch IsChecked="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}" OnContent="Auto-Randomize" OffContent="Auto-Randomize" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="10" IsEnabled="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}">
+                                            <TextBlock Text="Speed:" VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="12"/>
+                                            <Slider Minimum="10" Maximum="60" Value="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds}" Width="80" VerticalAlignment="Center" TickPlacement="BottomRight" TickFrequency="10"/>
+                                            <TextBlock Text="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds, StringFormat=\{0\}s}" VerticalAlignment="Center" Foreground="White" FontSize="12" Width="30"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                             
-                            <TreeDataGrid Grid.Row="1" Source="{Binding VisualizerSource}" FontSize="12" />
+                            <TreeDataGrid x:Name="VisualizerTreeDataGrid" Grid.Row="1" Source="{Binding VisualizerViewModel.VisualizerSource}" FontSize="12" DoubleTapped="VisualizerTreeDataGrid_DoubleTapped">
+                                <TreeDataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add to Favorites" Command="{Binding VisualizerViewModel.AddToFavoritesCommand}" CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}" />
+                                        <MenuItem Header="Rename" Command="{Binding VisualizerViewModel.RenameVisualizerCommand}" CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}" />
+                                        <MenuItem Header="Remove from Favorites" Command="{Binding VisualizerViewModel.RemoveFromFavoritesCommand}" CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}" />
+                                    </ContextMenu>
+                                </TreeDataGrid.ContextMenu>
+                            </TreeDataGrid>
                         </Grid>
                     </Grid>
                 </Border>
             </SplitView.Pane>
 
             <SplitView.Content>
-                <Border Background="#222222" Margin="10" CornerRadius="8">
-                    <TextBlock Text="Main Visualizer / Video Area" Foreground="#888888" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24"/>
+                <Border Background="#222222" Margin="10" CornerRadius="8" ClipToBounds="True">
+                    <Grid>
+                        <TextBlock Text="No Visualizer Selected" Foreground="#888888" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24"
+                                   IsVisible="{Binding VisualizerViewModel.SelectedVisualizerPath, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                        <vis:ProjectMControl x:Name="ProjectMDisplay" />
+
+                        <!-- EQ Slide-up Panel -->
+                        <Border Background="#B3000000" VerticalAlignment="Bottom" 
+                                CornerRadius="8,8,0,0" Padding="20"
+                                IsVisible="{Binding IsEqVisible}">
+                            <Grid RowDefinitions="Auto,*">
+                                <Grid Grid.Row="0" Margin="0,0,0,20">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                                        <TextBlock Text="Preset:" Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                                        <ComboBox ItemsSource="{Binding EqViewModel.EqPresets}" SelectedItem="{Binding EqViewModel.SelectedEqPreset}" Width="112"/>
+                                    </StackPanel>
+                                </Grid>
+                                <Viewbox Grid.Row="1" Stretch="Uniform" StretchDirection="DownOnly">
+                                    <ItemsControl ItemsSource="{Binding EqViewModel.EqBands}" HorizontalAlignment="Center">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="25"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Vertical" Spacing="10" HorizontalAlignment="Center">
+                                                    <TextBlock Text="{Binding Gain, StringFormat=\{0:F1\}}" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
+                                                    <Slider Minimum="-15" Maximum="15" Value="{Binding Gain}" Orientation="Vertical" Height="150" HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding FrequencyLabel}" FontSize="12" Foreground="#AAAAAA" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Viewbox>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Border>
             </SplitView.Content>
         </SplitView>

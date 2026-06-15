@@ -10,6 +10,7 @@
         <StyleInclude Source="avares://Jukebox/Styles/TransparentButtonStyle.axaml"/>
         <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
         <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ComboBoxStyle.axaml"/>
     </Application.Styles>
 
     <Application.Resources>
@@ -32,5 +33,9 @@
         <SolidColorBrush x:Key="DataGridGridLinesBrush"              Color="#404040"/>
         <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="#333333"/>
         <x:Double x:Key="DataGridFontSizeResource">12</x:Double>
+
+        <!-- ComboBox Compact Sizing -->
+        <x:Double   x:Key="ComboBoxMinHeight">24</x:Double>
+        <Thickness  x:Key="ComboBoxPadding">5,2,5,2</Thickness>
     </Application.Resources>
 </Application>

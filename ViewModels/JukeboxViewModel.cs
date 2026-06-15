@@ -1,15 +1,21 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LibVLCSharp.Shared;
+using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Selection;
+using ManagedBass;
+using ManagedBass.DirectX8;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace Jukebox.ViewModels;
 
@@ -26,6 +32,7 @@ public class JukeboxTrack
 
 public partial class JukeboxViewModel : ViewModelBase, IDisposable
 {
+    #region Public Properties
     public string? PlaylistLogo { get; set; }
     public int InitialVolume { get; set; }
     public string? InitialFile { get; set; }
@@ -33,18 +40,46 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public bool IsLoopEnabled { get; set; }
     public bool IsKioskMode { get; set; }
     public bool StayOnTop { get; set; }
+    #endregion
 
+    #region Fields & Constants
     private LibVLC? _libVLC;
+    #endregion
+
+    #region Observable Properties
     [ObservableProperty] private MediaPlayer? _mediaPlayer;
+    #endregion
+
+    #region Fields & Constants
     private bool _isUserSeeking = false;
     private bool _isInternalUpdate = false;
+    #endregion
 
+    #region Observable Properties
     [ObservableProperty] private bool _isVlcReady;
+    #endregion
+
+    #region Sub-ViewModels
+    public JukeboxPlaylistViewModel PlaylistViewModel { get; } = new();
+    public JukeboxEqViewModel EqViewModel { get; } = new();
+    public JukeboxVisualizerViewModel VisualizerViewModel { get; } = new();
+    #endregion
+
+    public event EventHandler<short[]>? PcmDataAvailable;
 
     public JukeboxViewModel()
     {
+        EqViewModel.EqBandUpdated += (s, band) => UpdateBassEqBand(band);
+
+        Bass.Init(-1, 44100, DeviceInitFlags.Default, IntPtr.Zero);
+        _bassTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _bassTimer.Tick += BassTimer_Tick;
+        _bassTimer.Start();
+
+        _libVLC = new LibVLC(enableDebugLogs: true);
+
         _ = InitializeVlcAsync();
-        _ = LoadVisualizersAsync();
+        _ = VisualizerViewModel.LoadVisualizersAsync();
     }
 
     private Task InitializeVlcAsync()
@@ -111,20 +146,18 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     private void MediaPlayer_EndReached(object? sender, EventArgs e)
     {
-        // Media ends -> trigger Next safely via Task.Run to allow LibVLC to clean up the event
-        Task.Run(() =>
-        {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => Next());
-        });
+        // Media ends -> trigger Next safely via UIThread
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Next());
     }
 
     private void MediaPlayer_Playing(object? sender, EventArgs e)
     {
+        if (_isAudioMode) return;
         // VLC frequently resets internal volume when spinning up a new audio thread.
         // Sync it to the UI immediately once it starts playing.
         if (MediaPlayer != null)
         {
-            try { MediaPlayer.Volume = (int)Volume; } catch { }
+            try { MediaPlayer.Volume = (int)Volume; } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Vol Error: {ex.Message}"); }
         }
 
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -137,6 +170,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     private void MediaPlayer_Paused(object? sender, EventArgs e)
     {
+        if (_isAudioMode) return;
         Dispatcher.UIThread.Post(() =>
         {
             CanPlay = true;
@@ -147,6 +181,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     private void MediaPlayer_Stopped(object? sender, EventArgs e)
     {
+        if (_isAudioMode) return;
         Dispatcher.UIThread.Post(() =>
         {
             CanPlay = true;
@@ -157,86 +192,60 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         });
     }
 
+    [ObservableProperty] private bool _isEqVisible = false;
+
+    private int _bassStream = 0;
+    private DSPProcedure? _bassDspProc;
+    private bool _isAudioMode;
+    private DispatcherTimer _bassTimer;
+    
+    private static readonly string[] _audioExtensions = { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma" };
+
+    private void UpdateBassEqBand(EqSliderViewModel band)
+    {
+        if (band.FxHandle != 0)
+        {
+            var p = new DXParamEQParameters
+            {
+                fBandwidth = 18f,
+                fCenter = band.CenterFrequency,
+                fGain = (float)band.Gain
+            };
+            Bass.FXSetParameters(band.FxHandle, p);
+        }
+    }
+
+    private void BassTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_bassStream != 0 && Bass.ChannelIsActive(_bassStream) == PlaybackState.Playing)
+        {
+            if (_isUserSeeking) return;
+            long pos = Bass.ChannelGetPosition(_bassStream);
+            double sec = Bass.ChannelBytes2Seconds(_bassStream, pos);
+            var ts = TimeSpan.FromSeconds(sec);
+            
+            _isInternalUpdate = true;
+            CurrentTimeString = $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
+            PlaybackPosition = (long)(sec * 1000);
+            _isInternalUpdate = false;
+        }
+        else if (_bassStream != 0 && Bass.ChannelIsActive(_bassStream) == PlaybackState.Stopped && CurrentTrack != null)
+        {
+            Next();
+        }
+    }
+
+    private void OnBassDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
+    {
+        if (length <= 0) return;
+        short[] pcm = new short[length / 2];
+        Marshal.Copy(buffer, pcm, 0, length / 2);
+        PcmDataAvailable?.Invoke(this, pcm);
+    }
+
     [ObservableProperty] private double _controlBarHeight = 65;
     
     [ObservableProperty] private bool _isPlaylistVisible;
-
-    // -------------------------------------------------------------
-    // VISUALIZERS
-    // -------------------------------------------------------------
-    
-    [ObservableProperty] private string? _selectedVisualizerPath;
-    
-    public HierarchicalTreeDataGridSource<VisualizerNodeViewModel>? VisualizerSource { get; private set; }
-
-    private async Task LoadVisualizersAsync()
-    {
-        var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM");
-        if (!Directory.Exists(rootFolder)) return;
-
-        var rootNodes = new ObservableCollection<VisualizerNodeViewModel>();
-
-        await Task.Run(() =>
-        {
-            var directories = Directory.GetDirectories(rootFolder);
-            foreach (var dir in directories)
-            {
-                var folderName = Path.GetFileName(dir);
-                if (folderName == "win-x64" || folderName == "textures") continue; // skip binaries and assets
-
-                var folderVm = new VisualizerFolderViewModel(folderName, dir);
-                PopulateFolder(folderVm, dir);
-                if (folderVm.Children.Count > 0)
-                {
-                    Avalonia.Threading.Dispatcher.UIThread.Invoke(() => rootNodes.Add(folderVm));
-                }
-            }
-        });
-
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            VisualizerSource = new HierarchicalTreeDataGridSource<VisualizerNodeViewModel>(rootNodes)
-            {
-                Columns =
-                {
-                    new HierarchicalExpanderColumn<VisualizerNodeViewModel>(
-                        new TextColumn<VisualizerNodeViewModel, string>("Visualizations", x => x.Name),
-                        x => x is VisualizerFolderViewModel f ? f.Children : null,
-                        x => x.IsDirectory)
-                }
-            };
-
-            VisualizerSource.RowSelection!.SelectionChanged += VisualizerSelectionChanged;
-            OnPropertyChanged(nameof(VisualizerSource));
-        });
-    }
-
-    private void PopulateFolder(VisualizerFolderViewModel parent, string path)
-    {
-        foreach (var dir in Directory.GetDirectories(path))
-        {
-            var folderVm = new VisualizerFolderViewModel(Path.GetFileName(dir), dir);
-            PopulateFolder(folderVm, dir);
-            if (folderVm.Children.Count > 0)
-                parent.Children.Add(folderVm);
-        }
-
-        foreach (var file in Directory.GetFiles(path, "*.milk"))
-        {
-            parent.Children.Add(new VisualizerFileViewModel(Path.GetFileNameWithoutExtension(file), file));
-        }
-    }
-
-    private void VisualizerSelectionChanged(object? sender, TreeSelectionModelSelectionChangedEventArgs<VisualizerNodeViewModel> e)
-    {
-        var selected = e.SelectedItems?.FirstOrDefault();
-        if (selected is VisualizerFileViewModel fileVm)
-        {
-            SelectedVisualizerPath = fileVm.Path;
-        }
-    }
-
-    // -------------------------------------------------------------
 
     [ObservableProperty] private bool _isPickerVisible;
 
@@ -267,9 +276,16 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackPosition, value))
             {
-                if (!_isInternalUpdate && MediaPlayer != null)
+                if (!_isInternalUpdate)
                 {
-                    MediaPlayer.Time = (long)value;
+                    if (_bassStream != 0 && Bass.ChannelIsActive(_bassStream) != PlaybackState.Stopped)
+                    {
+                        Bass.ChannelSetPosition(_bassStream, Bass.ChannelSeconds2Bytes(_bassStream, value / 1000.0));
+                    }
+                    else if (MediaPlayer != null)
+                    {
+                        MediaPlayer.Time = (long)value;
+                    }
                 }
             }
         }
@@ -278,8 +294,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _playbackLength = 100;
     
     [ObservableProperty] private JukeboxTrack? _currentTrack = new JukeboxTrack { DisplayName = "GUI Design Mode - No Track Loaded" };
-    
-    public System.Collections.ObjectModel.ObservableCollection<JukeboxTrack> Playlist { get; } = new();
 
     [ObservableProperty] private bool _isRandomPlayback = false;
     [ObservableProperty] private bool _hasMultipleTracks = true;
@@ -298,6 +312,10 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _volume, value))
             {
+                if (_bassStream != 0)
+                {
+                    Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, value / 100.0);
+                }
                 if (MediaPlayer != null)
                 {
                     try { MediaPlayer.Volume = (int)value; } catch { }
@@ -329,106 +347,179 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [RelayCommand] 
     private void Previous() 
     {
-        if (Playlist.Count == 0) return;
-        var index = CurrentTrack != null ? Playlist.IndexOf(CurrentTrack) : -1;
+        if (PlaylistViewModel.Playlist.Count == 0) return;
+        var index = CurrentTrack != null ? PlaylistViewModel.Playlist.IndexOf(CurrentTrack) : -1;
+        var oldTrack = CurrentTrack;
+
         if (index > 0)
-            CurrentTrack = Playlist[index - 1];
+            CurrentTrack = PlaylistViewModel.Playlist[index - 1];
         else
-            CurrentTrack = Playlist[^1]; // loop to end
+            CurrentTrack = PlaylistViewModel.Playlist[^1]; // loop to end
             
-        Play();
+        PlayInternal(CurrentTrack == oldTrack);
     }
     
     [RelayCommand] 
     private void Pause() 
     { 
-        if (!IsVlcReady || MediaPlayer == null) return;
-        MediaPlayer.Pause();
+        if (_bassStream != 0 && Bass.ChannelIsActive(_bassStream) == PlaybackState.Playing)
+        {
+            Bass.ChannelPause(_bassStream);
+            CanPlay = true;
+            CanPause = false;
+            CanStop = true;
+        }
+        else if (IsVlcReady && MediaPlayer != null && MediaPlayer.IsPlaying)
+        {
+            MediaPlayer.Pause();
+        }
     }
     
     [RelayCommand] 
     private void Stop() 
     { 
-        if (!IsVlcReady || MediaPlayer == null) return;
-        MediaPlayer.Stop();
+        if (_bassStream != 0)
+        {
+            Bass.ChannelStop(_bassStream);
+        }
+        if (IsVlcReady && MediaPlayer != null)
+        {
+            MediaPlayer.Stop();
+        }
         CurrentTrack = null;
+        
+        CanPlay = true;
+        CanPause = false;
+        CanStop = false;
+        CurrentTimeString = "0:00";
+        PlaybackPosition = 0;
     }
     
     [RelayCommand] 
-    private void Play() 
+    private void Play() => PlayInternal();
+
+    private void PlayInternal(bool forceRestart = false)
     { 
         if (!IsVlcReady || MediaPlayer == null || _libVLC == null) return;
 
         if (CurrentTrack == null || string.IsNullOrEmpty(CurrentTrack.FilePath))
         {
-            if (Playlist.Count > 0)
-                CurrentTrack = Playlist[0];
+            if (PlaylistViewModel.Playlist.Count > 0)
+                CurrentTrack = PlaylistViewModel.Playlist[0];
             else
                 return;
         }
 
+        bool isAudio = _audioExtensions.Any(ext => CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+        _isAudioMode = isAudio;
+
         var targetUri = new Uri(CurrentTrack.FilePath).AbsoluteUri;
 
-        if (MediaPlayer.Media == null || MediaPlayer.Media.Mrl != targetUri)
+        if (forceRestart || MediaPlayer.Media == null || MediaPlayer.Media.Mrl != targetUri)
         {
             var oldMedia = MediaPlayer.Media;
             var newMedia = new Media(_libVLC, CurrentTrack.FilePath, FromType.FromPath);
             
             MediaPlayer.Media = newMedia;
 
-            Task.Run(() => 
+            if (isAudio)
             {
-                try { MediaPlayer?.Stop(); } catch { }
-                try { oldMedia?.Dispose(); } catch { }
-                try { MediaPlayer?.Play(); } catch { }
-            });
-            return;
+                Task.Run(() => { try { MediaPlayer?.Stop(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Stop Error: {ex.Message}"); } });
+                if (_bassStream != 0) { Bass.StreamFree(_bassStream); _bassStream = 0; }
+                
+                _bassStream = Bass.CreateStream(CurrentTrack.FilePath, 0, 0, BassFlags.Default);
+                if (_bassStream != 0)
+                {
+                    // Apply EQ effects
+                    foreach (var band in EqViewModel.EqBands)
+                    {
+                        band.FxHandle = Bass.ChannelSetFX(_bassStream, EffectType.DXParamEQ, 0);
+                        UpdateBassEqBand(band);
+                    }
+
+                    _bassDspProc = new DSPProcedure(OnBassDsp);
+                    Bass.ChannelSetDSP(_bassStream, _bassDspProc);
+                    Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, Volume / 100.0);
+                    Bass.ChannelPlay(_bassStream);
+                    
+                    CanPlay = false;
+                    CanPause = true;
+                    CanStop = true;
+                    
+                    long len = Bass.ChannelGetLength(_bassStream);
+                    double sec = Bass.ChannelBytes2Seconds(_bassStream, len);
+                    PlaybackLength = (long)(sec * 1000);
+                    var ts = TimeSpan.FromSeconds(sec);
+                    TotalTimeString = $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
+                }
+                return;
+            }
+            else
+            {
+                if (_bassStream != 0) { Bass.StreamFree(_bassStream); _bassStream = 0; }
+                
+                MediaPlayer.SetAudioFormatCallback(null!, null!);
+
+                Task.Run(() => 
+                {
+                    try { MediaPlayer?.Stop(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Stop Error: {ex.Message}"); }
+                    try { oldMedia?.Dispose(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Dispose Error: {ex.Message}"); }
+                    try { MediaPlayer?.Play(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Play Error: {ex.Message}"); }
+                });
+                return;
+            }
         }
 
-        if (!MediaPlayer.IsPlaying)
+        if (isAudio)
         {
-            MediaPlayer.Play();
+            if (_bassStream != 0 && Bass.ChannelIsActive(_bassStream) == PlaybackState.Paused)
+            {
+                Bass.ChannelPlay(_bassStream);
+            }
+            CanPlay = false;
+            CanPause = true;
+            CanStop = true;
+        }
+        else
+        {
+            if (MediaPlayer != null && !MediaPlayer.IsPlaying)
+            {
+                MediaPlayer.Play();
+            }
         }
     }
     
     [RelayCommand] 
     private void Next() 
     { 
-        if (Playlist.Count == 0) return;
-        var index = CurrentTrack != null ? Playlist.IndexOf(CurrentTrack) : -1;
-        if (index >= 0 && index < Playlist.Count - 1)
-            CurrentTrack = Playlist[index + 1];
+        if (PlaylistViewModel.Playlist.Count == 0) return;
+        var index = CurrentTrack != null ? PlaylistViewModel.Playlist.IndexOf(CurrentTrack) : -1;
+        var oldTrack = CurrentTrack;
+
+        if (index >= 0 && index < PlaylistViewModel.Playlist.Count - 1)
+            CurrentTrack = PlaylistViewModel.Playlist[index + 1];
         else
-            CurrentTrack = Playlist[0]; // loop to start
+            CurrentTrack = PlaylistViewModel.Playlist[0]; // loop to start
             
-        Play();
+        PlayInternal(CurrentTrack == oldTrack);
     }
 
-    [RelayCommand]
-    private void ClearPlaylist()
-    {
-        Playlist.Clear();
-    }
-
-    [RelayCommand]
-    private void RemoveSelected(System.Collections.IList? selectedItems)
-    {
-        if (selectedItems == null) return;
-        
-        var itemsToRemove = selectedItems.Cast<JukeboxTrack>().ToList();
-        foreach (var item in itemsToRemove)
-        {
-            Playlist.Remove(item);
-        }
-    }
-    
     [RelayCommand] private void PlaySelectedTrack() { }
     [RelayCommand] private void ApplyPreset() { }
     [RelayCommand] private void ToggleMiniPlayer() { }
     [RelayCommand] private void ToggleVisualizer() { }
 
+    [RelayCommand] private void TogglePlaylist() => IsPlaylistVisible = !IsPlaylistVisible;
+    [RelayCommand] private void ToggleEq() => IsEqVisible = !IsEqVisible;
+    [RelayCommand] private void TogglePicker() => IsPickerVisible = !IsPickerVisible;
+    [RelayCommand] private void ToggleRandom() => IsRandomPlayback = !IsRandomPlayback;
+    [RelayCommand] private void ToggleAutoHide() => IsAutoHideEnabled = !IsAutoHideEnabled;
+
+    #region Public Methods
     public void Dispose()
     {
+        Bass.Free();
         var player = MediaPlayer;
         var media = MediaPlayer?.Media;
         var libVlc = _libVLC;
@@ -437,10 +528,11 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
         Task.Run(() =>
         {
-            try { player?.Stop(); } catch { }
-            try { media?.Dispose(); } catch { }
-            try { player?.Dispose(); } catch { }
-            try { libVlc?.Dispose(); } catch { }
+            try { player?.Stop(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Dispose Stop Error: {ex.Message}"); }
+            try { media?.Dispose(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Dispose Media Error: {ex.Message}"); }
+            try { player?.Dispose(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Dispose Player Error: {ex.Message}"); }
+            try { libVlc?.Dispose(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Dispose Lib Error: {ex.Message}"); }
         });
     }
+    #endregion
 }
