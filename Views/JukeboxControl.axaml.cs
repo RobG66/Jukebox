@@ -1,197 +1,156 @@
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Threading;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Jukebox.ViewModels;
-using LibVLCSharp.Avalonia;
-using LibVLCSharp.Shared;
 using System;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Threading;
 
 namespace Jukebox.Views;
 
 public partial class JukeboxControl : UserControl
 {
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
-    private readonly DispatcherTimer _mousePoller = new();
-    private POINT _lastMousePos;
-
-    private JukeboxViewModel? _boundViewModel;
-
     public JukeboxControl()
     {
         InitializeComponent();
-
-        AttachedToVisualTree += OnAttachedToVisualTree;
-        DetachedFromVisualTree += OnDetachedFromVisualTree;
-        DataContextChanged += OnDataContextChanged;
-
-        _mousePoller.Interval = TimeSpan.FromMilliseconds(100);
-        _mousePoller.Tick += OnMousePollerTick;
-        _mousePoller.Start();
     }
 
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        WireViewModel();
-    }
-
-    private void WireViewModel()
-    {
-        if (DataContext is JukeboxViewModel vm)
-        {
-            if (_boundViewModel == vm) return;
-            UnwireViewModel();
-            _boundViewModel = vm;
-
-            vm.SetProjectMControl(ProjectMView);
-            
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel != null)
-            {
-                vm.SetStorageProvider(topLevel.StorageProvider);
-            }
-
-            vm.MediaPlayerCreated += OnMediaPlayerCreated;
-            vm.ErrorOccurred += OnErrorOccurred;
-            vm.CloseRequested += OnCloseRequested;
-            vm.PropertyChanged += OnViewModelPropertyChanged;
-
-            vm.RequestPlayer();
-        }
-        else
-        {
-            UnwireViewModel();
-        }
-    }
-
-    private void UnwireViewModel()
-    {
-        if (_boundViewModel != null)
-        {
-            _boundViewModel.MediaPlayerCreated -= OnMediaPlayerCreated;
-            _boundViewModel.ErrorOccurred -= OnErrorOccurred;
-            _boundViewModel.CloseRequested -= OnCloseRequested;
-            _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            _boundViewModel = null;
-        }
-    }
-
-    private void OnMousePollerTick(object? sender, EventArgs e)
-    {
-        if (!IsVisible) return;
-
-        if (GetCursorPos(out var p))
-        {
-            if (p.X != _lastMousePos.X || p.Y != _lastMousePos.Y)
-            {
-                _lastMousePos = p;
-                
-                var topLevel = TopLevel.GetTopLevel(this);
-                if (topLevel == null) return;
-                
-                var clientPos = topLevel.PointToClient(new PixelPoint(p.X, p.Y));
-                if (clientPos.X >= 0 && clientPos.X <= Bounds.Width &&
-                    clientPos.Y >= 0 && clientPos.Y <= Bounds.Height)
-                {
-                    if (DataContext is JukeboxViewModel vm)
-                    {
-                        vm.ResetAutoHideTimer();
-                    }
-                }
-            }
-        }
-    }
-
-    private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
-    {
-        WireViewModel();
-        if (_boundViewModel != null && TopLevel.GetTopLevel(this) is { } topLevel)
-        {
-            _boundViewModel.SetStorageProvider(topLevel.StorageProvider);
-        }
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        // Removed dynamic window resizing for the picker as it is now an overlay
-    }
-
-    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
-    {
-        VideoView.MediaPlayer = null;
-
-        if (_boundViewModel != null)
-        {
-            _ = _boundViewModel.DisposeAsync();
-        }
-        UnwireViewModel();
-    }
-
-    private void OnCloseRequested(object? sender, EventArgs e)
+    private async void AddFiles_Click(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is Window window)
+        if (topLevel == null) return;
+        
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            window.Close();
-        }
-    }
+            Title = "Select Media Files",
+            AllowMultiple = true,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Media Files")
+                {
+                    Patterns = new[] { "*.mp3", "*.flac", "*.wav", "*.ogg", "*.m4a", "*.wma" }
+                }
+            }
+        });
 
-    private void OnMediaPlayerCreated(MediaPlayer? mediaPlayer)
-    {
-        if (DataContext is JukeboxViewModel vm)
+        if (files != null && files.Count > 0 && DataContext is JukeboxViewModel vm)
         {
-            if (vm.VisualizationsEnabled && vm.HasProjectM)
+            var paths = files.Select(f => f.TryGetLocalPath()).Where(p => !string.IsNullOrEmpty(p)).ToList();
+            if (paths.Count > 0)
             {
-                VideoView.MediaPlayer = null;
-                VideoView.IsVisible = false;
-                ProjectMWrapper.IsVisible = true;
-            }
-            else
-            {
-                VideoView.MediaPlayer = mediaPlayer;
-                VideoView.IsVisible = true;
-                ProjectMWrapper.IsVisible = false;
-            }
-            
-            if (mediaPlayer != null)
-            {
-                vm.NotifyPlayerAttached();
+                await ProcessAndAddFilesAsync(paths!, vm);
             }
         }
     }
 
-    private async void OnErrorOccurred(string message)
+    private async void AddFolder_Click(object? sender, RoutedEventArgs e)
     {
-        try
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            var topLevel = TopLevel.GetTopLevel(this) as Window;
-            if (topLevel != null)
+            Title = "Select Media Folder",
+            AllowMultiple = false
+        });
+
+        if (folders != null && folders.Count > 0 && DataContext is JukeboxViewModel vm)
+        {
+            var folderPath = folders[0].TryGetLocalPath();
+            if (string.IsNullOrEmpty(folderPath)) return;
+
+            var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) 
+            { 
+                ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma" 
+            };
+
+            var paths = await Task.Run(() => 
             {
-                await ThreeButtonDialogView.ShowErrorAsync(
-                    "Jukebox Error",
-                    message,
-                    owner: topLevel);
+                try
+                {
+                    return Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                                    .Where(file => supportedExtensions.Contains(Path.GetExtension(file)))
+                                    .ToList();
+                }
+                catch
+                {
+                    return new List<string>();
+                }
+            });
+
+            if (paths.Count > 0)
+            {
+                await ProcessAndAddFilesAsync(paths, vm);
             }
-        }
-        catch (Exception)
-        {
         }
     }
 
-    private void PresetList_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    private async Task ProcessAndAddFilesAsync(List<string> filePaths, JukeboxViewModel vm)
     {
-        if (DataContext is JukeboxViewModel vm && vm.SelectedPreset != null)
+        var tracks = await Task.Run(() =>
         {
-            vm.ApplyPresetCommand.Execute(null);
+            var results = new List<JukeboxTrack>();
+            foreach (var path in filePaths)
+            {
+                try
+                {
+                    using var tfile = TagLib.File.Create(path);
+                    var title = !string.IsNullOrWhiteSpace(tfile.Tag.Title) 
+                                ? tfile.Tag.Title 
+                                : Path.GetFileNameWithoutExtension(path);
+                    
+                    var duration = tfile.Properties.Duration;
+                    var bitrate = tfile.Properties.AudioBitrate;
+                    
+                    results.Add(new JukeboxTrack
+                    {
+                        DisplayName = title,
+                        Length = $"{(int)duration.TotalMinutes}:{duration.Seconds:D2}",
+                        Bitrate = $"{bitrate} kbps",
+                        FilePath = path
+                    });
+                }
+                catch
+                {
+                    // Fallback if TagLib fails
+                    results.Add(new JukeboxTrack
+                    {
+                        DisplayName = Path.GetFileNameWithoutExtension(path),
+                        Length = "0:00",
+                        Bitrate = "Unknown",
+                        FilePath = path
+                    });
+                }
+            }
+            return results;
+        });
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var track in tracks)
+            {
+                vm.Playlist.Add(track);
+            }
+        });
+    }
+
+    private void PlaylistDataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (sender is DataGrid dataGrid && dataGrid.SelectedItem is JukeboxTrack selectedTrack)
+        {
+            if (DataContext is JukeboxViewModel vm)
+            {
+                vm.CurrentTrack = selectedTrack;
+                
+                // If we want to simulate playback start, we could call Play()
+                if (vm.PlayCommand.CanExecute(null))
+                {
+                    vm.PlayCommand.Execute(null);
+                }
+            }
         }
     }
 }

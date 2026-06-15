@@ -1,0 +1,132 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="65"
+             x:Class="Jukebox.Views.TransportBarView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <Border Background="{DynamicResource PanelBackground}"
+            Height="{Binding ControlBarHeight}"
+            BorderBrush="{DynamicResource PanelBorder}"
+            BorderThickness="0,1,0,0"
+            ClipToBounds="True">
+        <Border.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Height" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+            </Transitions>
+        </Border.Transitions>
+
+        <Grid RowDefinitions="Auto, 40" VerticalAlignment="Top">
+            <!-- Progress Bar Row -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="10,5,10,0">
+                <TextBlock Grid.Column="0" Text="{Binding CurrentTimeString}" FontSize="{DynamicResource GlobalSmallFontSize}" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <Slider Grid.Column="1" Minimum="0" Maximum="{Binding PlaybackLength}" Value="{Binding PlaybackPosition}" VerticalAlignment="Center" ToolTip.Tip="Seek"/>
+                <TextBlock Grid.Column="2" Text="{Binding TotalTimeString}" FontSize="{DynamicResource GlobalSmallFontSize}" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </Grid>
+
+            <!-- Transport Buttons Row -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto, *, Auto, *, Auto">
+
+                <!-- Left Info (Panel Toggles) -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="10,0,10,0">
+                    <!-- Playlist Button -->
+                    <ToggleButton IsChecked="{Binding IsPlaylistVisible, Mode=TwoWay}"
+                                  Classes="transparentbutton"
+                                  Width="40" Height="40"
+                                  ToolTip.Tip="Playlist">
+                        <Image Source="avares://Jukebox/Assets/Buttons/menu.png" Width="20" Height="20"/>
+                    </ToggleButton>
+                    
+                    <!-- Visualizations Button -->
+                    <ToggleButton IsChecked="{Binding IsPickerVisible, Mode=TwoWay}"
+                                  Classes="transparentbutton"
+                                  Width="40" Height="40"
+                                  ToolTip.Tip="Visualizations">
+                        <Image Source="avares://Jukebox/Assets/Icons/visualizer.png" Width="20" Height="20"/>
+                    </ToggleButton>
+                </StackPanel>
+
+                <!-- Center Transport buttons -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+
+                    <!-- Random ToggleButton -->
+                    <ToggleButton IsChecked="{Binding IsRandomPlayback, Mode=TwoWay}"
+                                  Margin="5,3,15,3"
+                                  Classes="transparentbutton"
+                                  IsEnabled="{Binding HasMultipleTracks}"
+                                  ToolTip.Tip="Randomize Playback">
+                        <Image Source="avares://Jukebox/Assets/Buttons/random.png" Width="20" Height="20"/>
+                    </ToggleButton>
+
+                    <Button Command="{Binding PreviousCommand}"
+                            IsEnabled="{Binding HasMultipleTracks}"
+                            Margin="5,3,5,3"
+                            Classes="transparentbutton"
+                            ToolTip.Tip="Previous">
+                        <Image Source="avares://Jukebox/Assets/Buttons/previous.png"
+                               Width="24" Height="24"/>
+                    </Button>
+
+                    <Button Command="{Binding PauseCommand}"
+                            IsEnabled="{Binding CanPause}"
+                            Margin="0,3,5,3"
+                            Classes="transparentbutton"
+                            ToolTip.Tip="Pause">
+                        <Image Source="avares://Jukebox/Assets/Buttons/pause.png"
+                               Width="24" Height="24"/>
+                    </Button>
+                    <Button Command="{Binding StopCommand}"
+                            IsEnabled="{Binding CanStop}"
+                            Margin="5,3,5,3"
+                            Classes="transparentbutton"
+                            ToolTip.Tip="Stop">
+                        <Image Source="avares://Jukebox/Assets/Buttons/stop.png"
+                               Width="24" Height="24"/>
+                    </Button>
+
+                    <Button Command="{Binding PlayCommand}"
+                            IsEnabled="{Binding CanPlay}"
+                            Margin="0,3,5,3"
+                            Classes="transparentbutton"
+                            ToolTip.Tip="Play">
+                        <Image Source="avares://Jukebox/Assets/Buttons/play.png"
+                               Width="24" Height="24"/>
+                    </Button>
+
+                    <Button Command="{Binding NextCommand}"
+                            IsEnabled="{Binding HasMultipleTracks}"
+                            Margin="5,3,5,3"
+                            Classes="transparentbutton"
+                            ToolTip.Tip="Next">
+                        <Image Source="avares://Jukebox/Assets/Buttons/next.png"
+                               Width="24" Height="24"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Right side buttons -->
+                <!-- Right side buttons -->
+                <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- Auto-Hide ToggleButton -->
+                    <ToggleButton IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,15,0"
+                                  Classes="transparentbutton"
+                                  ToolTip.Tip="Automatically hide controls">
+                        <Image Source="avares://Jukebox/Assets/Buttons/autohide.png" Width="20" Height="20"/>
+                    </ToggleButton>
+
+                    <!-- Volume Slider -->
+                    <Slider Minimum="0" Maximum="100" Value="{Binding Volume}"
+                            Width="80" VerticalAlignment="Center"
+                            Margin="0,0,10,0"
+                            ToolTip.Tip="Volume" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

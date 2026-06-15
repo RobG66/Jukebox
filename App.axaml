@@ -5,8 +5,10 @@
 
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
         <StyleInclude Source="avares://Jukebox/Styles/TransparentButtonStyle.axaml"/>
         <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
     </Application.Styles>
 
     <Application.Resources>
@@ -14,6 +16,20 @@
         <SolidColorBrush x:Key="PanelBackground">#181818</SolidColorBrush>
         <SolidColorBrush x:Key="PanelBorder">#333333</SolidColorBrush>
         <SolidColorBrush x:Key="SubtleTextBrush">#AAAAAA</SolidColorBrush>
+        <SolidColorBrush x:Key="AccentTextBrush">#FF7B00</SolidColorBrush>
+        <SolidColorBrush x:Key="ErrorTextBrush">#FF4444</SolidColorBrush>
+        <SolidColorBrush x:Key="SliderTrackBrush">#FF7B00</SolidColorBrush>
+        <SolidColorBrush x:Key="SliderThumbBrush">#E0E0E0</SolidColorBrush>
+        <SolidColorBrush x:Key="SliderThumbHoverBrush">#FFFFFF</SolidColorBrush>
+        
         <x:Double x:Key="GlobalSmallFontSize">12</x:Double>
+        <x:Double x:Key="GlobalFontSize">14</x:Double>
+        <x:Double x:Key="GlobalHeaderFontSize">18</x:Double>
+
+        <!-- DataGrid Style Resources from Gamelist Manager -->
+        <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="#D0D0D0"/>
+        <SolidColorBrush x:Key="DataGridGridLinesBrush"              Color="#404040"/>
+        <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="#333333"/>
+        <x:Double x:Key="DataGridFontSizeResource">12</x:Double>
     </Application.Resources>
 </Application>
