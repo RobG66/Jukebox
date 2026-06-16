@@ -1,5 +1,7 @@
 # Jukebox
 
+*** Work in Progress - Not completed yet! ***
+
 A standalone, cross-platform media player built with C#, Avalonia UI, and LibVLCSharp. 
 
 This application provides a focused, customizable media playback experience designed to be run standalone, in kiosk mode, or integrated seamlessly into other systems via command-line parameters.
