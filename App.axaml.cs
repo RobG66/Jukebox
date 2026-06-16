@@ -4,7 +4,6 @@ using Avalonia.Markup.Xaml;
 using Jukebox.ViewModels;
 using Jukebox.Views;
 using System;
-using LibVLCSharp.Shared;
 
 namespace Jukebox;
 
@@ -39,7 +38,7 @@ public partial class App : Application
                         {
                             AttachConsole(-1); // Attach to parent console
                         }
-                        
+
                         Console.WriteLine("\nJukebox Command Line Arguments:");
                         Console.WriteLine("-------------------------------");
                         Console.WriteLine(" -light / -dark          : Set the theme.");
@@ -54,7 +53,7 @@ public partial class App : Application
                         Console.WriteLine(" -loop                   : Loop playlist continuously.");
                         Console.WriteLine(" -kiosk                  : Launch locked-down kiosk mode.");
                         Console.WriteLine(" -title [text]           : Override the window title.\n");
-                        
+
                         Environment.Exit(0);
                     }
                 }
@@ -96,7 +95,7 @@ public partial class App : Application
 
             desktop.MainWindow = window;
 
-            desktop.Exit += (sender, e) => 
+            desktop.Exit += (sender, e) =>
             {
                 vm?.Dispose();
             };

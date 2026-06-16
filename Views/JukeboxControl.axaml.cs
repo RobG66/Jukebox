@@ -1,14 +1,11 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Jukebox.ViewModels;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
-using Avalonia.Threading;
-using Avalonia.Input;
 
 namespace Jukebox.Views;
 
@@ -19,9 +16,9 @@ public partial class JukeboxControl : UserControl
     public JukeboxControl()
     {
         InitializeComponent();
-        
+
         _inactivityTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _inactivityTimer.Tick += (s, e) => 
+        _inactivityTimer.Tick += (s, e) =>
         {
             if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled)
             {
@@ -32,9 +29,9 @@ public partial class JukeboxControl : UserControl
 
         this.PointerMoved += (s, e) => ResetInactivity();
         this.PointerEntered += (s, e) => ResetInactivity();
-        
+
         DataContextChanged += OnDataContextChanged;
-        Loaded += (s, e) => 
+        Loaded += (s, e) =>
         {
             ProjectMDisplay.StartEngine();
             var topLevel = TopLevel.GetTopLevel(this);
@@ -43,7 +40,7 @@ public partial class JukeboxControl : UserControl
                 topLevel.AddHandler(InputElement.KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
             }
         };
-        Unloaded += (s, e) => 
+        Unloaded += (s, e) =>
         {
             var topLevel = TopLevel.GetTopLevel(this);
             if (topLevel != null)
@@ -107,8 +104,8 @@ public partial class JukeboxControl : UserControl
 
     private void OnVisualizerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath) && 
-            _currentViewModel != null && 
+        if (args.PropertyName == nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath) &&
+            _currentViewModel != null &&
             !string.IsNullOrEmpty(_currentViewModel.VisualizerViewModel.SelectedVisualizerPath))
         {
             ProjectMDisplay.LoadPreset(_currentViewModel.VisualizerViewModel.SelectedVisualizerPath);
@@ -119,7 +116,7 @@ public partial class JukeboxControl : UserControl
     {
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel == null) return;
-        
+
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Select Media Files",
@@ -128,7 +125,7 @@ public partial class JukeboxControl : UserControl
             {
                 new FilePickerFileType("Media Files")
                 {
-                    Patterns = new[] { "*.mp3", "*.flac", "*.wav", "*.ogg", "*.m4a", "*.wma" }
+                    Patterns = new[] { "*.mp3", "*.flac", "*.wav", "*.ogg", "*.m4a", "*.wma", "*.mp4", "*.mkv", "*.avi", "*.webm" }
                 }
             }
         });
@@ -170,7 +167,7 @@ public partial class JukeboxControl : UserControl
             if (DataContext is JukeboxViewModel vm)
             {
                 vm.CurrentTrack = selectedTrack;
-                
+
                 // If we want to simulate playback start, we could call Play()
                 if (vm.PlayCommand.CanExecute(null))
                 {

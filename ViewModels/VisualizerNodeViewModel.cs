@@ -7,10 +7,10 @@ public abstract partial class VisualizerNodeViewModel : ObservableObject
 {
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string _path = string.Empty;
-    
+
     // Helps TreeDataGrid differentiate between expandable nodes and leaf nodes
     public bool IsDirectory => this is VisualizerFolderViewModel;
-    
+
     protected VisualizerNodeViewModel(string name, string path)
     {
         Name = name;

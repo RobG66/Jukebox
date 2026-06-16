@@ -1,21 +1,21 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Jukebox.ViewModels;
 
 public partial class JukeboxEqViewModel : ViewModelBase
 {
     public ObservableCollection<EqSliderViewModel> EqBands { get; } = new();
-    public ObservableCollection<string> EqPresets { get; } = new() 
-    { 
-        "Flat", "Acoustic", "Bass Boost", "Classical", "Electronic", "Pop", "Rock", "Custom" 
+    public ObservableCollection<string> EqPresets { get; } = new()
+    {
+        "Flat", "Acoustic", "Bass Boost", "Classical", "Electronic", "Pop", "Rock", "Custom"
     };
 
     [ObservableProperty] private string _selectedEqPreset = "Flat";
-    
+
     public event EventHandler<EqSliderViewModel>? EqBandUpdated;
 
     private bool _isApplyingPreset = false;
@@ -42,12 +42,12 @@ public partial class JukeboxEqViewModel : ViewModelBase
         for (int i = 0; i < 10; i++)
         {
             var band = new EqSliderViewModel { CenterFrequency = freqs[i], FrequencyLabel = labels[i], Gain = 0 };
-            band.PropertyChanged += (s, e) => 
+            band.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(EqSliderViewModel.Gain))
                 {
                     EqBandUpdated?.Invoke(this, band);
-                    
+
                     if (SelectedEqPreset != "Custom" && !_isApplyingPreset)
                     {
                         SelectedEqPreset = "Custom";
@@ -94,10 +94,12 @@ public partial class JukeboxEqViewModel : ViewModelBase
         {
             var gains = new double[10];
             for (int i = 0; i < 10; i++) gains[i] = EqBands[i].Gain;
-            
+
             var settings = new { Preset = SelectedEqPreset, Gains = gains };
             var json = JsonSerializer.Serialize(settings);
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EqSettings.json"), json);
+            var settingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Jukebox");
+            Directory.CreateDirectory(settingsDir);
+            File.WriteAllText(Path.Combine(settingsDir, "EqSettings.json"), json);
         }
         catch { }
     }
@@ -106,20 +108,20 @@ public partial class JukeboxEqViewModel : ViewModelBase
     {
         try
         {
-            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EqSettings.json");
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Jukebox", "EqSettings.json");
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
                 var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                
+
                 if (root.TryGetProperty("Preset", out var presetEl))
                 {
                     _isApplyingPreset = true;
                     SelectedEqPreset = presetEl.GetString() ?? "Flat";
                     _isApplyingPreset = false;
                 }
-                
+
                 if (root.TryGetProperty("Gains", out var gainsEl))
                 {
                     _isApplyingPreset = true;

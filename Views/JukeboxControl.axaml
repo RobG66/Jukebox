@@ -81,7 +81,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <TextBlock Grid.Row="2" Text="6 Tracks | 0h 23m total" Foreground="{DynamicResource SubtleTextBrush}" 
+                            <TextBlock Grid.Row="2" Text="{Binding PlaylistViewModel.PlaylistSummary}" Foreground="{DynamicResource SubtleTextBrush}" 
                                        FontSize="11" HorizontalAlignment="Center" Margin="0,5,0,5"/>
                         </Grid>
                         <Grid IsVisible="{Binding IsPickerVisible}">

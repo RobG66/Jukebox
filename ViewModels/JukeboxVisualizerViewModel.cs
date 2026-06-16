@@ -1,25 +1,25 @@
-using System;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
-using Avalonia.Controls.Selection;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System;
 using System.Collections.Generic;
-using Avalonia.Controls;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
 
 public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 {
     [ObservableProperty] private string? _selectedVisualizerPath;
-    
+
     public HierarchicalTreeDataGridSource<VisualizerNodeViewModel>? VisualizerSource { get; private set; }
 
     private List<string> _allVisualizerPaths = new();
     private DispatcherTimer _randomizerTimer;
+    private readonly Random _random = new();
 
     [ObservableProperty] private bool _isVisualizerRandomizerEnabled;
     [ObservableProperty] private int _visualizerRandomizerIntervalSeconds = 10;
@@ -50,6 +50,10 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
         await Task.Run(() =>
         {
+            lock (_allVisualizerPaths)
+            {
+                _allVisualizerPaths.Clear();
+            }
             var directories = Directory.GetDirectories(rootFolder);
             foreach (var dir in directories)
             {
@@ -78,7 +82,6 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                 }
             };
 
-            VisualizerSource.RowSelection!.SelectionChanged += VisualizerSelectionChanged;
             OnPropertyChanged(nameof(VisualizerSource));
         });
     }
@@ -96,7 +99,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         foreach (var file in Directory.GetFiles(path, "*.milk"))
         {
             parent.Children.Add(new VisualizerFileViewModel(Path.GetFileNameWithoutExtension(file), file));
-            lock(_allVisualizerPaths)
+            lock (_allVisualizerPaths)
             {
                 _allVisualizerPaths.Add(file);
             }
@@ -116,19 +119,14 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
     private void RandomizerTimer_Tick(object? sender, EventArgs e)
     {
-        lock(_allVisualizerPaths)
+        lock (_allVisualizerPaths)
         {
             if (_allVisualizerPaths.Count > 0)
             {
-                var random = new Random();
-                int index = random.Next(_allVisualizerPaths.Count);
+                int index = _random.Next(_allVisualizerPaths.Count);
                 SelectedVisualizerPath = _allVisualizerPaths[index];
             }
         }
-    }
-
-    private void VisualizerSelectionChanged(object? sender, TreeSelectionModelSelectionChangedEventArgs<VisualizerNodeViewModel> e)
-    {
     }
 
     [RelayCommand]
@@ -145,12 +143,12 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         try
         {
             File.Copy(fileVm.Path, destPath, true);
-            
+
             // Also copy textures
             string sourceDir = Path.GetDirectoryName(fileVm.Path) ?? "";
             string content = File.ReadAllText(fileVm.Path);
             var regex = new System.Text.RegularExpressions.Regex(@"[a-zA-Z0-9_-]+\.(?:jpg|png|bmp|tga)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            
+
             foreach (System.Text.RegularExpressions.Match match in regex.Matches(content))
             {
                 string textureName = match.Value;
@@ -161,7 +159,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                     File.Copy(sourceTex, destTex, true);
                 }
             }
-            
+
             _ = LoadVisualizersAsync();
         }
         catch { }
@@ -198,7 +196,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                 if (!File.Exists(newPath))
                 {
                     File.Move(fileVm.Path, newPath);
-                    
+
                     if (SelectedVisualizerPath == fileVm.Path)
                     {
                         SelectedVisualizerPath = newPath;
