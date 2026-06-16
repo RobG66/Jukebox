@@ -52,7 +52,7 @@
                                   Classes="transparentbutton"
                                   Width="40" Height="40"
                                   ToolTip.Tip="Equalizer">
-                        <TextBlock Text="🎚️" FontSize="18" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        <TextBlock Text="🎚️" FontSize="{DynamicResource GlobalHeaderFontSize}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     </Button>
                 </StackPanel>
 

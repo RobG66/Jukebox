@@ -81,18 +81,37 @@ public partial class JukeboxControl : UserControl
         }
     }
 
+    private JukeboxViewModel? _currentViewModel;
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (DataContext is JukeboxViewModel vm)
+        if (_currentViewModel != null)
         {
-            vm.PcmDataAvailable += (s, buffer) => ProjectMDisplay.FeedPcm(buffer);
-            vm.VisualizerViewModel.PropertyChanged += (s, args) =>
-            {
-                if (args.PropertyName == nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath) && !string.IsNullOrEmpty(vm.VisualizerViewModel.SelectedVisualizerPath))
-                {
-                    ProjectMDisplay.LoadPreset(vm.VisualizerViewModel.SelectedVisualizerPath);
-                }
-            };
+            _currentViewModel.PcmDataAvailable -= OnPcmDataAvailable;
+            _currentViewModel.VisualizerViewModel.PropertyChanged -= OnVisualizerPropertyChanged;
+        }
+
+        _currentViewModel = DataContext as JukeboxViewModel;
+
+        if (_currentViewModel != null)
+        {
+            _currentViewModel.PcmDataAvailable += OnPcmDataAvailable;
+            _currentViewModel.VisualizerViewModel.PropertyChanged += OnVisualizerPropertyChanged;
+        }
+    }
+
+    private void OnPcmDataAvailable(object? sender, short[] buffer)
+    {
+        ProjectMDisplay.FeedPcm(buffer);
+    }
+
+    private void OnVisualizerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath) && 
+            _currentViewModel != null && 
+            !string.IsNullOrEmpty(_currentViewModel.VisualizerViewModel.SelectedVisualizerPath))
+        {
+            ProjectMDisplay.LoadPreset(_currentViewModel.VisualizerViewModel.SelectedVisualizerPath);
         }
     }
 
@@ -119,7 +138,7 @@ public partial class JukeboxControl : UserControl
             var paths = files.Select(f => f.TryGetLocalPath()).Where(p => !string.IsNullOrEmpty(p)).ToList();
             if (paths.Count > 0)
             {
-                await ProcessAndAddFilesAsync(paths!, vm);
+                await vm.PlaylistViewModel.ProcessAndAddFilesAsync(paths!, vm.NoRecurse);
             }
         }
     }
@@ -131,88 +150,17 @@ public partial class JukeboxControl : UserControl
 
         var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Select Media Folder",
-            AllowMultiple = false
+            Title = "Select Folder to Add"
         });
 
         if (folders != null && folders.Count > 0 && DataContext is JukeboxViewModel vm)
         {
             var folderPath = folders[0].TryGetLocalPath();
-            if (string.IsNullOrEmpty(folderPath)) return;
-
-            var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) 
-            { 
-                ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma" 
-            };
-
-            var paths = await Task.Run(() => 
+            if (!string.IsNullOrEmpty(folderPath))
             {
-                try
-                {
-                    return Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
-                                    .Where(file => supportedExtensions.Contains(Path.GetExtension(file)))
-                                    .ToList();
-                }
-                catch
-                {
-                    return new List<string>();
-                }
-            });
-
-            if (paths.Count > 0)
-            {
-                await ProcessAndAddFilesAsync(paths, vm);
+                await vm.PlaylistViewModel.ProcessAndAddFilesAsync(new List<string> { folderPath }, vm.NoRecurse);
             }
         }
-    }
-
-    private async Task ProcessAndAddFilesAsync(List<string> filePaths, JukeboxViewModel vm)
-    {
-        var tracks = await Task.Run(() =>
-        {
-            var results = new List<JukeboxTrack>();
-            foreach (var path in filePaths)
-            {
-                try
-                {
-                    using var tfile = TagLib.File.Create(path);
-                    var title = !string.IsNullOrWhiteSpace(tfile.Tag.Title) 
-                                ? tfile.Tag.Title 
-                                : Path.GetFileNameWithoutExtension(path);
-                    
-                    var duration = tfile.Properties.Duration;
-                    var bitrate = tfile.Properties.AudioBitrate;
-                    
-                    results.Add(new JukeboxTrack
-                    {
-                        DisplayName = title,
-                        Length = $"{(int)duration.TotalMinutes}:{duration.Seconds:D2}",
-                        Bitrate = $"{bitrate} kbps",
-                        FilePath = path
-                    });
-                }
-                catch
-                {
-                    // Fallback if TagLib fails
-                    results.Add(new JukeboxTrack
-                    {
-                        DisplayName = Path.GetFileNameWithoutExtension(path),
-                        Length = "0:00",
-                        Bitrate = "Unknown",
-                        FilePath = path
-                    });
-                }
-            }
-            return results;
-        });
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            foreach (var track in tracks)
-            {
-                vm.PlaylistViewModel.Playlist.Add(track);
-            }
-        });
     }
 
     private void PlaylistDataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)

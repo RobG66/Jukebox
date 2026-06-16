@@ -12,7 +12,7 @@ using Avalonia.Controls;
 
 namespace Jukebox.ViewModels;
 
-public partial class JukeboxVisualizerViewModel : ViewModelBase
+public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 {
     [ObservableProperty] private string? _selectedVisualizerPath;
     
@@ -30,7 +30,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase
         _randomizerTimer.Tick += RandomizerTimer_Tick;
 
         // Restore last visualizer from temp folder if it exists
-        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "temp_preset");
+        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "current_preset");
         if (Directory.Exists(tempDir))
         {
             var existingPresets = Directory.GetFiles(tempDir, "*.milk");
@@ -209,5 +209,10 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase
             }
             catch { }
         }
+    }
+
+    public void Dispose()
+    {
+        _randomizerTimer?.Stop();
     }
 }
