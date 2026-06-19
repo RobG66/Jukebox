@@ -62,14 +62,6 @@
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
 
-                    <!-- Random Button -->
-                    <Button Command="{Binding ToggleRandomCommand}"
-                                  Margin="5,3,15,3"
-                                  Classes="transparentbutton"
-                                  IsEnabled="{Binding PlaylistViewModel.HasMultipleTracks}"
-                                  ToolTip.Tip="Randomize Playback">
-                        <Image Source="avares://Jukebox/Assets/Buttons/random.png" Width="20" Height="20"/>
-                    </Button>
 
                     <Button Command="{Binding PreviousCommand}"
                             IsEnabled="{Binding PlaylistViewModel.HasMultipleTracks}"

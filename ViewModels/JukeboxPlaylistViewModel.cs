@@ -1,6 +1,7 @@
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Jukebox.Models;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -11,110 +12,189 @@ namespace Jukebox.ViewModels;
 
 public partial class JukeboxPlaylistViewModel : ViewModelBase
 {
-    public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
+    private int _playlistVersion = 0;
+    private int _scrollVersion = 0;
+    private int _pendingFirst = 0;
+    private int _pendingLast = 24;
+    private const int TagBatchSize = 5;
+    private const int TagAllThreshold = 100;
 
+    public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
     [ObservableProperty] private bool _hasMultipleTracks = false;
     [ObservableProperty] private string _playlistSummary = "0 Tracks | 0h 0m total";
 
     public JukeboxPlaylistViewModel()
     {
-        Playlist.CollectionChanged += (s, e) =>
-        {
-            HasMultipleTracks = Playlist.Count > 1;
-            UpdatePlaylistSummary();
-        };
+    }
+
+    public event EventHandler? PlaylistCleared;
+
+    public void NotifyVisibleRange(int firstIndex, int lastIndex)
+    {
+        _pendingFirst = firstIndex;
+        _pendingLast = lastIndex;
+        int sv = ++_scrollVersion;
+        _ = TagVisibleRangeAsync(firstIndex, lastIndex, _playlistVersion, sv);
     }
 
     [RelayCommand]
     private void ClearPlaylist()
     {
+        InvalidatePlaylist();
         Playlist.Clear();
+        HasMultipleTracks = false;
+        UpdatePlaylistSummary();
+        PlaylistCleared?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand]
     private void RemoveSelected(System.Collections.IList? selectedItems)
     {
         if (selectedItems == null) return;
-
-        var itemsToRemove = selectedItems.Cast<JukeboxTrack>().ToList();
-        foreach (var item in itemsToRemove)
-        {
+        InvalidatePlaylist();
+        foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
             Playlist.Remove(item);
-        }
+        
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        int sv = ++_scrollVersion;
+        _ = TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv);
     }
 
     public async Task ProcessAndAddFilesAsync(List<string> paths, bool noRecurse = false)
     {
-        var filesToProcess = new List<string>();
+        InvalidatePlaylist();
+        int version = _playlistVersion;
 
+        var filePaths = await Task.Run(() => DiscoverFiles(paths, noRecurse));
+
+        if (_playlistVersion != version) return;
+
+        foreach (var path in filePaths)
+        {
+            Playlist.Add(new JukeboxTrack
+            {
+                DisplayName = Path.GetFileNameWithoutExtension(path),
+                FilePath = path
+            });
+        }
+
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        int sv = ++_scrollVersion;
+        _ = TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv);
+    }
+
+    private async Task TagVisibleRangeAsync(int first, int last, int version, int scrollVersion)
+    {
+        if (Playlist.Count <= TagAllThreshold)
+        {
+            first = 0;
+            last = Playlist.Count - 1;
+        }
+        else
+        {
+            first = Math.Max(0, first);
+        }
+
+        for (int batchStart = first; batchStart <= last; batchStart += TagBatchSize)
+        {
+            if (_playlistVersion != version) return;
+            if (_scrollVersion != scrollVersion) return;
+
+            int batchEnd = Math.Min(batchStart + TagBatchSize - 1, Math.Min(last, Playlist.Count - 1));
+
+            var toTag = new List<(int index, JukeboxTrack track)>();
+            for (int i = batchStart; i <= batchEnd; i++)
+            {
+                if (i < Playlist.Count && !Playlist[i].IsTagged)
+                    toTag.Add((i, Playlist[i]));
+            }
+
+            if (toTag.Count == 0) continue;
+
+            // Mark as tagged immediately to prevent concurrent calls from processing the same tracks
+            foreach (var (_, track) in toTag)
+                track.IsTagged = true;
+
+            var results = await Task.Run(() =>
+                toTag.Select(t => (t.index, t.track, tags: ReadTags(t.track.FilePath))).ToList()
+            );
+
+            // Only _playlistVersion gates the write-back — scroll position is irrelevant
+            // to whether the tags themselves are valid. Always commit completed reads.
+            if (_playlistVersion != version) return;
+
+            foreach (var (index, track, tags) in results)
+            {
+                if (index >= Playlist.Count || Playlist[index] != track) continue;
+                track.DisplayName = tags.title;
+                track.Length = tags.length;
+                track.Bitrate = tags.bitrate;
+            }
+        }
+
+        if (_playlistVersion == version && _scrollVersion == scrollVersion)
+            UpdatePlaylistSummary();
+    }
+
+    private void InvalidatePlaylist()
+    {
+        _playlistVersion++;
+        _scrollVersion++;
+    }
+
+    private static List<string> DiscoverFiles(List<string> paths, bool noRecurse)
+    {
+        var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma",
+            ".mp4", ".mkv", ".avi", ".webm"
+        };
+
+        var files = new List<string>();
         foreach (var path in paths)
         {
             if (Directory.Exists(path))
             {
-                var supportedExtensions = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
-                {
-                    ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma", ".mp4", ".mkv", ".avi", ".webm"
-                };
-
                 try
                 {
-                    var dirFiles = Directory.GetFiles(path, "*.*", noRecurse ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories)
-                                            .Where(file => supportedExtensions.Contains(Path.GetExtension(file)));
-                    filesToProcess.AddRange(dirFiles);
+                    files.AddRange(
+                        Directory.GetFiles(path, "*.*",
+                            noRecurse ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories)
+                        .Where(f => supported.Contains(Path.GetExtension(f)))
+                    );
                 }
                 catch { }
             }
             else if (File.Exists(path))
             {
-                filesToProcess.Add(path);
+                files.Add(path);
             }
         }
+        return files;
+    }
 
-        var tracks = await Task.Run(() =>
+    private static (string title, string length, string bitrate) ReadTags(string filePath)
+    {
+        try
         {
-            var results = new List<JukeboxTrack>();
-            foreach (var path in filesToProcess)
-            {
-                try
-                {
-                    using var tfile = TagLib.File.Create(path);
-                    var title = !string.IsNullOrWhiteSpace(tfile.Tag.Title)
-                                ? tfile.Tag.Title
-                                : Path.GetFileNameWithoutExtension(path);
-
-                    var duration = tfile.Properties.Duration;
-                    var bitrate = tfile.Properties.AudioBitrate;
-
-                    results.Add(new JukeboxTrack
-                    {
-                        DisplayName = title,
-                        Length = $"{(int)duration.TotalMinutes}:{duration.Seconds:D2}",
-                        Bitrate = $"{bitrate} kbps",
-                        FilePath = path
-                    });
-                }
-                catch
-                {
-                    // Fallback if TagLib fails
-                    results.Add(new JukeboxTrack
-                    {
-                        DisplayName = Path.GetFileNameWithoutExtension(path),
-                        Length = "0:00",
-                        Bitrate = "Unknown",
-                        FilePath = path
-                    });
-                }
-            }
-            return results;
-        });
-
-        Dispatcher.UIThread.Post(() =>
+            using var tfile = TagLib.File.Create(filePath);
+            var title = !string.IsNullOrWhiteSpace(tfile.Tag.Title)
+                ? tfile.Tag.Title
+                : Path.GetFileNameWithoutExtension(filePath);
+            var duration = tfile.Properties.Duration;
+            var bitrate = tfile.Properties.AudioBitrate;
+            return (title,
+                    $"{(int)duration.TotalMinutes}:{duration.Seconds:D2}",
+                    $"{bitrate} kbps");
+        }
+        catch
         {
-            foreach (var track in tracks)
-            {
-                Playlist.Add(track);
-            }
-        });
+            return (Path.GetFileNameWithoutExtension(filePath), "0:00", "Unknown");
+        }
     }
 
     private void UpdatePlaylistSummary()
@@ -124,10 +204,10 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         foreach (var track in Playlist)
         {
             var parts = track.Length.Split(':');
-            if (parts.Length == 2 && int.TryParse(parts[0], out int m) && int.TryParse(parts[1], out int s))
-            {
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0], out int m) &&
+                int.TryParse(parts[1], out int s))
                 totalSeconds += m * 60 + s;
-            }
         }
         int hours = totalSeconds / 3600;
         int minutes = (totalSeconds % 3600) / 60;

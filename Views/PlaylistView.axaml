@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="680"
+             x:Class="Jukebox.Views.PlaylistView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <Grid Margin="5">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                <Button Classes="transparentbutton" Width="30" Height="30"
+                        ToolTip.Tip="Add Files"
+                        Click="AddFiles_Click">
+                    <TextBlock Text="➕" FontSize="16"
+                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                </Button>
+                <Button Classes="transparentbutton" Width="30" Height="30"
+                        ToolTip.Tip="Add Folder"
+                        Click="AddFolder_Click">
+                    <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
+                </Button>
+                <Button Classes="transparentbutton" Width="30" Height="30"
+                        ToolTip.Tip="Remove Selected"
+                        Command="{Binding PlaylistViewModel.RemoveSelectedCommand}"
+                        CommandParameter="{Binding #PlaylistDataGrid.SelectedItems}">
+                    <Image Source="avares://Jukebox/Assets/Buttons/remove.png" Width="20" Height="20"/>
+                </Button>
+                <Button Classes="transparentbutton" Width="30" Height="30"
+                        ToolTip.Tip="Clear Playlist"
+                        Command="{Binding PlaylistViewModel.ClearPlaylistCommand}">
+                    <Image Source="avares://Jukebox/Assets/Buttons/x.png" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+
+            <TextBox PlaceholderText="Search Playlist..." Margin="5,5,5,0"/>
+        </StackPanel>
+
+        <!-- Playlist DataGrid -->
+        <DataGrid x:Name="PlaylistDataGrid" Grid.Row="1"
+                  ItemsSource="{Binding PlaylistViewModel.Playlist}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Extended"
+                  HeadersVisibility="Column"
+                  CanUserReorderColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal"
+                  RowHeight="32"
+                  DoubleTapped="PlaylistDataGrid_DoubleTapped">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Title"   Binding="{Binding DisplayName}" Width="5*"/>
+                <DataGridTextColumn Header="Length"  Binding="{Binding Length}"      Width="2*"/>
+                <DataGridTextColumn Header="Bitrate" Binding="{Binding Bitrate}"     Width="2*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Bottom Controls & Summary -->
+        <Grid Grid.Row="2" Margin="5,5,5,5">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                              ToolTip.Tip="Repeat Current Track"
+                              IsChecked="{Binding IsRepeatEnabled}">
+                    <PathIcon Data="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1.5v1.27l1.5-.96V15h1.5z" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                              ToolTip.Tip="Loop Playlist"
+                              IsChecked="{Binding IsLoopEnabled}">
+                    <PathIcon Data="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                              ToolTip.Tip="Random / Shuffle"
+                              IsChecked="{Binding IsRandomPlayback}">
+                    <PathIcon Data="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                              ToolTip.Tip="Show Current Track (OSD)"
+                              IsChecked="{Binding IsShowPlayingEnabled}">
+                    <PathIcon Data="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" Width="16" Height="16"/>
+                </ToggleButton>
+            </StackPanel>
+            
+            <TextBlock Text="{Binding PlaylistViewModel.PlaylistSummary}"
+                       Foreground="{DynamicResource SubtleTextBrush}"
+                       FontSize="11"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+        </Grid>
+    </Grid>
+
+</UserControl>

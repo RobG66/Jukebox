@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="680"
+             x:Class="Jukebox.Views.VisualizerPickerView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header + Randomizer -->
+        <StackPanel Grid.Row="0" Margin="10,0,10,10" Spacing="5">
+            <TextBlock Text="🎇 Visualizations"
+                       Foreground="White" FontSize="20" FontWeight="Bold"/>
+            <TextBlock Text="Double click to apply selected visualization"
+                       Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+
+            <Border Background="#22FFFFFF" CornerRadius="4" Padding="10" Margin="0,5,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <ToggleSwitch IsChecked="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}"
+                                  OnContent="Random" OffContent="Random"
+                                  FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <StackPanel Orientation="Horizontal" Spacing="10"
+                                IsEnabled="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}">
+                        <TextBlock Text="Speed:" VerticalAlignment="Center"
+                                   Foreground="#AAAAAA" FontSize="12"/>
+                        <Slider Minimum="10" Maximum="60"
+                                Value="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds}"
+                                Width="80" VerticalAlignment="Center"
+                                TickPlacement="BottomRight" TickFrequency="10"/>
+                        <TextBlock Text="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds, StringFormat=\{0\}s}"
+                                   VerticalAlignment="Center" Foreground="White"
+                                   FontSize="12" Width="30"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- Visualizer Tree -->
+        <TreeDataGrid x:Name="VisualizerTreeDataGrid" Grid.Row="1"
+                      Source="{Binding VisualizerViewModel.VisualizerSource}"
+                      FontSize="12"
+                      DoubleTapped="VisualizerTreeDataGrid_DoubleTapped">
+            <TreeDataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Add to Favorites"
+                              Command="{Binding VisualizerViewModel.AddToFavoritesCommand}"
+                              CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}"/>
+                    <MenuItem Header="Rename"
+                              Command="{Binding VisualizerViewModel.RenameVisualizerCommand}"
+                              CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}"/>
+                    <MenuItem Header="Remove from Favorites"
+                              Command="{Binding VisualizerViewModel.RemoveFromFavoritesCommand}"
+                              CommandParameter="{Binding #VisualizerTreeDataGrid.RowSelection.SelectedItems[0]}"/>
+                </ContextMenu>
+            </TreeDataGrid.ContextMenu>
+        </TreeDataGrid>
+    </Grid>
+
+</UserControl>
