@@ -14,7 +14,7 @@
     </Design.DataContext>
 
     <Border Background="#222222" Margin="10" CornerRadius="8" ClipToBounds="True">
-        <Grid>
+        <Grid x:Name="ContentGrid">
 
             <!-- Empty state -->
             <TextBlock Text="No Visualizer Selected"
@@ -44,7 +44,9 @@
                            Opacity="{Binding ShowPlayingOpacity}"
                            Foreground="White"
                            FontSize="24"
-                           FontWeight="SemiBold" />
+                           FontWeight="SemiBold"
+                           MaxWidth="{Binding #ContentGrid.Bounds.Width}"
+                           TextTrimming="CharacterEllipsis" />
             </Popup>
 
             <!-- EQ slide-up overlay -->

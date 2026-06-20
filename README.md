@@ -9,7 +9,7 @@ This application provides a focused, customizable media playback experience desi
 ## Features
 
 * **Audio & Video Playback:** Powered by LibVLCSharp for broad format compatibility.
-* **Command-Line Configuration:** Heavily configurable at launch. Set the default theme, startup volume, default files, UI visibility, and lock the application into kiosk mode directly from the CLI.
+* **Command-Line Configuration:** Heavily configurable at launch. Set the default theme, startup volume, default files, and UI visibility directly from the CLI.
 * **Audio Visualizations:** Supports OpenGL-accelerated audio visualizations (using the companion `Jukebox-Visualizations` library).
 * **Playlist Management:** Supports shuffling, looping, and loading entire directories dynamically.
 
@@ -25,7 +25,6 @@ The Jukebox accepts the following switches on startup:
 * `-volume [0-100]`: Define the initial startup volume.
 * `-stayontop`: Force the window to remain always-on-top.
 * `-fullscreen` or `-minimized`: Set the initial window state.
-* `-kiosk`: Launch the application in a locked-down kiosk mode (hides close buttons, window chrome, and optionally borders).
 * `-title [string]`: Override the default application window title.
 * `-file [path]`: Provide a direct file or directory path to automatically load into the playlist and begin playing.
 * `-forcevisualizer`: Force the visualizer to render even if the media type is not strictly detected as audio.
@@ -42,12 +41,17 @@ To do this, reference `Jukebox.dll` in your project and embed the `JukeboxContro
         xmlns:jukebox="clr-namespace:Jukebox.Views;assembly=Jukebox">
         
     <!-- Embed the Jukebox player anywhere in your UI -->
-    <jukebox:JukeboxControl DataContext="{Binding MyJukeboxViewModel}" />
+    <jukebox:JukeboxControl DataContext="{Binding MyJukeboxViewModel}" 
+                            PlaylistLogo="C:\path\to\logo.png"
+                            IsRandomPlayback="True"
+                            IsLoopEnabled="True"
+                            InitialVolume="50"
+                            InitialFile="C:\Music\MyPlaylist.m3u" />
     
 </Window>
 ```
 
-*Note: When embedded as a UserControl, command-line window properties (like `-fullscreen` or `-stayontop`) are ignored. Your host application is responsible for managing the window state.*
+*Note: When embedded as a UserControl, command-line window properties (like `-fullscreen` or `-stayontop`) are ignored. Your host application is responsible for managing the window state. You can pass embedded player parameters directly on the control as shown above.*
 
 ## Dependencies
 

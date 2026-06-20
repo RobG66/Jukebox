@@ -20,16 +20,19 @@
 
         <!-- Toolbar -->
         <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
+            <Image Source="{Binding PlaylistLogoBitmap}" MaxHeight="120" HorizontalAlignment="Center" Margin="0,0,0,5"
+                   IsVisible="{Binding PlaylistLogoBitmap, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                   
             <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
                 <Button Classes="transparentbutton" Width="30" Height="30"
                         ToolTip.Tip="Add Files"
-                        Click="AddFiles_Click">
+                        Command="{Binding AddFilesCommand}">
                     <TextBlock Text="➕" FontSize="16"
                                VerticalAlignment="Center" HorizontalAlignment="Center"/>
                 </Button>
                 <Button Classes="transparentbutton" Width="30" Height="30"
                         ToolTip.Tip="Add Folder"
-                        Click="AddFolder_Click">
+                        Command="{Binding AddFolderCommand}">
                     <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
                 </Button>
                 <Button Classes="transparentbutton" Width="30" Height="30"
@@ -63,7 +66,7 @@
                   DoubleTapped="PlaylistDataGrid_DoubleTapped">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Title"   Binding="{Binding DisplayName}" Width="5*"/>
-                <DataGridTextColumn Header="Length"  Binding="{Binding Length}"      Width="2*"/>
+                <DataGridTextColumn Header="Length"  Binding="{Binding DisplayLength}"      Width="2*"/>
                 <DataGridTextColumn Header="Bitrate" Binding="{Binding Bitrate}"     Width="2*"/>
             </DataGrid.Columns>
         </DataGrid>

@@ -36,8 +36,6 @@ public partial class JukeboxViewModel
     private readonly HashSet<int> _playedIndices = new();
     private readonly Random       _random        = new();
 
-    private static readonly string[] _audioExtensions =
-        { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma" };
     #endregion
 
     #region Observable Properties
@@ -81,7 +79,7 @@ public partial class JukeboxViewModel
                 if (_bassStream != 0)
                     Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, value / 100.0);
                 if (MediaPlayer != null)
-                    try { MediaPlayer.Volume = (int)value; } catch { }
+                    try { MediaPlayer.Volume = (int)value; } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"VLC Volume Error: {ex.Message}"); }
             }
         }
     }
@@ -113,7 +111,7 @@ public partial class JukeboxViewModel
             };
 
             _libVLC = new LibVLC(options);
-            _libVLC.Log += (sender, e) => System.Diagnostics.Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [VLC] {e.Message}");
+
             var newPlayer = new MediaPlayer(_libVLC);
             newPlayer.TimeChanged     += MediaPlayer_TimeChanged;
             newPlayer.PositionChanged += MediaPlayer_PositionChanged;
@@ -129,7 +127,7 @@ public partial class JukeboxViewModel
                 IsVlcReady         = true;
             });
         }
-        catch (Exception) { /* LibVLC failed to load */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"LibVLC Initialization Error: {ex.Message}"); }
     });
     #endregion
 
@@ -355,14 +353,8 @@ public partial class JukeboxViewModel
 
         if (!string.IsNullOrEmpty(value.FilePath))
         {
-            var parts = value.Length.Split(':');
-            if (parts.Length == 2 &&
-                int.TryParse(parts[0], out int m) &&
-                int.TryParse(parts[1], out int s))
-            {
-                PlaybackLength = (m * 60 + s) * 1000;
-                TotalTimeString = value.Length;
-            }
+            PlaybackLength = value.Length.TotalMilliseconds;
+            TotalTimeString = value.DisplayLength;
         }
     }
     #endregion
@@ -379,7 +371,7 @@ public partial class JukeboxViewModel
         }
 
         int generation = Interlocked.Increment(ref _playGeneration);
-        bool isAudio   = _audioExtensions.Any(ext =>
+        bool isAudio   = Constants.AudioExtensions.Any(ext =>
             CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
         _isAudioMode         = isAudio;
@@ -513,8 +505,12 @@ public partial class JukeboxViewModel
     #region Dispose
     private void DisposePlayback()
     {
-        _bassTimer?.Stop();
-        _bassTimer = null;
+        if (_bassTimer != null)
+        {
+            _bassTimer.Tick -= BassTimer_Tick;
+            _bassTimer.Stop();
+            _bassTimer = null;
+        }
 
         if (_bassStream != 0)
         {

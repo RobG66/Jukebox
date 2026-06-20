@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Jukebox.Models;
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,7 +16,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public bool    ForceVisualizer { get; set; }
     public bool    NoRecurse       { get; set; }
     public bool    StayOnTop       { get; set; }
-    public bool    IsKioskMode     { get; set; }
     public int     ShowPlayingTimeout { get; set; } = 10;
     #endregion
 
@@ -24,6 +24,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public JukeboxEqViewModel        EqViewModel        { get; } = new();
     public JukeboxVisualizerViewModel VisualizerViewModel { get; } = new();
     #endregion
+
+    public Jukebox.Services.IStorageService? StorageService { get; set; }
 
     #region UI State
     [ObservableProperty] private bool    _isPlaylistVisible;
@@ -35,6 +37,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool    _hasMultipleTracks = true;
     [ObservableProperty] private bool    _isAutoHideEnabled = false;
     [ObservableProperty] private string? _playlistLogo;
+    [ObservableProperty] private Avalonia.Media.Imaging.Bitmap? _playlistLogoBitmap;
     [ObservableProperty] private double  _controlBarHeight  = 65;
     #endregion
 
@@ -49,10 +52,12 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public JukeboxViewModel()
     {
         Volume = InitialVolume;
-        PlaylistViewModel.PlaylistCleared += (s, e) => Stop();
+        PlaylistViewModel.PlaylistCleared += OnPlaylistCleared;
         InitializePlayback();
         _ = VisualizerViewModel.LoadVisualizersAsync();
     }
+
+    private void OnPlaylistCleared(object? sender, EventArgs e) => Stop();
 
     partial void OnIsPlaylistVisibleChanged(bool value)
     {
@@ -62,6 +67,25 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     partial void OnIsPickerVisibleChanged(bool value)
     {
         if (value) IsPlaylistVisible = false;
+    }
+
+    partial void OnPlaylistLogoChanged(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || !System.IO.File.Exists(value))
+        {
+            PlaylistLogoBitmap = null;
+            return;
+        }
+
+        try
+        {
+            PlaylistLogoBitmap = new Avalonia.Media.Imaging.Bitmap(value);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load playlist logo: {ex.Message}");
+            PlaylistLogoBitmap = null;
+        }
     }
 
     partial void OnIsShowPlayingEnabledChanged(bool value)
@@ -121,14 +145,37 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     
     [RelayCommand] private void ToggleAutoHide()  => IsAutoHideEnabled  = !IsAutoHideEnabled;
 
-    [RelayCommand] private void PlaySelectedTrack() { }
-    [RelayCommand] private void ApplyPreset()       { }
-    [RelayCommand] private void ToggleMiniPlayer()  { }
-    [RelayCommand] private void ToggleVisualizer()  { }
+    [RelayCommand]
+    private async Task AddFilesAsync()
+    {
+        if (StorageService == null) return;
+        var files = await StorageService.OpenFileDialogAsync(
+            "Select Media Files",
+            allowMultiple: true,
+            audioExtensions: Constants.AudioExtensions,
+            videoExtensions: Constants.VideoExtensions
+        );
+        if (files != null && files.Count > 0)
+        {
+            await PlaylistViewModel.ProcessAndAddFilesAsync(files, NoRecurse);
+        }
+    }
+
+    [RelayCommand]
+    private async Task AddFolderAsync()
+    {
+        if (StorageService == null) return;
+        var folderPath = await StorageService.OpenFolderDialogAsync("Select Folder to Add");
+        if (!string.IsNullOrEmpty(folderPath))
+        {
+            await PlaylistViewModel.ProcessAndAddFilesAsync(new List<string> { folderPath }, NoRecurse);
+        }
+    }
     #endregion
 
     public void Dispose()
     {
+        PlaylistViewModel.PlaylistCleared -= OnPlaylistCleared;
         _showPlayingCts?.Cancel();
         _showPlayingCts?.Dispose();
 

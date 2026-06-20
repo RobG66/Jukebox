@@ -25,6 +25,9 @@ public partial class App : Application
 
             var vm = new JukeboxViewModel();
             var window = new JukeboxView { DataContext = vm };
+            
+            var storageService = new Jukebox.Services.StorageService(window);
+            vm.StorageService = storageService;
 
             // Parse Command Line Arguments
             if (desktop.Args != null)
@@ -51,7 +54,6 @@ public partial class App : Application
                         Console.WriteLine(" -file [path]            : Auto-load file or directory.");
                         Console.WriteLine(" -forcevisualizer        : Force visualizer for non-audio media.");
                         Console.WriteLine(" -loop                   : Loop playlist continuously.");
-                        Console.WriteLine(" -kiosk                  : Launch locked-down kiosk mode.");
                         Console.WriteLine(" -title [text]           : Override the window title.\n");
 
                         Environment.Exit(0);
@@ -86,8 +88,6 @@ public partial class App : Application
                         vm.IsLoopEnabled = true;
                     else if (arg == "-minimized")
                         window.WindowState = Avalonia.Controls.WindowState.Minimized;
-                    else if (arg == "-kiosk")
-                        vm.IsKioskMode = true;
                     else if (arg == "-title" && i + 1 < desktop.Args.Length)
                         window.Title = desktop.Args[++i];
                 }

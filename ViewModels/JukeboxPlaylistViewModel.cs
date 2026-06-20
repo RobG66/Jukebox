@@ -148,11 +148,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private static List<string> DiscoverFiles(List<string> paths, bool noRecurse)
     {
-        var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma",
-            ".mp4", ".mkv", ".avi", ".webm"
-        };
+
 
         var files = new List<string>();
         foreach (var path in paths)
@@ -161,23 +157,23 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             {
                 try
                 {
-                    files.AddRange(
-                        Directory.GetFiles(path, "*.*",
-                            noRecurse ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories)
-                        .Where(f => supported.Contains(Path.GetExtension(f)))
+                    files.AddRange(Directory.EnumerateFiles(path, "*.*",
+                        noRecurse ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories)
+                        .Where(f => Constants.SupportedMediaExtensions.Contains(Path.GetExtension(f)))
                     );
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"DiscoverFiles Error ({path}): {ex.Message}"); }
             }
             else if (File.Exists(path))
             {
-                files.Add(path);
+                if (Constants.SupportedMediaExtensions.Contains(Path.GetExtension(path)))
+                    files.Add(path);
             }
         }
         return files;
     }
 
-    private static (string title, string length, string bitrate) ReadTags(string filePath)
+    private static (string title, TimeSpan length, string bitrate) ReadTags(string filePath)
     {
         try
         {
@@ -187,30 +183,25 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                 : Path.GetFileNameWithoutExtension(filePath);
             var duration = tfile.Properties.Duration;
             var bitrate = tfile.Properties.AudioBitrate;
-            return (title,
-                    $"{(int)duration.TotalMinutes}:{duration.Seconds:D2}",
-                    $"{bitrate} kbps");
+            return (title, duration, $"{bitrate} kbps");
         }
-        catch
+        catch (Exception ex)
         {
-            return (Path.GetFileNameWithoutExtension(filePath), "0:00", "Unknown");
+            System.Diagnostics.Debug.WriteLine($"TagLib Read Error ({filePath}): {ex.Message}");
+            return (Path.GetFileNameWithoutExtension(filePath), TimeSpan.Zero, "Unknown");
         }
     }
 
     private void UpdatePlaylistSummary()
     {
         int count = Playlist.Count;
-        int totalSeconds = 0;
+        double totalSeconds = 0;
         foreach (var track in Playlist)
         {
-            var parts = track.Length.Split(':');
-            if (parts.Length == 2 &&
-                int.TryParse(parts[0], out int m) &&
-                int.TryParse(parts[1], out int s))
-                totalSeconds += m * 60 + s;
+            totalSeconds += track.Length.TotalSeconds;
         }
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds % 3600) / 60;
+        int hours = (int)totalSeconds / 3600;
+        int minutes = ((int)totalSeconds % 3600) / 60;
         PlaylistSummary = $"{count} Track{(count != 1 ? "s" : "")} | {hours}h {minutes}m total";
     }
 }

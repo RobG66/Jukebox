@@ -71,51 +71,7 @@ public partial class PlaylistView : UserControl
         vm.PlaylistViewModel.NotifyVisibleRange(first, last);
     }
 
-    private async void AddFiles_Click(object? sender, RoutedEventArgs e)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null || DataContext is not JukeboxViewModel vm) return;
 
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select Media Files",
-            AllowMultiple = true,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("Media Files")
-                {
-                    Patterns = new[] { "*.mp3", "*.flac", "*.wav", "*.ogg", "*.m4a", "*.wma",
-                                       "*.mp4", "*.mkv", "*.avi", "*.webm" }
-                }
-            }
-        });
-
-        if (files == null || files.Count == 0) return;
-
-        var paths = files.Select(f => f.TryGetLocalPath())
-                         .Where(p => !string.IsNullOrEmpty(p))
-                         .ToList();
-
-        if (paths.Count > 0)
-            await vm.PlaylistViewModel.ProcessAndAddFilesAsync(paths!, vm.NoRecurse);
-    }
-
-    private async void AddFolder_Click(object? sender, RoutedEventArgs e)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null || DataContext is not JukeboxViewModel vm) return;
-
-        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Select Folder to Add"
-        });
-
-        if (folders == null || folders.Count == 0) return;
-
-        var folderPath = folders[0].TryGetLocalPath();
-        if (!string.IsNullOrEmpty(folderPath))
-            await vm.PlaylistViewModel.ProcessAndAddFilesAsync(new List<string> { folderPath }, vm.NoRecurse);
-    }
 
     private void PlaylistDataGrid_DoubleTapped(object? sender, TappedEventArgs e)
     {

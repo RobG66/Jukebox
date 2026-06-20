@@ -19,11 +19,7 @@
     </None>
   </ItemGroup>
   
-  <ItemGroup>
-    <None Include="libvlc\win-x64\plugins\plugins.dat">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.4" />

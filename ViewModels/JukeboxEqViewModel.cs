@@ -97,18 +97,18 @@ public partial class JukeboxEqViewModel : ViewModelBase
 
             var settings = new { Preset = SelectedEqPreset, Gains = gains };
             var json = JsonSerializer.Serialize(settings);
-            var settingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Jukebox");
+            var settingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Constants.SettingsDirectoryName);
             Directory.CreateDirectory(settingsDir);
-            File.WriteAllText(Path.Combine(settingsDir, "EqSettings.json"), json);
+            File.WriteAllText(Path.Combine(settingsDir, Constants.EqSettingsFileName), json);
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Eq Save Error: {ex.Message}"); }
     }
 
     private void LoadEqSettings()
     {
         try
         {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Jukebox", "EqSettings.json");
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Constants.SettingsDirectoryName, Constants.EqSettingsFileName);
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
@@ -135,6 +135,6 @@ public partial class JukeboxEqViewModel : ViewModelBase
                 }
             }
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Eq Load Error: {ex.Message}"); }
     }
 }
