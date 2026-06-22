@@ -13,7 +13,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     #region Startup Properties
     public int     InitialVolume   { get; set; } = 100;
     public string? InitialFile     { get; set; }
-    public bool    ForceVisualizer { get; set; }
     public bool    NoRecurse       { get; set; }
     public bool    StayOnTop       { get; set; }
     public int     ShowPlayingTimeout { get; set; } = 10;
@@ -53,11 +52,21 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     {
         Volume = InitialVolume;
         PlaylistViewModel.PlaylistCleared += OnPlaylistCleared;
-        InitializePlayback();
-        _ = VisualizerViewModel.LoadVisualizersAsync();
+        PlaylistViewModel.Playlist.CollectionChanged += (s, e) => 
+        {
+            if (!CanPause && !CanStop) // Stopped
+            {
+                CanPlay = PlaylistViewModel.Playlist.Count > 0;
+            }
+        };
     }
 
-    private void OnPlaylistCleared(object? sender, EventArgs e) => Stop();
+    private void OnPlaylistCleared(object? sender, EventArgs e)
+    {
+        Stop();
+        CurrentTrack = new JukeboxTrack { DisplayName = "GUI Design Mode - No Track Loaded" };
+        CanPlay = false;
+    }
 
     partial void OnIsPlaylistVisibleChanged(bool value)
     {
@@ -176,9 +185,12 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         PlaylistViewModel.PlaylistCleared -= OnPlaylistCleared;
-        _showPlayingCts?.Cancel();
-        _showPlayingCts?.Dispose();
-
+        if (_showPlayingCts != null)
+        {
+            try { _showPlayingCts.Cancel(); } catch { }
+            _showPlayingCts.Dispose();
+            _showPlayingCts = null;
+        }
         VisualizerViewModel?.Dispose();
 
         DisposePlayback();

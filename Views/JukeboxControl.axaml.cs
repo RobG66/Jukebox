@@ -27,9 +27,6 @@ public partial class JukeboxControl : UserControl
 
     public static readonly StyledProperty<bool> IsAutoHideEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsAutoHideEnabled));
     public bool IsAutoHideEnabled { get => GetValue(IsAutoHideEnabledProperty); set => SetValue(IsAutoHideEnabledProperty, value); }
-
-    public static readonly StyledProperty<bool> ForceVisualizerProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(ForceVisualizer));
-    public bool ForceVisualizer { get => GetValue(ForceVisualizerProperty); set => SetValue(ForceVisualizerProperty, value); }
     #endregion
 
     private readonly Avalonia.Threading.DispatcherTimer _inactivityTimer;
@@ -98,7 +95,6 @@ public partial class JukeboxControl : UserControl
             if (this.IsSet(IsRandomPlaybackProperty)) newVm.IsRandomPlayback = IsRandomPlayback;
             if (this.IsSet(IsLoopEnabledProperty)) newVm.IsLoopEnabled = IsLoopEnabled;
             if (this.IsSet(IsAutoHideEnabledProperty)) newVm.IsAutoHideEnabled = IsAutoHideEnabled;
-            if (this.IsSet(ForceVisualizerProperty)) newVm.ForceVisualizer = ForceVisualizer;
         }
         else if (DataContext is JukeboxViewModel vm)
         {
@@ -108,7 +104,6 @@ public partial class JukeboxControl : UserControl
             else if (change.Property == IsRandomPlaybackProperty) vm.IsRandomPlayback = IsRandomPlayback;
             else if (change.Property == IsLoopEnabledProperty) vm.IsLoopEnabled = IsLoopEnabled;
             else if (change.Property == IsAutoHideEnabledProperty) vm.IsAutoHideEnabled = IsAutoHideEnabled;
-            else if (change.Property == ForceVisualizerProperty) vm.ForceVisualizer = ForceVisualizer;
         }
     }
 }

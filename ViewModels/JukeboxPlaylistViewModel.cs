@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using Avalonia.Collections;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -20,11 +21,31 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     private const int TagAllThreshold = 100;
 
     public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
+    public DataGridCollectionView FilteredPlaylist { get; }
+
     [ObservableProperty] private bool _hasMultipleTracks = false;
     [ObservableProperty] private string _playlistSummary = "0 Tracks | 0h 0m total";
+    [ObservableProperty] private string _searchText = "";
 
     public JukeboxPlaylistViewModel()
     {
+        FilteredPlaylist = new DataGridCollectionView(Playlist);
+        FilteredPlaylist.Filter = FilterTrack;
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        FilteredPlaylist.Refresh();
+    }
+
+    private bool FilterTrack(object arg)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return true;
+        if (arg is JukeboxTrack track)
+        {
+            return track.DisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true;
+        }
+        return false;
     }
 
     public event EventHandler? PlaylistCleared;
@@ -133,6 +154,12 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                 track.DisplayName = tags.title;
                 track.Length = tags.length;
                 track.Bitrate = tags.bitrate;
+            }
+            
+            // Refresh filter if tags were updated and search is active
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => FilteredPlaylist.Refresh());
             }
         }
 

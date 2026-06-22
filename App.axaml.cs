@@ -52,7 +52,6 @@ public partial class App : Application
                         Console.WriteLine(" -stayontop              : Force window always-on-top.");
                         Console.WriteLine(" -fullscreen / -minimized: Set initial window state.");
                         Console.WriteLine(" -file [path]            : Auto-load file or directory.");
-                        Console.WriteLine(" -forcevisualizer        : Force visualizer for non-audio media.");
                         Console.WriteLine(" -loop                   : Loop playlist continuously.");
                         Console.WriteLine(" -title [text]           : Override the window title.\n");
 
@@ -82,8 +81,6 @@ public partial class App : Application
                         window.WindowState = Avalonia.Controls.WindowState.FullScreen;
                     else if (arg == "-file" && i + 1 < desktop.Args.Length)
                         vm.InitialFile = desktop.Args[++i];
-                    else if (arg == "-forcevisualizer")
-                        vm.ForceVisualizer = true;
                     else if (arg == "-loop")
                         vm.IsLoopEnabled = true;
                     else if (arg == "-minimized")

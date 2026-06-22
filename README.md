@@ -27,7 +27,6 @@ The Jukebox accepts the following switches on startup:
 * `-fullscreen` or `-minimized`: Set the initial window state.
 * `-title [string]`: Override the default application window title.
 * `-file [path]`: Provide a direct file or directory path to automatically load into the playlist and begin playing.
-* `-forcevisualizer`: Force the visualizer to render even if the media type is not strictly detected as audio.
 
 ## Embedding as a UserControl
 

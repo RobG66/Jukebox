@@ -79,9 +79,8 @@ public partial class PlaylistView : UserControl
             dg.SelectedItem is JukeboxTrack track &&
             DataContext is JukeboxViewModel vm)
         {
-            vm.CurrentTrack = track;
-            if (vm.PlayCommand.CanExecute(null))
-                vm.PlayCommand.Execute(null);
+            if (vm.PlayTrackCommand.CanExecute(track))
+                vm.PlayTrackCommand.Execute(track);
         }
     }
 }

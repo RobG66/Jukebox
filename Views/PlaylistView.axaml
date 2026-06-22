@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:models="using:Jukebox.Models"
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="680"
              x:Class="Jukebox.Views.PlaylistView"
              x:DataType="vm:JukeboxViewModel">
@@ -48,12 +49,12 @@
                 </Button>
             </StackPanel>
 
-            <TextBox PlaceholderText="Search Playlist..." Margin="5,5,5,0"/>
+            <TextBox Text="{Binding PlaylistViewModel.SearchText}" PlaceholderText="Search Playlist..." Margin="5,5,5,0"/>
         </StackPanel>
 
         <!-- Playlist DataGrid -->
         <DataGrid x:Name="PlaylistDataGrid" Grid.Row="1"
-                  ItemsSource="{Binding PlaylistViewModel.Playlist}"
+                  ItemsSource="{Binding PlaylistViewModel.FilteredPlaylist}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   SelectionMode="Extended"
@@ -65,9 +66,9 @@
                   RowHeight="32"
                   DoubleTapped="PlaylistDataGrid_DoubleTapped">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Title"   Binding="{Binding DisplayName}" Width="5*"/>
-                <DataGridTextColumn Header="Length"  Binding="{Binding DisplayLength}"      Width="2*"/>
-                <DataGridTextColumn Header="Bitrate" Binding="{Binding Bitrate}"     Width="2*"/>
+                <DataGridTextColumn Header="Title"   x:DataType="models:JukeboxTrack" Binding="{Binding DisplayName}" Width="5*"/>
+                <DataGridTextColumn Header="Length"  x:DataType="models:JukeboxTrack" Binding="{Binding DisplayLength}" Width="2*"/>
+                <DataGridTextColumn Header="Bitrate" x:DataType="models:JukeboxTrack" Binding="{Binding Bitrate}" Width="2*"/>
             </DataGrid.Columns>
         </DataGrid>
 
