@@ -32,7 +32,7 @@
             </SplitView.IsPaneOpen>
 
             <SplitView.Pane>
-                <Border Background="#1A1A1A"
+                <Border Background="{DynamicResource SplitPaneBackground}"
                         BorderBrush="{DynamicResource PanelBorder}"
                         BorderThickness="0,0,1,0">
                     <Grid>

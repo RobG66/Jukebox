@@ -4,12 +4,14 @@ using Avalonia.Markup.Xaml;
 using Jukebox.ViewModels;
 using Jukebox.Views;
 using System;
+using System.Runtime.Versioning;
 
 namespace Jukebox;
 
 public partial class App : Application
 {
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    [SupportedOSPlatform("windows")]
     private static extern bool AttachConsole(int dwProcessId);
 
     public override void Initialize()

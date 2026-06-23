@@ -16,6 +16,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public bool    NoRecurse       { get; set; }
     public bool    StayOnTop       { get; set; }
     public int     ShowPlayingTimeout { get; set; } = 10;
+    public LibVLCSharp.Shared.LibVLC? SharedLibVLC { get; set; }
     #endregion
 
     #region Sub-ViewModels
@@ -33,7 +34,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool    _isLoopEnabled;
     [ObservableProperty] private bool    _isRepeatEnabled   = false;
     [ObservableProperty] private bool    _isRandomPlayback  = false;
-    [ObservableProperty] private bool    _hasMultipleTracks = true;
     [ObservableProperty] private bool    _isAutoHideEnabled = false;
     [ObservableProperty] private string? _playlistLogo;
     [ObservableProperty] private Avalonia.Media.Imaging.Bitmap? _playlistLogoBitmap;
@@ -41,11 +41,13 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     #endregion
 
     #region Show Playing OSD
+    private readonly object _osdLock = new();
     private CancellationTokenSource? _showPlayingCts;
     [ObservableProperty] private bool   _isShowPlayingEnabled = true;
     [ObservableProperty] private string _showPlayingText    = "";
     [ObservableProperty] private bool   _isShowPlayingVisible = false;
     [ObservableProperty] private double _showPlayingOpacity = 0.5;
+    private bool _isDisposed;
     #endregion
 
     public JukeboxViewModel()
@@ -58,6 +60,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
             {
                 CanPlay = PlaylistViewModel.Playlist.Count > 0;
             }
+            _playedTracks.Clear();
         };
     }
 
@@ -115,10 +118,15 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     private async Task TriggerShowPlayingOSDAsync()
     {
-        _showPlayingCts?.Cancel();
-        _showPlayingCts?.Dispose();
-        _showPlayingCts = new CancellationTokenSource();
-        var token = _showPlayingCts.Token;
+        CancellationTokenSource cts;
+        lock (_osdLock)
+        {
+            _showPlayingCts?.Cancel();
+            _showPlayingCts?.Dispose();
+            _showPlayingCts = new CancellationTokenSource();
+            cts = _showPlayingCts;
+        }
+        var token = cts.Token;
 
         ShowPlayingOpacity = 0.5;
         IsShowPlayingVisible = true;
@@ -134,9 +142,17 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
             for (int i = 0; i < steps; i++)
             {
                 await Task.Delay(delay, token);
+                lock (_osdLock)
+                {
+                    if (cts != _showPlayingCts) return;
+                }
                 ShowPlayingOpacity -= stepDrop;
             }
 
+            lock (_osdLock)
+            {
+                if (cts != _showPlayingCts) return;
+            }
             ShowPlayingOpacity = 0.0;
             IsShowPlayingVisible = false;
         }
@@ -149,7 +165,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [RelayCommand] private void TogglePicker()    => IsPickerVisible    = !IsPickerVisible;
     partial void OnIsRandomPlaybackChanged(bool value)
     {
-        if (value) _playedIndices.Clear();
+        if (value) _playedTracks.Clear();
     }
     
     [RelayCommand] private void ToggleAutoHide()  => IsAutoHideEnabled  = !IsAutoHideEnabled;
@@ -184,15 +200,21 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (_isDisposed) return;
+        _isDisposed = true;
+
         PlaylistViewModel.PlaylistCleared -= OnPlaylistCleared;
-        if (_showPlayingCts != null)
+        lock (_osdLock)
         {
-            try { _showPlayingCts.Cancel(); } catch { }
-            _showPlayingCts.Dispose();
-            _showPlayingCts = null;
+            if (_showPlayingCts != null)
+            {
+                try { _showPlayingCts.Cancel(); } catch { }
+                _showPlayingCts.Dispose();
+                _showPlayingCts = null;
+            }
         }
         VisualizerViewModel?.Dispose();
 
-        DisposePlayback();
+        _ = DisposePlaybackAsync();
     }
 }

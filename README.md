@@ -52,11 +52,31 @@ To do this, reference `Jukebox.dll` in your project and embed the `JukeboxContro
 
 *Note: When embedded as a UserControl, command-line window properties (like `-fullscreen` or `-stayontop`) are ignored. Your host application is responsible for managing the window state. You can pass embedded player parameters directly on the control as shown above.*
 
+## Shared Backends & Hosting
+
+When embedding the Jukebox in another Avalonia application, you can optionally inject your host application's existing `LibVLC` instance to avoid double-initialization overhead and native resource locks.
+
+If you don't provide an instance, the Jukebox will automatically initialize and manage its own. 
+
+### LibVLC
+To pass a shared LibVLC instance, simply assign it to the view model before startup:
+```csharp
+var viewModel = new JukeboxViewModel();
+viewModel.SharedLibVLC = myHostLibVlcInstance; // Jukebox will use this and will NOT dispose it on exit
+```
+
+### ManagedBass
+Because `ManagedBass` uses a process-wide C-API (`Bass.Init`), you don't need to pass an instance object. If your host application has already initialized `ManagedBass` globally, the Jukebox will automatically detect the shared context and gracefully utilize it without conflicting. 
+
+---
+
 ## Dependencies
 
 * **.NET 8.0**
 * Avalonia UI
 * LibVLCSharp
+* ManagedBass
+* TagLibSharp
 * [Jukebox-Visualizations](https://github.com/RobG66/Jukebox-Visualizations) (Referenced as a companion library)
 
 ---

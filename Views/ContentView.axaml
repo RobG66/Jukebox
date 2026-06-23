@@ -13,7 +13,7 @@
         <vm:JukeboxViewModel/>
     </Design.DataContext>
 
-    <Border Background="#222222" Margin="10" CornerRadius="8" ClipToBounds="True">
+    <Border Background="{DynamicResource ContentBackground}" ClipToBounds="True">
         <Grid x:Name="ContentGrid">
 
             <!-- Initializing state -->
@@ -54,7 +54,7 @@
             </Popup>
 
             <!-- EQ slide-up overlay -->
-            <Border Background="#B3000000"
+            <Border Background="{DynamicResource EqOverlayBackground}"
                     VerticalAlignment="Bottom"
                     CornerRadius="8,8,0,0"
                     Padding="20"
@@ -64,7 +64,7 @@
                     <!-- Preset selector -->
                     <Grid Grid.Row="0" Margin="0,0,0,20">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
-                            <TextBlock Text="Preset:" Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                            <TextBlock Text="Preset:" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center"/>
                             <ComboBox ItemsSource="{Binding EqViewModel.EqPresets}"
                                       SelectedItem="{Binding EqViewModel.SelectedEqPreset}"
                                       Width="112"/>
@@ -85,14 +85,14 @@
                                     <StackPanel Orientation="Vertical" Spacing="10"
                                                 HorizontalAlignment="Center">
                                         <TextBlock Text="{Binding Gain, StringFormat=\{0:F1\}}"
-                                                   FontSize="11" Foreground="White"
+                                                   FontSize="11" Foreground="{DynamicResource EqOverlayTextBrush}"
                                                    HorizontalAlignment="Center"/>
                                         <Slider Minimum="-15" Maximum="15"
                                                 Value="{Binding Gain}"
                                                 Orientation="Vertical" Height="150"
                                                 HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding FrequencyLabel}"
-                                                   FontSize="12" Foreground="#AAAAAA"
+                                                   FontSize="12" Foreground="{DynamicResource SubtleTextBrush}"
                                                    HorizontalAlignment="Center" FontWeight="Bold"/>
                                     </StackPanel>
                                 </DataTemplate>

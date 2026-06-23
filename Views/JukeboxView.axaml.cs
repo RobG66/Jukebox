@@ -37,21 +37,11 @@ public partial class JukeboxView : Window
 
         if (DataContext is JukeboxViewModel vm)
         {
-            if (vm.MediaPlayer != null)
-            {
-                var mp = vm.MediaPlayer;
-                vm.MediaPlayer = null; // Unbind Avalonia VideoView
+            await vm.DisposePlaybackAsync();
 
-                // Allow Avalonia to process the binding change, 
-                // which tells LibVLC to cleanly detach from the window handle
-                await Task.Delay(100);
-
-                if (mp.IsPlaying) mp.Stop();
-                mp.Media?.Dispose();
-                mp.Dispose();
-            }
-
-            vm.DisposePlayback();
+            // Allow Avalonia to process the binding change, 
+            // which tells LibVLC to cleanly detach from the window handle
+            await Task.Delay(100);
         }
 
         Close();

@@ -12,7 +12,7 @@
         MinWidth="640" MinHeight="480"
         CanResize="True"
         WindowStartupLocation="CenterOwner"
-        Background="Black"
+        Background="{DynamicResource WindowBackground}"
         Topmost="{Binding StayOnTop}">
 
     <Design.DataContext>

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -18,12 +19,28 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     private DispatcherTimer _randomizerTimer;
     private readonly Random _random = new();
     private bool _isLoadingVisualizers = false;
+    private ObservableCollection<VisualizerNodeViewModel> _rootNodes = new();
     #endregion
 
     #region Observable Properties
     [ObservableProperty] private string? _selectedVisualizerPath;
     [ObservableProperty] private bool _isVisualizerRandomizerEnabled;
     [ObservableProperty] private int _visualizerRandomizerIntervalSeconds = 10;
+
+    private VisualizerNodeViewModel? _selectedNode;
+    public VisualizerNodeViewModel? SelectedNode
+    {
+        get => _selectedNode;
+        set
+        {
+            if (SetProperty(ref _selectedNode, value))
+            {
+                AddToFavoritesCommand.NotifyCanExecuteChanged();
+                RemoveFromFavoritesCommand.NotifyCanExecuteChanged();
+                RenameVisualizerCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
     #endregion
 
     #region Public Properties
@@ -35,6 +52,22 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     {
         _randomizerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(VisualizerRandomizerIntervalSeconds) };
         _randomizerTimer.Tick += RandomizerTimer_Tick;
+
+        VisualizerSource = new HierarchicalTreeDataGridSource<VisualizerNodeViewModel>(_rootNodes)
+        {
+            Columns =
+            {
+                new HierarchicalExpanderColumn<VisualizerNodeViewModel>(
+                    new TextColumn<VisualizerNodeViewModel, string>("Visualizations", x => x.Name),
+                    x => x is VisualizerFolderViewModel f ? f.Children : null,
+                    x => x.IsDirectory)
+            }
+        };
+
+        VisualizerSource.RowSelection!.SelectionChanged += (s, e) =>
+        {
+            SelectedNode = VisualizerSource.RowSelection?.SelectedItems?.FirstOrDefault();
+        };
 
         // Restore last visualizer from settings file
         var settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "last_preset.txt");
@@ -50,6 +83,14 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #endregion
 
     #region Public Methods
+    private class TempFolderNode
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
+        public List<TempFolderNode> SubFolders { get; } = new();
+        public List<(string Name, string Path)> Files { get; } = new();
+    }
+
     public async Task LoadVisualizersAsync()
     {
         if (_isLoadingVisualizers) return;
@@ -58,54 +99,49 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         try
         {
             var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
-        if (!Directory.Exists(rootFolder)) return;
+            if (!Directory.Exists(rootFolder)) return;
 
-        var rootNodes = new ObservableCollection<VisualizerNodeViewModel>();
+            var scannedRoots = new List<TempFolderNode>();
+            var allPaths = new List<string>();
 
-        await Task.Run(() =>
-        {
-            lock (_allVisualizerPaths)
+            await Task.Run(() =>
             {
-                _allVisualizerPaths.Clear();
-            }
-            var directories = Directory.GetDirectories(rootFolder);
-            foreach (var dir in directories)
-            {
-                var folderName = Path.GetFileName(dir);
-                if (folderName == "win-x64" || folderName == "textures") continue;
-
-                var folderVm = new VisualizerFolderViewModel(folderName, dir);
-                PopulateFolder(folderVm, dir);
-                if (folderVm.Children.Count > 0)
+                var directories = Directory.GetDirectories(rootFolder);
+                foreach (var dir in directories)
                 {
-                    rootNodes.Add(folderVm);
-                }
-            }
-        });
+                    var folderName = Path.GetFileName(dir);
+                    if (IsNativeOrSystemFolder(folderName)) continue;
 
-        Dispatcher.UIThread.Post(() =>
-        {
-            VisualizerSource = new HierarchicalTreeDataGridSource<VisualizerNodeViewModel>(rootNodes)
+                    var rootNode = ScanFolder(folderName, dir, allPaths);
+                    if (rootNode.SubFolders.Count > 0 || rootNode.Files.Count > 0)
+                    {
+                        scannedRoots.Add(rootNode);
+                    }
+                }
+            });
+
+            Dispatcher.UIThread.Post(() =>
             {
-                Columns =
+                lock (_allVisualizerPaths)
                 {
-                    new HierarchicalExpanderColumn<VisualizerNodeViewModel>(
-                        new TextColumn<VisualizerNodeViewModel, string>("Visualizations", x => x.Name),
-                        x => x is VisualizerFolderViewModel f ? f.Children : null,
-                        x => x.IsDirectory)
+                    _allVisualizerPaths.Clear();
+                    _allVisualizerPaths.AddRange(allPaths);
                 }
-            };
 
-            OnPropertyChanged(nameof(VisualizerSource));
-
-            lock (_allVisualizerPaths)
-            {
-                if (string.IsNullOrEmpty(SelectedVisualizerPath) && _allVisualizerPaths.Count > 0)
+                _rootNodes.Clear();
+                foreach (var node in scannedRoots)
                 {
-                    SelectedVisualizerPath = _allVisualizerPaths[0];
+                    _rootNodes.Add(BuildViewModelTree(node));
                 }
-            }
-        });
+
+                lock (_allVisualizerPaths)
+                {
+                    if (string.IsNullOrEmpty(SelectedVisualizerPath) && _allVisualizerPaths.Count > 0)
+                    {
+                        SelectedVisualizerPath = _allVisualizerPaths[0];
+                    }
+                }
+            });
         }
         finally
         {
@@ -115,24 +151,50 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #endregion
 
     #region Private Methods
-    private void PopulateFolder(VisualizerFolderViewModel parent, string path)
+    private TempFolderNode ScanFolder(string name, string path, List<string> allPaths)
     {
+        var node = new TempFolderNode { Name = name, Path = path };
+
         foreach (var dir in Directory.GetDirectories(path))
         {
-            var folderVm = new VisualizerFolderViewModel(Path.GetFileName(dir), dir);
-            PopulateFolder(folderVm, dir);
-            if (folderVm.Children.Count > 0)
-                parent.Children.Add(folderVm);
+            var folderName = Path.GetFileName(dir);
+            if (IsNativeOrSystemFolder(folderName)) continue;
+
+            var subNode = ScanFolder(folderName, dir, allPaths);
+            if (subNode.SubFolders.Count > 0 || subNode.Files.Count > 0)
+            {
+                node.SubFolders.Add(subNode);
+            }
         }
 
         foreach (var file in Directory.GetFiles(path, "*.milk"))
         {
-            parent.Children.Add(new VisualizerFileViewModel(Path.GetFileNameWithoutExtension(file), file));
-            lock (_allVisualizerPaths)
-            {
-                _allVisualizerPaths.Add(file);
-            }
+            node.Files.Add((Path.GetFileNameWithoutExtension(file), file));
+            allPaths.Add(file);
         }
+
+        return node;
+    }
+
+    // Skips native runtime directories (win-x64, linux-x64, osx-arm64, etc.) and asset folders
+    private static bool IsNativeOrSystemFolder(string folderName) =>
+        string.Equals(folderName, "textures", StringComparison.OrdinalIgnoreCase) ||
+        folderName.StartsWith("win-",   StringComparison.OrdinalIgnoreCase) ||
+        folderName.StartsWith("linux-", StringComparison.OrdinalIgnoreCase) ||
+        folderName.StartsWith("osx-",   StringComparison.OrdinalIgnoreCase);
+
+    private VisualizerFolderViewModel BuildViewModelTree(TempFolderNode node)
+    {
+        var folderVm = new VisualizerFolderViewModel(node.Name, node.Path);
+        foreach (var subFolder in node.SubFolders)
+        {
+            folderVm.Children.Add(BuildViewModelTree(subFolder));
+        }
+        foreach (var file in node.Files)
+        {
+            folderVm.Children.Add(new VisualizerFileViewModel(file.Name, file.Path));
+        }
+        return folderVm;
     }
     #endregion
 
@@ -141,12 +203,15 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     {
         if (!string.IsNullOrEmpty(value))
         {
-            try
+            _ = Task.Run(() =>
             {
-                var settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "last_preset.txt");
-                File.WriteAllText(settingsFile, value);
-            }
-            catch { }
+                try
+                {
+                    var settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "last_preset.txt");
+                    File.WriteAllText(settingsFile, value);
+                }
+                catch { }
+            });
         }
     }
 
@@ -175,10 +240,10 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    [RelayCommand]
-    private void AddToFavorites(VisualizerFileViewModel? fileVm)
+    [RelayCommand(CanExecute = nameof(CanAddToFavorites))]
+    private void AddToFavorites()
     {
-        if (fileVm == null) return;
+        if (SelectedNode is not VisualizerFileViewModel fileVm) return;
         var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
         var favFolder = Path.Combine(rootFolder, "Favorites");
         var destPath = Path.Combine(favFolder, Path.GetFileName(fileVm.Path));
@@ -209,33 +274,90 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            _ = LoadVisualizersAsync();
+            UpdateTreeForAddedFavorite(destPath);
         }
         catch (Exception ex) 
         { 
             Console.WriteLine($"[Error] AddToFavorites failed: {ex.Message}");
         }
     }
+    private bool CanAddToFavorites() => SelectedNode is VisualizerFileViewModel { IsFavorite: false };
 
-    [RelayCommand]
-    private void RemoveFromFavorites(VisualizerFileViewModel? fileVm)
+    private void UpdateTreeForAddedFavorite(string destPath)
     {
-        if (fileVm == null) return;
+        var favFolder = _rootNodes.OfType<VisualizerFolderViewModel>().FirstOrDefault(x => x.Name == "Favorites");
+        if (favFolder == null)
+        {
+            var favPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets", "Favorites");
+            favFolder = new VisualizerFolderViewModel("Favorites", favPath);
+            _rootNodes.Insert(0, favFolder);
+        }
+        
+        var fileName = Path.GetFileNameWithoutExtension(destPath);
+        if (!favFolder.Children.Any(x => x is VisualizerFileViewModel f && f.Path == destPath))
+        {
+            favFolder.Children.Add(new VisualizerFileViewModel(fileName, destPath));
+        }
+
+        lock (_allVisualizerPaths)
+        {
+            if (!_allVisualizerPaths.Contains(destPath))
+                _allVisualizerPaths.Add(destPath);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRemoveFromFavorites))]
+    private void RemoveFromFavorites()
+    {
+        if (SelectedNode is not VisualizerFileViewModel fileVm) return;
+        
+        var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
+        var favFolder = Path.Combine(rootFolder, "Favorites");
+        
+        if (!fileVm.Path.StartsWith(favFolder, StringComparison.OrdinalIgnoreCase)) return;
+
         try
         {
             File.Delete(fileVm.Path);
-            _ = LoadVisualizersAsync();
+            UpdateTreeForRemovedFavorite(fileVm.Path);
         }
         catch (Exception ex) 
         { 
             Console.WriteLine($"[Error] RemoveFromFavorites failed: {ex.Message}");
         }
     }
+    private bool CanRemoveFromFavorites() => SelectedNode is VisualizerFileViewModel { IsFavorite: true };
 
-    [RelayCommand]
-    private async Task RenameVisualizerAsync(VisualizerFileViewModel? fileVm)
+    private void UpdateTreeForRemovedFavorite(string removedPath)
     {
-        if (fileVm == null || string.IsNullOrEmpty(fileVm.Path)) return;
+        var favFolder = _rootNodes.OfType<VisualizerFolderViewModel>().FirstOrDefault(x => x.Name == "Favorites");
+        if (favFolder != null)
+        {
+            var fileNode = favFolder.Children.OfType<VisualizerFileViewModel>().FirstOrDefault(x => x.Path == removedPath);
+            if (fileNode != null)
+            {
+                favFolder.Children.Remove(fileNode);
+            }
+            if (favFolder.Children.Count == 0)
+            {
+                _rootNodes.Remove(favFolder);
+            }
+        }
+
+        lock (_allVisualizerPaths)
+        {
+            _allVisualizerPaths.Remove(removedPath);
+            if (SelectedVisualizerPath == removedPath)
+            {
+                SelectedVisualizerPath = _allVisualizerPaths.FirstOrDefault();
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRenameVisualizer))]
+    private async Task RenameVisualizerAsync()
+    {
+        if (SelectedNode is not VisualizerFileViewModel fileVm || string.IsNullOrEmpty(fileVm.Path)) return;
 
         var currentName = Path.GetFileNameWithoutExtension(fileVm.Path);
         var newName = await Jukebox.Views.RenameDialogView.ShowAsync(currentName);
@@ -252,12 +374,26 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                 {
                     File.Move(fileVm.Path, newPath);
 
+                    lock (_allVisualizerPaths)
+                    {
+                        var index = _allVisualizerPaths.IndexOf(fileVm.Path);
+                        if (index >= 0)
+                        {
+                            _allVisualizerPaths[index] = newPath;
+                        }
+                    }
+
                     if (SelectedVisualizerPath == fileVm.Path)
                     {
                         SelectedVisualizerPath = newPath;
                     }
 
-                    await LoadVisualizersAsync();
+                    fileVm.Name = newName;
+                    fileVm.Path = newPath;
+                    
+                    AddToFavoritesCommand.NotifyCanExecuteChanged();
+                    RemoveFromFavoritesCommand.NotifyCanExecuteChanged();
+                    RenameVisualizerCommand.NotifyCanExecuteChanged();
                 }
             }
             catch (Exception ex) 
@@ -266,6 +402,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             }
         }
     }
+    private bool CanRenameVisualizer() => SelectedNode is VisualizerFileViewModel;
     #endregion
 
     #region Dispose

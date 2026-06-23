@@ -168,8 +168,11 @@ namespace Jukebox.Views
             };
 
             var uri = new Uri(assetPath);
-            var bitmap = new Bitmap(AssetLoader.Open(uri));
-            IconDisplay.Source = bitmap;
+            using (var stream = AssetLoader.Open(uri))
+            {
+                var bitmap = new Bitmap(stream);
+                IconDisplay.Source = bitmap;
+            }
 
             string borderClass = theme switch
             {

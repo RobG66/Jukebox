@@ -97,14 +97,14 @@ namespace Jukebox.Views
 
             if (string.IsNullOrWhiteSpace(name))
             {
-                errorMessage = "Profile name cannot be empty.";
+                errorMessage = "Name cannot be empty.";
                 return false;
             }
 
             char[] invalidChars = Path.GetInvalidFileNameChars();
             if (name.IndexOfAny(invalidChars) >= 0)
             {
-                errorMessage = "Profile name contains invalid characters.";
+                errorMessage = "Name contains invalid characters.";
                 return false;
             }
 
