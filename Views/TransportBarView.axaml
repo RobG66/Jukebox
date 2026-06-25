@@ -120,7 +120,7 @@
                                   ToolTip.Tip="Automatically hide controls" />
 
                     <!-- Volume Slider -->
-                    <Slider Minimum="0" Maximum="100" Value="{Binding Volume}"
+                    <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume}"
                             Width="80" VerticalAlignment="Center"
                             Margin="0,0,10,0"
                             ToolTip.Tip="Volume" />

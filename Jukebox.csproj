@@ -1,12 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\Icons\icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,6 +18,9 @@
 
   <ItemGroup>
     <None Update="bass.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="libmpv-2.dll" Condition="Exists('libmpv-2.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -29,10 +35,15 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
+    <!-- MPV replaces LibVLCSharp for video playback. We use our own custom
+         P/Invoke wrapper (Mpv/MpvNative.cs + Mpv/MpvContext.cs) — no third-
+         party MPV .NET package needed. -->
+    <!-- Native libmpv: the Endpne.LibMPV.Windows package ships a .lib (import
+         library), NOT the runtime .dll. You must download libmpv-2.dll
+         manually from https://sourceforge.net/projects/mpv-player-windows/files/libmpv/
+         and place it in the project root (next to bass.dll). See README. -->
     <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
-    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" Condition="$([System.String]::Copy('$(RuntimeIdentifier)').Contains('win')) Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows')))" />
   </ItemGroup>
 
   <ItemGroup>

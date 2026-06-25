@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
              xmlns:localViews="using:Jukebox.Views"
+             xmlns:conv="using:Jukebox.Classes.Converters"
              mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="720"
              x:Class="Jukebox.Views.JukeboxControl"
              x:DataType="vm:JukeboxViewModel"
@@ -13,42 +14,103 @@
         <vm:JukeboxViewModel/>
     </Design.DataContext>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <!-- Side panel overlay background: ~75% opaque dark -->
+        <SolidColorBrush x:Key="SidePanelOverlayBackground" Color="#B0000000"/>
+        <!-- Transport bar overlay background (auto-hide mode): ~75% opaque dark -->
+        <SolidColorBrush x:Key="TransportBarOverlayBackground" Color="#B0000000"/>
 
-        <SplitView Grid.Row="0"
-                   DisplayMode="Inline"
-                   OpenPaneLength="400"
-                   PanePlacement="Left">
+        <!-- Converter: ContentView bottom margin based on auto-hide state -->
+        <conv:AutoHideMarginConverter x:Key="AutoHideMarginConverter"/>
+        <!-- Converter: transport bar background based on auto-hide state -->
+        <conv:BoolToBrushConverter x:Key="AutoHideBgConverter"
+                                   TrueBrush="{StaticResource TransportBarOverlayBackground}"
+                                   FalseBrush="{StaticResource PanelBackground}"/>
+    </UserControl.Resources>
 
-            <SplitView.IsPaneOpen>
-                <MultiBinding Converter="{x:Static BoolConverters.Or}">
-                    <Binding Path="IsPlaylistVisible"/>
-                    <Binding Path="IsPickerVisible"/>
+    <!--
+      Layout: single Panel. ContentView fills the entire area. Side panels
+      and the transport bar overlay on top (Z-order). ContentView's bottom
+      margin resizes only when auto-hide is toggled on/off (a one-time
+      layout change, not per-frame) — never during panel open/close, which
+      eliminates the ProjectM resize stutter.
+    -->
+    <Panel>
+
+        <!-- Playing content (video + visualizer + EQ overlay) -->
+        <!-- Bottom margin: 0 when auto-hide (bar overlays), ControlBarHeight when not (bar has own row) -->
+        <localViews:ContentView x:Name="ContentViewChild">
+            <localViews:ContentView.Margin>
+                <MultiBinding Converter="{StaticResource AutoHideMarginConverter}">
+                    <Binding Path="IsAutoHideEnabled"/>
+                    <Binding Path="ControlBarHeight"/>
                 </MultiBinding>
-            </SplitView.IsPaneOpen>
+            </localViews:ContentView.Margin>
+        </localViews:ContentView>
 
-            <SplitView.Pane>
-                <Border Background="{DynamicResource SplitPaneBackground}"
-                        BorderBrush="{DynamicResource PanelBorder}"
-                        BorderThickness="0,0,1,0">
-                    <Grid>
-                        <localViews:PlaylistView         IsVisible="{Binding IsPlaylistVisible}"/>
-                        <localViews:VisualizerPickerView  IsVisible="{Binding IsPickerVisible}"/>
-                    </Grid>
-                </Border>
-            </SplitView.Pane>
+        <!-- Side panel overlay: Playlist (left-aligned, semi-transparent, slide-in animation) -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Stretch"
+                Width="400"
+                Background="{StaticResource SidePanelOverlayBackground}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,0,1,0"
+                IsVisible="{Binding IsPlaylistVisible}"
+                ClipToBounds="True">
+            <Border.Opacity>
+                <Binding Path="IsPlaylistVisible"/>
+            </Border.Opacity>
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:PlaylistView/>
+        </Border>
 
-            <SplitView.Content>
-                <localViews:ContentView/>
-            </SplitView.Content>
+        <!-- Side panel overlay: Visualizer Picker (left-aligned, semi-transparent) -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Stretch"
+                Width="400"
+                Background="{StaticResource SidePanelOverlayBackground}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,0,1,0"
+                IsVisible="{Binding IsPickerVisible}"
+                ClipToBounds="True">
+            <Border.Opacity>
+                <Binding Path="IsPickerVisible"/>
+            </Border.Opacity>
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:VisualizerPickerView/>
+        </Border>
 
-        </SplitView>
+        <!--
+          Transport bar (always overlays the bottom).
+          Background: opaque (PanelBackground) when auto-hide is OFF — looks
+          like a normal bar in its own row because ContentView has bottom
+          margin = ControlBarHeight. Semi-transparent when auto-hide is ON
+          so playback shows through underneath.
+          Height: bound to ControlBarHeight — goes to 0 when auto-hidden.
+        -->
+        <Border VerticalAlignment="Bottom"
+                HorizontalAlignment="Stretch"
+                Height="{Binding ControlBarHeight}"
+                Background="{Binding IsAutoHideEnabled, Converter={StaticResource AutoHideBgConverter}}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,1,0,0"
+                ClipToBounds="True">
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Height" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:TransportBarView/>
+        </Border>
 
-        <localViews:TransportBarView Grid.Row="1"/>
-    </Grid>
+    </Panel>
 
 </UserControl>

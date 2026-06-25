@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Jukebox.Extensions;
 using Jukebox.Models;
 using System;
 using System.Collections.Generic;
@@ -13,12 +14,11 @@ namespace Jukebox.ViewModels;
 
 public partial class JukeboxPlaylistViewModel : ViewModelBase
 {
+    // REFACTOR: magic numbers → Constants (smell §4.6, §6.4).
     private int _playlistVersion = 0;
     private int _scrollVersion = 0;
     private int _pendingFirst = 0;
-    private int _pendingLast = 24;
-    private const int TagBatchSize = 5;
-    private const int TagAllThreshold = 100;
+    private int _pendingLast = Constants.TagBatchSize - 1;
 
     public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
     public DataGridCollectionView FilteredPlaylist { get; }
@@ -55,7 +55,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         _pendingFirst = firstIndex;
         _pendingLast = lastIndex;
         int sv = ++_scrollVersion;
-        _ = TagVisibleRangeAsync(firstIndex, lastIndex, _playlistVersion, sv);
+        TagVisibleRangeAsync(firstIndex, lastIndex, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
     }
 
     [RelayCommand]
@@ -75,12 +75,12 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         InvalidatePlaylist();
         foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
             Playlist.Remove(item);
-        
+
         HasMultipleTracks = Playlist.Count > 1;
         UpdatePlaylistSummary();
 
         int sv = ++_scrollVersion;
-        _ = TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv);
+        TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
     }
 
     public async Task ProcessAndAddFilesAsync(List<string> paths, bool noRecurse = false)
@@ -105,12 +105,13 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         UpdatePlaylistSummary();
 
         int sv = ++_scrollVersion;
-        _ = TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv);
+        TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
     }
 
     private async Task TagVisibleRangeAsync(int first, int last, int version, int scrollVersion)
     {
-        if (Playlist.Count <= TagAllThreshold)
+        // REFACTOR: magic number 100 → Constants.TagAllThreshold (smell §4.6, §6.4).
+        if (Playlist.Count <= Constants.TagAllThreshold)
         {
             first = 0;
             last = Playlist.Count - 1;
@@ -120,12 +121,12 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             first = Math.Max(0, first);
         }
 
-        for (int batchStart = first; batchStart <= last; batchStart += TagBatchSize)
+        for (int batchStart = first; batchStart <= last; batchStart += Constants.TagBatchSize)
         {
             if (_playlistVersion != version) return;
             if (_scrollVersion != scrollVersion) return;
 
-            int batchEnd = Math.Min(batchStart + TagBatchSize - 1, Math.Min(last, Playlist.Count - 1));
+            int batchEnd = Math.Min(batchStart + Constants.TagBatchSize - 1, Math.Min(last, Playlist.Count - 1));
 
             var toTag = new List<(int index, JukeboxTrack track)>();
             for (int i = batchStart; i <= batchEnd; i++)
@@ -155,7 +156,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                 track.Length = tags.length;
                 track.Bitrate = tags.bitrate;
             }
-            
+
             // Refresh filter if tags were updated and search is active
             if (!string.IsNullOrWhiteSpace(SearchText))
             {
@@ -175,8 +176,6 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private static List<string> DiscoverFiles(List<string> paths, bool noRecurse)
     {
-
-
         var files = new List<string>();
         foreach (var path in paths)
         {
@@ -184,8 +183,16 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             {
                 try
                 {
-                    files.AddRange(Directory.EnumerateFiles(path, "*.*",
-                        noRecurse ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories)
+                    // REFACTOR: add EnumerationOptions to skip inaccessible files
+                    // (was smell §4.6 Warning: DiscoverFiles enumerates all files
+                    // synchronously — minor enhancement, original enumeration still
+                    // works but is now resilient to permission errors on Linux).
+                    var options = new EnumerationOptions
+                    {
+                        IgnoreInaccessible = true,
+                        RecurseSubdirectories = !noRecurse
+                    };
+                    files.AddRange(Directory.EnumerateFiles(path, "*.*", options)
                         .Where(f => Constants.SupportedMediaExtensions.Contains(Path.GetExtension(f)))
                     );
                 }

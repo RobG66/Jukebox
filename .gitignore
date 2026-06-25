@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Native binaries (download manually)
+bass.dll
+libmpv-2.dll

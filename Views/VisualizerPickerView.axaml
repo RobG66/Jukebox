@@ -11,6 +11,12 @@
         <vm:JukeboxViewModel/>
     </Design.DataContext>
 
+    <UserControl.Styles>
+        <Style Selector="TreeDataGridRow" x:DataType="vm:VisualizerNodeViewModel">
+            <Setter Property="ToolTip.Tip" Value="{Binding Name}"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

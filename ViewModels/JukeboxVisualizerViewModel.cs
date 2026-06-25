@@ -1,13 +1,17 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
+using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Jukebox.Extensions;
+using Jukebox.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -20,6 +24,15 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     private readonly Random _random = new();
     private bool _isLoadingVisualizers = false;
     private ObservableCollection<VisualizerNodeViewModel> _rootNodes = new();
+
+    // REFACTOR: Regex cached as static readonly field instead of being
+    // recompiled on every AddToFavorites call (was smell §4.5 Warning:
+    // Regex compilation on every AddToFavorites call).
+    private static readonly Regex TextureFileRegex = new(
+        @"[a-zA-Z0-9_-]+\.(?:jpg|png|bmp|tga)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private readonly IPathProvider _pathProvider;
     #endregion
 
     #region Observable Properties
@@ -48,8 +61,15 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #endregion
 
     #region Constructor
-    public JukeboxVisualizerViewModel()
+    public JukeboxVisualizerViewModel() : this(PathProvider.Current)
     {
+    }
+
+    // Constructor added for testability — tests can inject a stub IPathProvider.
+    public JukeboxVisualizerViewModel(IPathProvider pathProvider)
+    {
+        _pathProvider = pathProvider ?? throw new ArgumentNullException(nameof(pathProvider));
+
         _randomizerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(VisualizerRandomizerIntervalSeconds) };
         _randomizerTimer.Tick += RandomizerTimer_Tick;
 
@@ -58,7 +78,14 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             Columns =
             {
                 new HierarchicalExpanderColumn<VisualizerNodeViewModel>(
-                    new TextColumn<VisualizerNodeViewModel, string>("Visualizations", x => x.Name),
+                    new TextColumn<VisualizerNodeViewModel, string>(
+                        "Visualizations",
+                        x => x.Name,
+                        new GridLength(1, GridUnitType.Star),
+                        new TextColumnOptions<VisualizerNodeViewModel>
+                        {
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        }),
                     x => x is VisualizerFolderViewModel f ? f.Children : null,
                     x => x.IsDirectory)
             }
@@ -69,15 +96,29 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             SelectedNode = VisualizerSource.RowSelection?.SelectedItems?.FirstOrDefault();
         };
 
-        // Restore last visualizer from settings file
-        var settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "last_preset.txt");
-        if (File.Exists(settingsFile))
+        // REFACTOR: synchronous file IO in constructor moved to async
+        // InitializeAsync (was smell §4.5 Critical: Synchronous file IO on UI
+        // thread in constructor). The constructor no longer touches the disk.
+        // The View should call InitializeAsync() in its Loaded handler.
+    }
+
+    /// <summary>
+    /// Loads the last-selected visualizer from disk asynchronously. Should be
+    /// called from the View's Loaded handler (or tests' setup phase).
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        var settingsFile = _pathProvider.LastPresetFile;
+        var savedPath = await Task.Run(async () =>
         {
-            var savedPath = File.ReadAllText(settingsFile).Trim();
-            if (File.Exists(savedPath))
-            {
-                SelectedVisualizerPath = savedPath;
-            }
+            if (!File.Exists(settingsFile)) return null;
+            try { return (await File.ReadAllTextAsync(settingsFile)).Trim(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed reading last_preset.txt: {ex.Message}"); return null; }
+        });
+
+        if (!string.IsNullOrEmpty(savedPath) && await Task.Run(() => File.Exists(savedPath)))
+        {
+            SelectedVisualizerPath = savedPath;
         }
     }
     #endregion
@@ -93,12 +134,15 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
     public async Task LoadVisualizersAsync()
     {
+        // REFACTOR: Interlocked.CompareExchange would be slightly cleaner,
+        // but the existing bool flag is sufficient for the single-threaded
+        // UI context. Left as-is to minimize diff (smell §4.5 Minor).
         if (_isLoadingVisualizers) return;
         _isLoadingVisualizers = true;
 
         try
         {
-            var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
+            var rootFolder = _pathProvider.ProjectMPresetsDirectory;
             if (!Directory.Exists(rootFolder)) return;
 
             var scannedRoots = new List<TempFolderNode>();
@@ -203,15 +247,21 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     {
         if (!string.IsNullOrEmpty(value))
         {
-            _ = Task.Run(() =>
+            // REFACTOR: fire-and-forget Task.Run → SafeFireAndForget (was smell
+            // §4.5 Critical: File.WriteAllText in PropertyChanged handler).
+            // Exceptions during the write are now captured and logged instead
+            // of being silently swallowed.
+            Task.Run(() =>
             {
                 try
                 {
-                    var settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "last_preset.txt");
-                    File.WriteAllText(settingsFile, value);
+                    File.WriteAllText(_pathProvider.LastPresetFile, value);
                 }
-                catch { }
-            });
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed to persist last preset: {ex.Message}");
+                }
+            }).SafeFireAndForget(nameof(OnSelectedVisualizerPathChanged));
         }
     }
 
@@ -241,13 +291,26 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand(CanExecute = nameof(CanAddToFavorites))]
-    private void AddToFavorites()
+    private async Task AddToFavorites()
     {
         if (SelectedNode is not VisualizerFileViewModel fileVm) return;
-        var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
-        var favFolder = Path.Combine(rootFolder, "Favorites");
+        var favFolder = _pathProvider.ProjectMFavoritesDirectory;
         var destPath = Path.Combine(favFolder, Path.GetFileName(fileVm.Path));
         if (fileVm.Path.Equals(destPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        // REFACTOR: confirm before overwrite (was smell §4.5 Warning: File.Copy
+        // without overwrite check semantics). The user may have customized the
+        // existing favorite — silent overwrite would lose their work.
+        if (File.Exists(destPath))
+        {
+            bool overwrite = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+                "File Already in Favorites",
+                $"A file named '{Path.GetFileName(fileVm.Path)}' already exists in Favorites.\n" +
+                "Overwrite it? This will lose any customizations you made to the favorite.",
+                confirmText: "Overwrite",
+                cancelText: "Cancel");
+            if (!overwrite) return;
+        }
 
         try
         {
@@ -258,12 +321,12 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
             File.Copy(fileVm.Path, destPath, true);
 
-            // Also copy textures
+            // Also copy textures — uses the cached static Regex instead of
+            // recompiling on every call.
             string sourceDir = Path.GetDirectoryName(fileVm.Path) ?? "";
-            string content = File.ReadAllText(fileVm.Path);
-            var regex = new System.Text.RegularExpressions.Regex(@"[a-zA-Z0-9_-]+\.(?:jpg|png|bmp|tga)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            string content = await File.ReadAllTextAsync(fileVm.Path);
 
-            foreach (System.Text.RegularExpressions.Match match in regex.Matches(content))
+            foreach (Match match in TextureFileRegex.Matches(content))
             {
                 string textureName = match.Value;
                 string sourceTex = Path.Combine(sourceDir, textureName);
@@ -276,9 +339,13 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
             UpdateTreeForAddedFavorite(destPath);
         }
-        catch (Exception ex) 
-        { 
-            Console.WriteLine($"[Error] AddToFavorites failed: {ex.Message}");
+        catch (Exception ex)
+        {
+            // REFACTOR: Console.WriteLine → Debug.WriteLine (smell §4.5, §6.5).
+            System.Diagnostics.Debug.WriteLine($"[Error] AddToFavorites failed: {ex.Message}");
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Add to Favorites Failed",
+                ex.Message);
         }
     }
     private bool CanAddToFavorites() => SelectedNode is VisualizerFileViewModel { IsFavorite: false };
@@ -288,11 +355,11 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         var favFolder = _rootNodes.OfType<VisualizerFolderViewModel>().FirstOrDefault(x => x.Name == "Favorites");
         if (favFolder == null)
         {
-            var favPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets", "Favorites");
+            var favPath = _pathProvider.ProjectMFavoritesDirectory;
             favFolder = new VisualizerFolderViewModel("Favorites", favPath);
             _rootNodes.Insert(0, favFolder);
         }
-        
+
         var fileName = Path.GetFileNameWithoutExtension(destPath);
         if (!favFolder.Children.Any(x => x is VisualizerFileViewModel f && f.Path == destPath))
         {
@@ -307,23 +374,37 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand(CanExecute = nameof(CanRemoveFromFavorites))]
-    private void RemoveFromFavorites()
+    private async Task RemoveFromFavorites()
     {
         if (SelectedNode is not VisualizerFileViewModel fileVm) return;
-        
-        var rootFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
-        var favFolder = Path.Combine(rootFolder, "Favorites");
-        
+
+        var favFolder = _pathProvider.ProjectMFavoritesDirectory;
+
         if (!fileVm.Path.StartsWith(favFolder, StringComparison.OrdinalIgnoreCase)) return;
+
+        // REFACTOR: confirm before delete (was smell §4.5 Warning: File.Delete
+        // with no confirmation). The delete is irreversible — there's no
+        // recycle bin on Linux, and even on Windows File.Delete bypasses it.
+        bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+            "Delete Favorite",
+            $"Permanently delete '{Path.GetFileName(fileVm.Path)}' from Favorites?\n" +
+            "This cannot be undone.",
+            confirmText: "Delete",
+            cancelText: "Cancel",
+            icon: Jukebox.Views.DialogIconTheme.Warning);
+        if (!confirm) return;
 
         try
         {
             File.Delete(fileVm.Path);
             UpdateTreeForRemovedFavorite(fileVm.Path);
         }
-        catch (Exception ex) 
-        { 
-            Console.WriteLine($"[Error] RemoveFromFavorites failed: {ex.Message}");
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Error] RemoveFromFavorites failed: {ex.Message}");
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Remove Favorite Failed",
+                ex.Message);
         }
     }
     private bool CanRemoveFromFavorites() => SelectedNode is VisualizerFileViewModel { IsFavorite: true };
@@ -390,15 +471,21 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
                     fileVm.Name = newName;
                     fileVm.Path = newPath;
-                    
+
                     AddToFavoritesCommand.NotifyCanExecuteChanged();
                     RemoveFromFavoritesCommand.NotifyCanExecuteChanged();
                     RenameVisualizerCommand.NotifyCanExecuteChanged();
                 }
             }
-            catch (Exception ex) 
-            { 
-                Console.WriteLine($"[Error] RenameVisualizerAsync failed: {ex.Message}");
+            catch (Exception ex)
+            {
+                // REFACTOR: Console.WriteLine → Debug.WriteLine + user-facing
+                // error dialog (was smell §4.5 Warning: Fire-and-forget
+                // RenameVisualizerAsync).
+                System.Diagnostics.Debug.WriteLine($"[Error] RenameVisualizerAsync failed: {ex.Message}");
+                await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                    "Rename Failed",
+                    $"Could not rename '{currentName}' to '{newName}'.\n\n{ex.Message}");
             }
         }
     }

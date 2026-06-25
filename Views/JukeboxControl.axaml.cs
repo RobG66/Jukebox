@@ -30,36 +30,83 @@ public partial class JukeboxControl : UserControl
     #endregion
 
     private readonly Avalonia.Threading.DispatcherTimer _inactivityTimer;
+    // Window reference for SizeChanged subscription (window-resize suppression).
+    private Window? _hostWindow;
 
     public JukeboxControl()
     {
         InitializeComponent();
 
-        _inactivityTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _inactivityTimer.Tick += (_, _) =>
+        // REFACTOR: magic number 5 seconds → Constants.ControlBarInactivitySeconds (smell §5.2, §6.4).
+        _inactivityTimer = new Avalonia.Threading.DispatcherTimer
         {
-            if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled)
-                vm.ControlBarHeight = 0;
-            _inactivityTimer.Stop();
+            Interval = TimeSpan.FromSeconds(Constants.ControlBarInactivitySeconds)
         };
+        _inactivityTimer.Tick += OnInactivityTimerTick;
 
         this.PointerMoved   += (_, _) => ResetInactivity();
         this.PointerEntered += (_, _) => ResetInactivity();
 
         Loaded   += OnLoaded;
+        // REFACTOR: also stop the timer on Unloaded (was smell §5.2 Warning:
+        // Inactivity timer never disposed).
         Unloaded += OnUnloaded;
+    }
+
+    private void OnInactivityTimerTick(object? sender, EventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled)
+            // REFACTOR: magic number 0 → Constants.HiddenControlBarHeight (smell §5.2, §6.4).
+            vm.ControlBarHeight = Constants.HiddenControlBarHeight;
+        _inactivityTimer.Stop();
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
         topLevel?.AddHandler(InputElement.KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+
+        // Subscribe to window resize for ProjectM suppression.
+        // When the user drags the window edge, ContentView resizes every frame,
+        // which resizes the ProjectM GL surface → stutter. ContentView exposes
+        // a SuppressNativeRenderDuringLayoutTransition() method that hides the
+        // native control during the resize and restores it once settled.
+        _hostWindow = topLevel as Window;
+        if (_hostWindow != null)
+        {
+            _hostWindow.PropertyChanged += OnHostWindowPropertyChanged;
+        }
     }
 
     private void OnUnloaded(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
         topLevel?.RemoveHandler(InputElement.KeyDownEvent, OnPreviewKeyDown);
+        // REFACTOR: stop the inactivity timer to release the Tick handler
+        // closure (was smell §5.2 Warning: Inactivity timer never disposed).
+        _inactivityTimer.Stop();
+
+        // Unsubscribe from window resize notifications.
+        if (_hostWindow != null)
+        {
+            _hostWindow.PropertyChanged -= OnHostWindowPropertyChanged;
+            _hostWindow = null;
+        }
+    }
+
+    private void OnHostWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        // Window resize fires Width/Height property changes. When this happens,
+        // trigger the layout-transition suppression in ContentView (which hides
+        // the ProjectM/VideoView native control during the resize to prevent
+        // per-frame GL surface resizes).
+        if (e.Property == Window.WidthProperty || e.Property == Window.HeightProperty)
+        {
+            if (ContentViewChild is ContentView contentView)
+            {
+                contentView.NotifyWindowResizing();
+            }
+        }
     }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
@@ -77,7 +124,8 @@ public partial class JukeboxControl : UserControl
     private void ResetInactivity()
     {
         if (DataContext is not JukeboxViewModel vm) return;
-        vm.ControlBarHeight = 65;
+        // REFACTOR: magic number 65 → Constants.DefaultControlBarHeight (smell §5.2, §6.4).
+        vm.ControlBarHeight = Constants.DefaultControlBarHeight;
         _inactivityTimer.Stop();
         if (vm.IsAutoHideEnabled)
             _inactivityTimer.Start();

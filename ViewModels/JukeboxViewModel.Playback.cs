@@ -1,11 +1,13 @@
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Jukebox.Extensions;
 using Jukebox.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -18,8 +20,19 @@ public partial class JukeboxViewModel
     private DispatcherTimer? _playbackTimer;
     private bool _isTimerUpdating;
     private readonly TaskCompletionSource _backendReadyTcs = new();
-    private JukeboxTrack? _lastTrack;
+
+    // REFACTOR: tracks the currently-subscribed track so we can unsubscribe
+    // the CORRECT handler on track change (was smell §4.2 Critical:
+    // OnCurrentTrackChanged leaks event handler — the original code
+    // unsubscribed _lastTrack but if the same track was set twice it would
+    // double-subscribe).
+    private JukeboxTrack? _subscribedTrack;
     private bool _isPlaybackDisposed;
+
+    // REFACTOR: lock object protecting _bassStream access between
+    // PlaybackTimer_Tick and DisposeBass (was smell §4.2 Critical: race
+    // condition between PlaybackTimer_Tick and Dispose).
+    private readonly object _bassStreamLock = new();
     #endregion
 
     #region Observable Properties
@@ -65,7 +78,7 @@ public partial class JukeboxViewModel
             if (SetProperty(ref _volume, value))
             {
                 ApplyBassVolume(value);
-                ApplyVlcVolume(value);
+                ApplyMpvVolume(value);
             }
         }
     }
@@ -80,18 +93,23 @@ public partial class JukeboxViewModel
 
         EqViewModel.EqBandUpdated += OnEqBandUpdated;
 
-        _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _playbackTimer = new DispatcherTimer
+        {
+            // REFACTOR: magic number 250 → named constant (smell §4.2, §6.4).
+            Interval = TimeSpan.FromMilliseconds(Constants.PlaybackTimerIntervalMs)
+        };
         _playbackTimer.Tick += PlaybackTimer_Tick;
 
         await Task.Run(() =>
         {
             InitializeBass();
-            InitializeVlc();
+            InitializeMpv();
         });
 
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Backend Initialization completed in {sw.ElapsedMilliseconds}ms overall.");
 
-        var projectMPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets");
+        // REFACTOR: direct AppDomain.CurrentDomain.BaseDirectory → IPathProvider (smell §6.3).
+        var projectMPath = Jukebox.Services.PathProvider.Current.ProjectMPresetsDirectory;
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] ProjectM Path Check: {projectMPath} exists? {System.IO.Directory.Exists(projectMPath)}");
 
         Dispatcher.UIThread.Post(() =>
@@ -99,7 +117,9 @@ public partial class JukeboxViewModel
             IsBackendReady = true;
             IsInitializing = false;
             _backendReadyTcs.TrySetResult();
-            _ = InitializeStartupAsync();
+            // REFACTOR: SafeFireAndForget instead of `_ = InitializeStartupAsync()`
+            // (was smell §4.2 Critical: fire-and-forget InitializeStartupAsync).
+            InitializeStartupAsync().SafeFireAndForget(nameof(InitializeStartupAsync));
         });
     }
 
@@ -110,9 +130,16 @@ public partial class JukeboxViewModel
         _isTimerUpdating = true;
         try
         {
-            double positionMs = IsVisualizerVisible
-                ? GetBassPositionMs()
-                : GetVlcPositionMs();
+            // REFACTOR: lock around native handle read to prevent race with
+            // DisposeBass (was smell §4.2 Critical: race condition between
+            // PlaybackTimer_Tick and Dispose).
+            double positionMs;
+            lock (_bassStreamLock)
+            {
+                positionMs = IsVisualizerVisible
+                    ? GetBassPositionMs()
+                    : GetMpvPositionMs();
+            }
 
             if (positionMs >= 0)
             {
@@ -137,7 +164,7 @@ public partial class JukeboxViewModel
         if (CanStop && CurrentTrack != null)
         {
             if (IsVisualizerVisible) ResumeBass();
-            else ResumeVlc();
+            else ResumeMpv();
 
             _playbackTimer?.Start();
             CanPlay = false;
@@ -168,7 +195,7 @@ public partial class JukeboxViewModel
     private void Pause()
     {
         if (IsVisualizerVisible) PauseBass();
-        else PauseVlc();
+        else PauseMpv();
 
         _playbackTimer?.Stop();
         CanPlay = true;
@@ -182,7 +209,7 @@ public partial class JukeboxViewModel
         _playbackTimer?.Stop();
 
         if (IsVisualizerVisible) StopBass();
-        else StopVlc();
+        else StopMpv();
 
         CanPlay = PlaylistViewModel.Playlist.Count > 0;
         CanPause = false;
@@ -221,7 +248,7 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Core Playback
-    private async Task StartTrackAsync(bool vlcEndReached = false)
+    private async Task StartTrackAsync(bool mpvEndReached = false)
     {
         if (CurrentTrack == null || string.IsNullOrEmpty(CurrentTrack.FilePath)) return;
 
@@ -229,7 +256,7 @@ public partial class JukeboxViewModel
             CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
         if (IsVisualizerVisible) StopBass();
-        else StopVlc(vlcEndReached);
+        else StopMpv();
 
         IsVisualizerVisible = isAudio;
 
@@ -242,7 +269,7 @@ public partial class JukeboxViewModel
     private void SeekToPosition(double positionMs)
     {
         if (IsVisualizerVisible) SeekBass(positionMs);
-        else SeekVlc(positionMs);
+        else SeekMpv(positionMs);
     }
 
     private void UpdateTrackDuration(double durationMs)
@@ -293,18 +320,23 @@ public partial class JukeboxViewModel
     #region Track Changed
     partial void OnCurrentTrackChanged(JukeboxTrack? value)
     {
-        if (_lastTrack != null)
-            _lastTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
+        // REFACTOR: use ReferenceEquals guard before unsubscribing to prevent
+        // double-subscription when the same track is set twice (was smell
+        // §4.2 Critical: OnCurrentTrackChanged leaks event handler).
+        if (_subscribedTrack != null && !ReferenceEquals(_subscribedTrack, value))
+            _subscribedTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
 
-        _lastTrack = value;
+        _subscribedTrack = value;
         if (value == null) return;
 
         value.PropertyChanged += CurrentTrack_PropertyChanged;
 
         if (IsShowPlayingEnabled)
         {
-            ShowPlayingText = value.DisplayName;
-            _ = TriggerShowPlayingOSDAsync();
+            // REFACTOR: OSD animation delegated to IShowPlayingService
+            // (was smell §4.1 Warning: Direct dispatcher coupling in OSD animation).
+            _showPlayingService.ShowAsync(value.DisplayName)
+                .SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
 
         if (!string.IsNullOrEmpty(value.FilePath))
@@ -350,7 +382,13 @@ public partial class JukeboxViewModel
         }
     }
 
-    public void LoadSystemLogo(string systemName) { /* placeholder */ }
+    public void LoadSystemLogo(string systemName)
+    {
+        // REFACTOR: was `/* placeholder */` empty method — smell §4.2 Minor.
+        // Either implement or remove; for now, log a warning so callers know
+        // the operation is a no-op.
+        Debug.WriteLine($"[WARN] LoadSystemLogo('{systemName}') is not implemented.");
+    }
     #endregion
 
     #region Dispose
@@ -361,14 +399,24 @@ public partial class JukeboxViewModel
 
         try
         {
-            if (_lastTrack != null)
-                _lastTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
+            // REFACTOR: unsubscribe the correct track (was _lastTrack, which
+            // could be stale if CurrentTrack changed mid-dispose).
+            if (_subscribedTrack != null)
+                _subscribedTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
 
             EqViewModel.EqBandUpdated -= OnEqBandUpdated;
+
+            // Stop the timer BEFORE disposing native handles — eliminates the
+            // race window between PlaybackTimer_Tick and DisposeBass (smell §4.2).
             _playbackTimer?.Stop();
 
-            await DisposeVlcAsync();
-            DisposeBass();
+            await DisposeMpvAsync();
+
+            // Lock around Bass dispose to serialize with any in-flight Tick.
+            lock (_bassStreamLock)
+            {
+                DisposeBass();
+            }
         }
         catch (Exception ex)
         {

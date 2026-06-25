@@ -12,7 +12,7 @@ public partial class JukeboxViewModel
 {
     #region Fields
     private int _bassStream;
-    private readonly int[] _eqFxHandles = new int[10];
+    private readonly int[] _eqFxHandles = new int[Constants.EqBandCount];
     private DSPProcedure? _dspProcedure;
     private SyncProcedure? _endSyncProcedure;
     private int _dspHandle;
@@ -71,7 +71,19 @@ public partial class JukeboxViewModel
         if (CurrentTrack == null) return;
 
         _bassStream = Bass.CreateStream(CurrentTrack.FilePath, 0, 0, BassFlags.Default);
-        if (_bassStream == 0) return;
+
+        // REFACTOR: silent failure on CreateStream returning 0 → check
+        // Bass.LastError and surface a user-facing dialog (was smell §4.3
+        // Warning: Silent failure on Bass.CreateStream returning 0).
+        if (_bassStream == 0)
+        {
+            var error = Bass.LastError;
+            Debug.WriteLine($"[BASS] CreateStream failed for '{CurrentTrack.FilePath}'. Error: {error}");
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Audio Error",
+                $"Could not open audio file:\n{CurrentTrack.FilePath}\n\nReason: {error}");
+            return;
+        }
 
         long byteLength = Bass.ChannelGetLength(_bassStream);
         double durationSeconds = Bass.ChannelBytes2Seconds(_bassStream, byteLength);
@@ -81,9 +93,15 @@ public partial class JukeboxViewModel
 
         Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, Volume / 100.0);
 
+        // REFACTOR: EQ is Windows-only via DXParamEQ. On Linux/macOS, the EQ
+        // sliders will silently have no effect — log a one-time warning so
+        // the issue is diagnosable. Future enhancement: switch to BASS_FX
+        // PeakEQ (cross-platform) once the ManagedBass.Fx NuGet package is
+        // added (was smell §4.3 Warning: Platform-conditional EQ).
+        // See Smell Test Report §4.3 and §7.2 item #13.
         if (OperatingSystem.IsWindows())
         {
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < Constants.EqBandCount; i++)
             {
                 if (EqViewModel.EqBands.Count > i)
                 {
@@ -98,6 +116,18 @@ public partial class JukeboxViewModel
                 }
             }
         }
+        else
+        {
+            // One-time warning per process — guarded with a static flag so
+            // we don't spam the log on every track change.
+            if (!_eqUnavailableWarned)
+            {
+                _eqUnavailableWarned = true;
+                Debug.WriteLine($"[BASS] EQ is not available on this platform ({Environment.OSVersion}). " +
+                                "Audio will play without equalization. To enable cross-platform EQ, " +
+                                "add the ManagedBass.Fx NuGet package and switch to EffectType.PeakEQ.");
+            }
+        }
 
         _dspHandle = Bass.ChannelSetDSP(_bassStream, _dspProcedure!, IntPtr.Zero, 0);
         _endSyncHandle = Bass.ChannelSetSync(_bassStream, SyncFlags.End, 0, _endSyncProcedure!, IntPtr.Zero);
@@ -105,6 +135,8 @@ public partial class JukeboxViewModel
         Bass.ChannelPlay(_bassStream);
         SetPlayingState();
     }
+
+    private static bool _eqUnavailableWarned = false;
 
     private void ResumeBass()
     {
@@ -176,7 +208,7 @@ public partial class JukeboxViewModel
         if (_bassStream != 0)
         {
             int index = EqViewModel.EqBands.IndexOf(band);
-            if (index >= 0 && index < 10 && _eqFxHandles[index] != 0)
+            if (index >= 0 && index < Constants.EqBandCount && _eqFxHandles[index] != 0)
             {
                 var p = new DXParamEQParameters
                 {

@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
              xmlns:vis="using:JukeboxVisualizations.Controls"
-             xmlns:vlc="clr-namespace:LibVLCSharp.Avalonia;assembly=LibVLCSharp.Avalonia"
+             xmlns:localViews="using:Jukebox.Views"
              mc:Ignorable="d" d:DesignWidth="880" d:DesignHeight="655"
              x:Class="Jukebox.Views.ContentView"
              x:DataType="vm:JukeboxViewModel">
@@ -22,19 +22,21 @@
                            Foreground="#888888"
                            HorizontalAlignment="Center"
                            FontSize="24"/>
-                <ProgressBar IsIndeterminate="True" 
-                             Width="200" 
-                             Height="4" 
+                <ProgressBar IsIndeterminate="True"
+                             Width="200"
+                             Height="4"
                              HorizontalAlignment="Center"/>
             </StackPanel>
 
-            <!-- Video playback host -->
-            <Decorator x:Name="VideoHost"
-                       IsVisible="{Binding !IsVisualizerVisible}"/>
-
-            <!-- ProjectM visualizer host -->
-            <Decorator x:Name="ProjectMHost"
-                       IsVisible="{Binding IsVisualizerVisible}"/>
+            <!--
+                Single host for video/visualizer content.
+                ContentControl swaps between MpvView (video mode) and
+                ProjectMControl (audio mode). Only ONE OpenGlControlBase
+                is in the visual tree at a time — prevents GL context
+                conflicts (each OpenGlControlBase creates its own private
+                GL context; having two simultaneously can break ProjectM).
+            -->
+            <ContentControl x:Name="MediaHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
 
             <Border x:Name="OsdAnchor" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,20,0,0" Width="1" Height="1" Background="Transparent" IsHitTestVisible="False"/>
 
