@@ -8,17 +8,18 @@ license terms alike.
 
 For the avoidance of doubt: **Jukebox does not commit third-party native
 binaries (`.dll` / `.so` / `.dylib`) to this repository.** They are
-fetched at build time via the `fetch-natives.ps1` / `fetch-natives.sh`
-script, which downloads them from upstream sources or a project-managed
-GitHub release. See [DEPENDENCIES.md](DEPENDENCIES.md) for details.
+downloaded manually by the user from upstream sources and dropped into
+the `lib/` folder. See [DEPENDENCIES.md](DEPENDENCIES.md) and
+[`lib/README.md`](lib/README.md) for details.
 
 ---
 
 ## Native runtime libraries (dropped into `lib/`)
 
 These are unmanaged native binaries loaded at runtime via P/Invoke or
-`NativeLibrary.Load`. They are NOT committed to the repo — see
-`fetch-natives.ps1` / `fetch-natives.sh`.
+`NativeLibrary.Load`. They are NOT committed to the repo — the user
+downloads and places them manually. See `lib/README.md` for the list
+of required files per platform and where to download each one.
 
 ### BASS Audio Library (`bass.dll` / `libbass.so`)
 
@@ -62,8 +63,9 @@ These are unmanaged native binaries loaded at runtime via P/Invoke or
   > Most pre-built libmpv binaries available for download (SourceForge
   > Windows builds, distro packages) are GPL builds, not LGPL.
 
-  The `fetch-natives` script downloads libmpv from upstream. The user
-  accepts the GPL terms by running the script. Jukebox itself does not
+  The user downloads libmpv themselves from upstream (SourceForge,
+  distro package, or their own build). The user accepts the GPL terms
+  by downloading and placing the library. Jukebox itself does not
   redistribute libmpv in source-controlled history.
 
 ### GLEW (OpenGL Extension Wrangler Library) — `glew32.dll`

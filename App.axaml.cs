@@ -31,6 +31,24 @@ public partial class App : Application
             var storageService = new Jukebox.Services.StorageService(window);
             vm.StorageService = storageService;
 
+            // Startup check: scan lib/ for required native libraries
+            // Shows a clear error dialog listing what's missing and where
+            // to get it. The app continues to start (so the user can see
+            // the window and read the message), but audio/video playback
+            // won't work until they address it.
+            var missingReport = Jukebox.Services.NativeDependencyChecker.CheckForMissingRequired();
+            if (missingReport != null)
+            {
+                // Defer showing the dialog until after the window is shown
+                // so it appears on top of the main window.
+                Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                {
+                    await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                        "Required libraries missing",
+                        missingReport);
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
+            }
+
             // Parse Command Line Arguments
             if (desktop.Args != null)
             {

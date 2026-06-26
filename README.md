@@ -46,17 +46,9 @@ All native runtimes live in a flat `lib/` folder next to `Jukebox.exe`. Windows 
 - **Windows:** `lib/bass.dll`, `lib/libmpv-2.dll` (drop into `lib/`)
 - **Linux:** `lib/libbass.so`, `lib/libmpv.so.2` (drop into `lib/`, OR install `libmpv-dev` via apt as a fallback)
 
-The `lib/` folder is intentionally empty in the repo — populate it by running the fetch-natives script:
+The `lib/` folder is intentionally empty in the repo — populate it by downloading the binaries listed in [`lib/README.md`](lib/README.md). At startup, Jukebox scans `lib/` and shows a clear error dialog if any required libraries are missing, listing exactly what's needed and where to get it.
 
-```bash
-# Windows
-.\fetch-natives.ps1
-
-# Linux / macOS
-./fetch-natives.sh
-```
-
-The script reads `natives.json` (URLs + SHA-256 checksums), downloads each asset for the current platform, verifies the checksum, and extracts into `lib/`. See `lib/README.md` and [DEPENDENCIES.md](DEPENDENCIES.md) for details, and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for licensing.
+See [DEPENDENCIES.md](DEPENDENCIES.md) for details and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for licensing.
 
 ### Optional: ProjectM Visualizations
 

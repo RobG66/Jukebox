@@ -1,20 +1,14 @@
 # Jukebox Project Dependencies
 
-This project relies on unmanaged native libraries for audio playback (BASS), video playback (libmpv), and optional visualizations (ProjectM). These dependencies are not included in the repository — they are downloaded and verified by the `fetch-natives.ps1` / `fetch-natives.sh` script into a single flat `lib/` folder. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the licensing of each third-party library.
+This project relies on unmanaged native libraries for audio playback (BASS), video playback (libmpv), and optional visualizations (ProjectM). These dependencies are not included in the repository — you drop them into a single flat `lib/` folder. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the licensing of each third-party library.
 
 ## Quick start
 
-```bash
-# Windows
-.\fetch-natives.ps1
+1. **Build output directory:** after `dotnet build`, your `bin/Debug/net10.0/` (or `bin/Release/net10.0/`) folder will contain `Jukebox.exe` and an empty `lib/` folder.
+2. **Populate `lib/`** with the native binaries listed in [`lib/README.md`](lib/README.md). The README has download URLs and licensing notes for each file.
+3. **Run Jukebox.** At startup, the app scans `lib/` and shows a clear error dialog if any required libraries are missing — listing exactly what's missing, where to put it, and where to find download instructions.
 
-# Linux / macOS
-./fetch-natives.sh
-```
-
-The script reads `natives.json` (the manifest of URLs + SHA-256 checksums), downloads each asset for the current platform, verifies the checksum, and extracts into `lib/`. It's idempotent — safe to re-run; pass `-Force` / `--force` to re-download everything.
-
-The `natives.json` manifest pins the URL + SHA-256 of each binary. To update a library, edit the manifest (bump URL + sha256), commit the change, and re-run the script. No third-party binaries are ever committed to git history.
+No scripts to run. No PowerShell execution policy issues. Just download the files, drop them in `lib/`, and run.
 
 ## Standardized layout
 
@@ -41,7 +35,7 @@ All drop-in files (native runtimes + the optional `JukeboxVisualizations.dll` ma
     └── last_preset.txt                ← runtime-written state
 ```
 
-The `lib/` folder is intentionally empty in the repository — it's a drop-in location populated by a separate setup script (TBD) or by manually copying the third-party native binaries. See `lib/README.md` for the list of required files per platform.
+The `lib/` folder is intentionally empty in the repository — see `lib/README.md` for the list of required files per platform and where to download each one.
 
 The `ProjectM/` folder contains ONLY preset data. The native `libprojectM` binary AND the `JukeboxVisualizations.dll` managed wrapper both live in `lib/` — all optional drop-in files in one place.
 
@@ -54,15 +48,15 @@ The application uses BASS for audio playback and DSP analysis. The native `bass.
 ### Windows setup:
 1. Download the BASS library from the Un4seen website (see links below).
 2. Extract `bass.dll` (64-bit version).
-3. Place `bass.dll` in the `lib/` folder at the root of the Jukebox project.
+3. Place `bass.dll` in the `lib/` folder in the Jukebox build output directory.
 
 ### Linux setup:
 1. Download `libbass.so` from the Un4seen website.
-2. Place `libbass.so` in the `lib/` folder at the root of the Jukebox project.
+2. Place `libbass.so` in the `lib/` folder in the Jukebox build output directory.
 
 ### How it loads
 
-`JukeboxViewModel.PlaybackBASS.cs::PreloadBassNative()` calls `NativeLibrary.Load("<appdir>/lib/bass.dll")` (or `libbass.so` on Linux) BEFORE `Bass.Init()`. Once loaded into the process, ManagedBass's internal P/Invoke `LoadLibrary("bass.dll")` finds the already-cached handle, no matter what directory the OS would otherwise search. If the file is missing from `lib/`, falls back to the OS default search path (lets Linux users install libbass system-wide if they prefer).
+`JukeboxViewModel.PlaybackBASS.cs::PreloadBassNative()` calls `NativeLibrary.Load("<appdir>/lib/bass.dll")` (or `libbass.so` on Linux) BEFORE `Bass.Init()`. Once loaded into the process, ManagedBass's internal P/Invoke `LoadLibrary("bass.dll")` finds the already-cached handle, no matter what directory the OS would otherwise search. If the file is missing from `lib/`, falls back to the OS default search path.
 
 ---
 
@@ -72,12 +66,12 @@ Video rendering is handled via a custom P/Invoke wrapper to `libmpv`. The native
 
 ### Windows setup:
 1. Download the `libmpv` Windows build from SourceForge (see links below).
-2. Extract the archive and copy `libmpv-2.dll` (on some builds it might be named `mpv-2.dll` — if so, rename it).
-3. Place `libmpv-2.dll` in the `lib/` folder at the root of the Jukebox project.
+2. Extract the archive (it's a `.7z` — use 7-Zip) and find `libmpv-2.dll` inside.
+3. Place `libmpv-2.dll` in the `lib/` folder in the Jukebox build output directory.
 
 ### Linux setup:
-1. Either download `libmpv.so.2` from a libmpv build (e.g. from the mpv project's releases) and place it in the `lib/` folder, OR
-2. Install it via your package manager (`sudo apt install libmpv-dev`) — the loader falls back to the system library path if `lib/` doesn't contain it.
+1. Either download `libmpv.so.2` from a libmpv build and place it in `lib/`, OR
+2. Install it via your package manager (`sudo apt install libmpv-dev`) — the loader falls back to the system library path if `lib/` doesn't contain it. (If installed system-wide, the startup check won't flag it as missing.)
 
 ### How it loads
 
@@ -105,10 +99,11 @@ Remove (or rename) any of: `lib/JukeboxVisualizations.dll`, `lib/libprojectM.*`,
 
 Build the `Jukebox-Visualizations` companion repository (see links below) using the included `build.ps1` (Windows) or `build.sh` (Linux/macOS) script. The script:
 - Builds the managed wrapper for both `win-x64` and `linux-x64` RIDs.
+- Builds libprojectM from source via the `build-natives.yml` GitHub Actions workflow.
 - Stages `JukeboxVisualizations.dll` + `.deps.json` and the native binaries from `lib/` all into a single `lib/` subfolder, plus preset data into a `ProjectM/` subfolder.
 - Produces a ready-to-distribute `Jukebox-Visualizations-dropin.zip`.
 
-Unzip this archive into your Jukebox build output directory. Then drop the Jukebox's own native runtimes (`bass.dll` / `libbass.so`, `libmpv-2.dll` / `libmpv.so.2`) into the same `lib/` folder.
+Unzip this archive into your Jukebox build output directory. The drop-in's `lib/` contents merge with any `bass.dll` / `libmpv-2.dll` you've already placed there.
 
 ### How it works at runtime
 
