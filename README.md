@@ -1,5 +1,8 @@
 # Jukebox
 
+<img width="3840" height="2040" alt="image" src="https://github.com/user-attachments/assets/b22df7a3-8f9e-491c-b51e-f8bcca36e89b" />
+
+
 A cross-platform desktop media player built with Avalonia UI.
 
 ## Dependencies
