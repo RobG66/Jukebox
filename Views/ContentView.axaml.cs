@@ -24,7 +24,6 @@ public partial class ContentView : UserControl
     /// </summary>
     private Control? _projectMControl;
     private bool _hasAttachedProjectM;
-    private bool _isInVideoMode;
 
     // ── Layout-transition suppression (window resize only) ──
     private readonly Avalonia.Threading.DispatcherTimer _layoutSettleTimer;
@@ -87,7 +86,6 @@ public partial class ContentView : UserControl
         // from the visual tree, triggering OnOpenGlDeinit and context
         // cleanup. This must happen before MpvContext.Dispose().
         MediaHost.Content = null;
-        _isInVideoMode = false;
     }
 
     private void OnUnloaded(object? sender, RoutedEventArgs e)
@@ -200,7 +198,6 @@ public partial class ContentView : UserControl
                 _mpvView[!MpvView.MpvContextProperty] = new Binding(nameof(JukeboxViewModel.MpvContext));
             }
             MediaHost.Content = _mpvView;
-            _isInVideoMode = true;
         }
         else if (showVisualizer)
         {
@@ -211,15 +208,11 @@ public partial class ContentView : UserControl
             }
             if (_projectMControl != null)
                 MediaHost.Content = _projectMControl;
-            _isInVideoMode = false;
         }
-        else
-        {
-            // ── Audio mode + visualizer unavailable: empty MediaHost ──
-            // BASS still plays audio normally; the UI just shows the
-            // background (no OpenGlControlBase in the visual tree).
-            _isInVideoMode = false;
-        }
+        // else: audio mode + visualizer unavailable → MediaHost is left
+        // empty (set to null above). BASS still plays audio normally;
+        // the UI just shows the background (no OpenGlControlBase in the
+        // visual tree).
     }
 
     private void SuppressNativeRenderDuringLayoutTransition()

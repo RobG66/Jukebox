@@ -484,5 +484,3 @@ $RECYCLE.BIN/
 # Native binaries (download manually)
 bass.dll
 libmpv-2.dll
-*.ps1
-publish/
