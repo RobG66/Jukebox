@@ -5,8 +5,9 @@ namespace Jukebox.Services;
 
 /// <summary>
 /// Default <see cref="IPathProvider"/> implementation. Uses the application's
-/// base directory for bundled assets (ProjectM presets) and the OS-specific
-/// ApplicationData folder for user settings.
+/// base directory for native libraries (<c>lib/</c>), ProjectM preset assets
+/// (<c>ProjectM/</c>), and the OS-specific ApplicationData folder for user
+/// settings.
 ///
 /// Cross-platform behavior:
 ///  - Windows: SettingsDirectory = C:\Users\&lt;user&gt;\AppData\Roaming\Jukebox
@@ -34,14 +35,42 @@ public sealed class PathProvider : IPathProvider
 
     private PathProvider() { }
 
+    /// <summary>
+    /// The application's base directory (where Jukebox.exe lives).
+    /// </summary>
+    public string AppBaseDirectory => AppDomain.CurrentDomain.BaseDirectory;
+
+    /// <summary>
+    /// Directory containing all native runtime libraries (bass, libmpv,
+    /// libprojectM, glew) AND the optional JukeboxVisualizations.dll
+    /// managed wrapper. Flat layout — Windows .dll and Linux .so files
+    /// coexist by extension; the loader picks the right filename per OS.
+    /// </summary>
+    public string NativeLibDirectory =>
+        Path.Combine(AppBaseDirectory, "lib");
+
+    /// <summary>
+    /// Path to the JukeboxVisualizations.dll managed wrapper. Lives in
+    /// <see cref="NativeLibDirectory"/> (<c>&lt;appdir&gt;/lib/</c>)
+    /// alongside the native libprojectM binary — keeping all optional
+    /// drop-in files in one place.
+    /// </summary>
+    public string JukeboxVisualizationsDllPath =>
+        Path.Combine(NativeLibDirectory, "JukeboxVisualizations.dll");
+
+    /// <summary>
+    /// Root directory of the ProjectM preset assets (presets, textures).
+    /// Contains ONLY preset data — the native libprojectM binary lives in
+    /// <see cref="NativeLibDirectory"/>.
+    /// </summary>
     public string ProjectMRoot =>
-        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM");
+        Path.Combine(AppBaseDirectory, "ProjectM");
 
     public string ProjectMPresetsDirectory =>
-        Path.Combine(ProjectMRoot, "Presets");
+        Path.Combine(ProjectMRoot, "presets");
 
     public string ProjectMFavoritesDirectory =>
-        Path.Combine(ProjectMPresetsDirectory, "Favorites");
+        Path.Combine(ProjectMPresetsDirectory, "favorites");
 
     public string LastPresetFile =>
         Path.Combine(ProjectMRoot, "last_preset.txt");

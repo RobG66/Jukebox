@@ -17,10 +17,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="bass.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="libmpv-2.dll" Condition="Exists('libmpv-2.dll')">
+    <!--
+      Native runtime libraries (bass, libmpv) AND the optional
+      JukeboxVisualizations.dll managed wrapper live under `lib/` — flat,
+      no per-platform subfolders. Windows .dll and Linux .so files coexist
+      by extension. The loader code (MpvNative.cs, PlaybackBASS.cs,
+      ProjectMNative.cs in JukeboxVisualizations, VisualizerRuntime.cs)
+      picks the right filename per OS at runtime.
+
+      The `lib/` folder is NOT shipped in this repo — it is a drop-in
+      location populated by a separate setup script. The Condition guard
+      below ensures the build succeeds even when lib/ is empty.
+    -->
+    <None Include="lib\**\*" Condition="Exists('lib\')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -37,17 +46,23 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- MPV replaces LibVLCSharp for video playback. We use our own custom
          P/Invoke wrapper (Mpv/MpvNative.cs + Mpv/MpvContext.cs) — no third-
-         party MPV .NET package needed. -->
-    <!-- Native libmpv: the Endpne.LibMPV.Windows package ships a .lib (import
-         library), NOT the runtime .dll. You must download libmpv-2.dll
-         manually from https://sourceforge.net/projects/mpv-player-windows/files/libmpv/
-         and place it in the project root (next to bass.dll). See README. -->
+         party MPV .NET package needed. The native libmpv binary is loaded
+         from the lib/ folder at runtime; see MpvNative.cs. -->
     <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jukebox-Visualizations\JukeboxVisualizations.csproj" />
+    <!--
+      Jukebox-Visualizations (ProjectM wrapper) is intentionally NOT a
+      ProjectReference. Visualizations are an optional, drop-in feature:
+      if the user places a `ProjectM` folder (containing the native
+      `libprojectM.dll`, presets, and the `JukeboxVisualizations.dll`
+      managed wrapper) next to the Jukebox executable, the visualizer is
+      discovered at runtime via reflection (see Services/VisualizerRuntime).
+      If the folder is absent, the visualizer button is hidden and the
+      jukebox plays music without any ProjectM dependency.
+    -->
     <ProjectReference Include="..\Avalonia.Controls.DataGrid\src\Avalonia.Controls.DataGrid\Avalonia.Controls.DataGrid.csproj" />
     <ProjectReference Include="..\Avalonia.Controls.TreeDataGrid\src\Avalonia.Controls.TreeDataGrid\Avalonia.Controls.TreeDataGrid.csproj" />
   </ItemGroup>

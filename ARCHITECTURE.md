@@ -11,7 +11,7 @@ The Jukebox application is a cross-platform desktop media player built with:
 *   **.NET 8 / C# 12:** Target framework.
 *   **libmpv:** For video playback (custom P/Invoke wrapper — `Mpv/MpvNative.cs` + `Mpv/MpvContext.cs`). Renders video into Avalonia's OpenGL context via `OpenGlControlBase`. No native HWND, no airspace issue.
 *   **ManagedBass:** For audio playback and DSP/PCM audio data extraction (wraps native BASS).
-*   **JukeboxVisualizations (ProjectM):** A companion library wrapping native OpenGL `libprojectM` to render milkdrop visualizer presets.
+*   **JukeboxVisualizations (ProjectM):** An **optional** companion library wrapping native OpenGL `libprojectM` to render milkdrop visualizer presets. Loaded at runtime via reflection — the Jukebox no longer holds a compile-time reference to this assembly. When absent, the visualizer button is hidden and audio plays without any ProjectM dependency.
 *   **TagLibSharp:** For background media metadata extraction.
 *   **CommunityToolkit.Mvvm:** Source-generator-based MVVM framework (`[ObservableProperty]`, `[RelayCommand]`).
 
@@ -46,7 +46,9 @@ Jukebox/
 │   ├── IPathProvider.cs         # Interface for canonical filesystem paths
 │   ├── PathProvider.cs          # Default impl (singleton via PathProvider.Current)
 │   ├── IShowPlayingService.cs   # OSD animation interface
-│   └── ShowPlayingService.cs    # OSD hold + fade impl (extracted from VM)
+│   ├── ShowPlayingService.cs    # OSD hold + fade impl (extracted from VM)
+│   ├── IVisualizerRuntime.cs    # Optional-visualizer abstraction
+│   └── VisualizerRuntime.cs     # Reflection-based loader for JukeboxVisualizations.dll
 ├── Mpv/                         # Custom libmpv wrapper (replaces LibVLCSharp)
 │   ├── MpvNative.cs             # P/Invoke declarations for libmpv C API
 │   ├── MpvContext.cs            # High-level wrapper: playback, properties, events, render
@@ -65,7 +67,7 @@ Jukebox/
 └── Views/
     ├── JukeboxView.axaml.cs     # Main window (lifecycle, close handling, media host detach)
     ├── JukeboxControl.axaml.cs  # Embeddable UserControl (StyledProperties, inactivity timer)
-    ├── ContentView.axaml.cs     # Media host — swaps between MpvView and ProjectMControl
+    ├── ContentView.axaml.cs     # Media host — swaps MpvView / ProjectMControl / empty
     ├── MpvView.cs               # OpenGlControlBase subclass — renders MPV video into GL context
     ├── PlaylistView.axaml.cs    # DataGrid + scroll tracking
     ├── TransportBarView.axaml.cs# Transport bar + click-to-seek sliders
@@ -79,13 +81,15 @@ Jukebox/
 
 ## 2. Native Resource Lifecycles & Disposal Rules
 
-Interfacing with native unmanaged DLLs (`libmpv-2.dll`, `bass.dll`, `libprojectM.dll`) requires strict sequence enforcement during initialization and shutdown. Failure to adhere to these rules results in instant native **Access Violation** crashes or process deadlocks.
+Interfacing with native unmanaged DLLs (`libmpv-2.dll`, `bass.dll`, and optionally `libprojectM.dll`) requires strict sequence enforcement during initialization and shutdown. Failure to adhere to these rules results in instant native **Access Violation** crashes or process deadlocks. The `libprojectM.dll` is optional — it is only loaded at runtime when the user has dropped in the visualization files; otherwise it plays no role in the audio path.
+
+**Native library layout:** All native runtimes live under a single flat `<appdir>/lib/` folder. Windows `.dll` and Linux `.so` files coexist by extension; each loader (`MpvNative.cs`, `PlaybackBASS.cs::PreloadBassNative`, `ProjectMNative.cs`) picks the right filename per OS at runtime. The `lib/` folder is NOT shipped in the repo — it's a drop-in location populated separately.
 
 ### 2.1. libmpv (Video Playback)
 
 The video backend uses a custom P/Invoke wrapper (`Mpv/MpvNative.cs` + `Mpv/MpvContext.cs`) around the libmpv C client API. No third-party .NET MPV package is used.
 
-*   **Custom Wrapper:** `MpvNative.cs` declares ~20 P/Invoke functions via `DllImport` with a `NativeLibrary.SetDllImportResolver` that searches for `libmpv-2.dll` (Windows), `libmpv.so.2` (Linux), or `libmpv.2.dylib` (macOS). `MpvContext.cs` wraps these into a high-level API (`LoadFile`, `Play`, `Pause`, `SeekAbsolute`, `SetVolume`, `ObserveProperty`).
+*   **Custom Wrapper:** `MpvNative.cs` declares ~20 P/Invoke functions via `DllImport` with a `NativeLibrary.SetDllImportResolver`. The resolver first tries `<appdir>/lib/libmpv-2.dll` (Windows), `libmpv.so.2` (Linux), or `libmpv.2.dylib` (macOS); if not found there, falls back to the OS default search path (lets Linux users `apt install libmpv-dev` if they prefer). `MpvContext.cs` wraps these into a high-level API (`LoadFile`, `Play`, `Pause`, `SeekAbsolute`, `SetVolume`, `ObserveProperty`).
 *   **OpenGL Render Context:** MPV renders video into Avalonia's OpenGL context via `mpv_render_context_create` with `MPV_RENDER_API_TYPE_OPENGL`. The `MpvView` (an `OpenGlControlBase` subclass) creates the render context in `OnOpenGlRender`, passing `GlInterface.GetProcAddress` as the GL function resolver. No native HWND — no airspace issue.
 *   **Render Update Callback:** MPV calls `mpv_render_context_set_update_callback` when a new frame is ready. The callback (which must NOT call any mpv API) schedules a render on the UI thread via `RequestNextFrameRendering()`. The callback delegate is stored in a field to prevent GC collection — libmpv holds a raw function pointer.
 *   **First-Frame Race Condition:** `PlayVideoAsync` calls `WaitForRenderContextReadyAsync()` before `LoadFile` — this blocks until `MpvView` has created the render context. Without this, MPV starts decoding before the render surface exists, producing a black first frame (see [Wholphin issue #576](https://github.com/damontecres/Wholphin/issues/576)).
@@ -108,10 +112,12 @@ The video backend uses a custom P/Invoke wrapper (`Mpv/MpvNative.cs` + `Mpv/MpvC
     3.  `Bass.StreamFree(_bassStream);` is then called to release the stream.
     4.  Finally, `Bass.Free();` is invoked to unload the unmanaged context (only if `_ownsBassContext` is true).
 
-### 2.3. ProjectM (Companion Visualizations)
-*   **GL Thread Affinity:** The visualizer control (`ProjectMControl`) inherits from `OpenGlControlBase`. The creation, preset loading (`projectm_load_preset_data`), and rendering (`projectm_opengl_render_frame`) of the ProjectM instance **must only occur on the OpenGL render thread** inside the `OnOpenGlRender` loop.
+### 2.3. ProjectM (Optional Companion Visualizations)
+*   **Optional Drop-in:** The Jukebox no longer holds a compile-time reference to the `JukeboxVisualizations` assembly. The wrapper is discovered at runtime via reflection in `Services/VisualizerRuntime.cs`. If the assembly (or the `ProjectM` drop-in folder) is absent, `IsVisualizerAvailable` is `false`, the visualizer toggle button in the transport bar is hidden, and audio plays through BASS with no ProjectM dependency.
+*   **GL Thread Affinity:** The visualizer control (`ProjectMControl` — typed as `Avalonia.Controls.Control` at the call site, since the wrapper type is not visible at compile time) inherits from `OpenGlControlBase`. The creation, preset loading (`projectm_load_preset_data`), and rendering (`projectm_opengl_render_frame`) of the ProjectM instance **must only occur on the OpenGL render thread** inside the `OnOpenGlRender` loop.
+*   **Reflection Adapter:** `IVisualizerRuntime` exposes `CreateControl`, `SetPresetPathBinding`, `StartEngine`, `LoadPreset`, `FeedPcm`, and `TryDispose`. The implementation caches the loaded `Assembly`, the `ProjectMControl` `Type`, the `PresetPathProperty` `AvaloniaProperty`, and the relevant `MethodInfo`s after the first successful probe so repeated calls (per PCM buffer, per preset change) do not pay a reflection cost.
 *   **PCM Queueing:** Since PCM data is fed from BASS's audio thread and rendering occurs on the GL thread, data is passed safely via a `ConcurrentQueue<short[]>` inside `ProjectMControl` to avoid lock contention.
-*   **Control Lifecycle:** `ProjectMControl` is an Avalonia `UserControl` and does **not** implement `IDisposable`. Teardown is achieved by removing it from the visual tree (`ProjectMHost.Child = null`), which triggers Avalonia's `Unloaded` handler — that is the correct lifecycle path for native Avalonia controls. The `ContentView.OnUnloaded` handler defensively checks `is IDisposable` before attempting disposal, future-proofing against a potential API change.
+*   **Control Lifecycle:** `ProjectMControl` is an Avalonia `UserControl` and does **not** implement `IDisposable`. Teardown is achieved by removing it from the visual tree (`MediaHost.Content = null`), which triggers Avalonia's `Unloaded` handler — that is the correct lifecycle path for native Avalonia controls. The `IVisualizerRuntime.TryDispose` method defensively checks `is IDisposable` before attempting disposal, future-proofing against a potential API change.
 
 ### 2.4. No Airspace Issue (MPV Migration)
 
@@ -119,12 +125,12 @@ The previous LibVLCSharp `VideoView` was a `NativeControlHost` that created a na
 
 **MPV eliminates the airspace problem entirely.** `MpvView` is an `OpenGlControlBase` subclass that renders video into Avalonia's OpenGL context — no native HWND, no separate window. Side panels (Playlist, Visualizer Picker), transport bar, and EQ overlay are normal XAML siblings of `ContentView` that render on top via standard Z-order. No overlay windows, no chrome instances, no visibility converters.
 
-**Single `OpenGlControlBase` at a time:** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` (video mode) and `ProjectMControl` (audio mode). Only one `OpenGlControlBase` is in the visual tree at a time — each creates its own private GL context, and having two simultaneously can break ProjectM's initialization. When switching modes, the old control is removed (`MediaHost.Content = null`), triggering `OnOpenGlDeinit` and GL context cleanup, before the new control is attached.
+**Single `OpenGlControlBase` at a time:** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between three states — `MpvView` (video mode), `ProjectMControl` (audio mode + visualizer available), and empty (audio mode + visualizer unavailable). Only one `OpenGlControlBase` is in the visual tree at a time — each creates its own private GL context, and having two simultaneously can break ProjectM's initialization. When switching modes, the old control is removed (`MediaHost.Content = null`), triggering `OnOpenGlDeinit` and GL context cleanup, before the new control is attached. The empty state is used when audio is playing but the optional `ProjectM` drop-in is not present — the MediaHost simply has no content (no `OpenGlControlBase`), and BASS plays audio normally with no GL cost.
 
 ### 2.5. Media Host Teardown in `ContentView`
-`ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` and `ProjectMControl`. Teardown on window close:
+`ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView`, `ProjectMControl`, and empty. Teardown on window close:
 *   `JukeboxView.CloseAsync` calls `ContentView.DetachMediaHost()` — sets `MediaHost.Content = null`, removing the active `OpenGlControlBase` from the visual tree BEFORE `DisposePlaybackAsync` runs. This triggers `OnOpenGlDeinit` and GL context cleanup, preventing AccessViolation from the render callback firing on a freed render context.
-*   `OnUnloaded` detaches all VM event handlers (`PropertyChanged`, `VisualizerViewModel.PropertyChanged`, `PcmDataAvailable`), clears `MediaHost.Content`, and disposes `ProjectMControl` if it implements `IDisposable`.
+*   `OnUnloaded` detaches all VM event handlers (`PropertyChanged`, `VisualizerViewModel.PropertyChanged`, `PcmDataAvailable`), clears `MediaHost.Content`, and asks the `IVisualizerRuntime` to dispose the `ProjectMControl` if it implements `IDisposable`.
 *   `MpvView` does not need explicit disposal — its render context is owned by `MpvContext` (the VM), which disposes it via `DisposeMpvAsync`.
 *   Dispose-path exceptions are logged via `Trace.WriteLine` (survives Release builds).
 
@@ -142,10 +148,11 @@ When directories containing thousands of tracks are loaded into the playlist, pa
 *   **Version Tracking:** To prevent late-completing background reads from writing metadata to the wrong tracks (e.g., if the user clears the playlist and loads a new one while tagging is active), the VM increments `_playlistVersion` and `_scrollVersion`. Completed background tasks reject their results if their captured version doesn't match the current active version.
 *   **Resilient File Enumeration:** `DiscoverFiles` uses `EnumerationOptions { IgnoreInaccessible = true, RecurseSubdirectories = ... }` so permission-denied directories on Linux don't abort the entire scan.
 
-### 3.2. ProjectM Preset Scan
-The visualizations folder contains a massive database of milkdrop presets (9,000+ `.milk` files).
+### 3.2. ProjectM Preset Scan (only when the optional drop-in is present)
+The visualizations folder contains a massive database of milkdrop presets (9,000+ `.milk` files). The scan is skipped entirely when the `ProjectM` drop-in folder is absent — `LoadVisualizersAsync` no-ops cleanly in that case.
 *   **Asynchronous Scan:** `LoadVisualizersAsync` in `JukeboxVisualizerViewModel` processes filesystem scanning recursively inside `Task.Run(...)`. Paths are resolved via `IPathProvider.ProjectMPresetsDirectory` (single source of truth — no more duplicated `Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ...)` calls).
 *   **UI Dispatch:** Once the folders are cataloged, the hierarchical tree node structures are built and dispatched to the UI thread via `Dispatcher.UIThread.Post(...)` to populate the `TreeDataGrid` bindings safely.
+*   **No-op when unavailable:** When the `ProjectM` folder is not present, the method logs a single `[Visualizer]` message and returns immediately. The picker tree stays empty, but the audio playback path is completely unaffected.
 
 ### 3.3. Fire-and-Forget Observation (`SafeFireAndForget`)
 Several call sites need to start async work without awaiting it (e.g., OSD animation triggered from a PropertyChanged handler, dispose on window close, background settings persistence). The codebase previously used `_ = SomeAsyncMethod()`, which silently swallowed any exception via `TaskScheduler.UnobservedTaskException`.
@@ -255,15 +262,20 @@ Single source of truth for all canonical filesystem paths. Replaces the 5 duplic
 ```csharp
 public interface IPathProvider
 {
-    string ProjectMRoot { get; }                // <appdir>/ProjectM
-    string ProjectMPresetsDirectory { get; }    // <appdir>/ProjectM/Presets
-    string ProjectMFavoritesDirectory { get; }  // <appdir>/ProjectM/Presets/Favorites
-    string LastPresetFile { get; }              // <appdir>/ProjectM/last_preset.txt
-    string SettingsDirectory { get; }           // <AppData>/Jukebox (cross-platform)
-    string EqSettingsFile { get; }              // <AppData>/Jukebox/EqSettings.json
+    string NativeLibDirectory { get; }             // <appdir>/lib (flat — all native runtimes + JukeboxVisualizations.dll)
+    string JukeboxVisualizationsDllPath { get; }   // <appdir>/lib/JukeboxVisualizations.dll
+    string ProjectMRoot { get; }                   // <appdir>/ProjectM (preset data only)
+    string ProjectMPresetsDirectory { get; }       // <appdir>/ProjectM/presets
+    string ProjectMFavoritesDirectory { get; }     // <appdir>/ProjectM/presets/favorites
+    string LastPresetFile { get; }                 // <appdir>/ProjectM/last_preset.txt
+    string SettingsDirectory { get; }              // <AppData>/Jukebox (cross-platform)
+    string EqSettingsFile { get; }                 // <AppData>/Jukebox/EqSettings.json
 }
 ```
 
+*   **`NativeLibDirectory`** is the flat folder containing all drop-in files: native runtime libraries (`bass.dll`, `libmpv-2.dll`, `libprojectM.dll`, `glew32.dll` on Windows; `libbass.so`, `libmpv.so.2`, `libprojectM.so.4` on Linux) AND the optional `JukeboxVisualizations.dll` managed wrapper. Loaders pick the right filename per OS at runtime; Windows `.dll` and Linux `.so` coexist by extension.
+*   **`JukeboxVisualizationsDllPath`** is `<appdir>/lib/JukeboxVisualizations.dll` — the wrapper lives in `lib/` alongside the native libprojectM binary, keeping all optional drop-in files in one place.
+*   **`ProjectMRoot`** contains ONLY preset data. The native `libprojectM` binary and the `JukeboxVisualizations.dll` wrapper both live in `NativeLibDirectory`.
 *   **Cross-platform behavior:** `SettingsDirectory` uses `Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)`, which resolves to `~/.config` on Linux/macOS and `%AppData%\Roaming` on Windows.
 *   **Singleton access:** `PathProvider.Current` returns the active instance. Tests can override via `PathProvider.Override(stub)` and reset via `PathProvider.Reset()`.
 
@@ -342,6 +354,8 @@ public JukeboxEqViewModel(IPathProvider pathProvider)
 *   `ILogger<T>` — currently `Debug.WriteLine` / `Trace.WriteLine` everywhere; needs `Microsoft.Extensions.Logging` + DI container
 *   `IPlaybackBackend` — BASS and MPV are still hardcoded behind `if (IsVisualizerVisible)` switches; needs an interface abstraction to make backends swappable
 
+> **Note:** `IVisualizerRuntime` IS now injectable on `JukeboxViewModel` (public settable property defaulting to `VisualizerRuntime.Current`). Tests can replace it with a stub that always returns `IsAvailable = false` to exercise the no-visualizer code paths without needing the native `libprojectM` runtime.
+
 ---
 
 ## 8. Smell-Test Report Cross-Reference
@@ -401,7 +415,7 @@ LibVLCSharp was replaced with a custom libmpv P/Invoke wrapper. Key changes:
 
 ### 9.3. Critical Design Decisions
 
-1. **Single `OpenGlControlBase` at a time.** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` (video) and `ProjectMControl` (audio). Having two `OpenGlControlBase` instances in the visual tree simultaneously breaks ProjectM's GL initialization — each creates its own private context.
+1. **Single `OpenGlControlBase` at a time.** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` (video), `ProjectMControl` (audio + visualizer available), and empty (audio + visualizer unavailable). Having two `OpenGlControlBase` instances in the visual tree simultaneously breaks ProjectM's GL initialization — each creates its own private context. The empty state is the only one with no GL cost.
 
 2. **First-frame race condition fix.** `PlayVideoAsync` awaits `WaitForRenderContextReadyAsync()` before `LoadFile` — blocks until `MpvView` has created the render context. Without this, MPV starts decoding with no output surface → black first frame. See [Wholphin issue #576](https://github.com/damontecres/Wholphin/issues/576).
 

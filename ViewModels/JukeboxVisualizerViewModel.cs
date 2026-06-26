@@ -143,7 +143,18 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         try
         {
             var rootFolder = _pathProvider.ProjectMPresetsDirectory;
-            if (!Directory.Exists(rootFolder)) return;
+            // No-op cleanly when the ProjectM drop-in folder is absent.
+            // This is the normal state when the user has not added the
+            // optional ProjectM drop-in: the visualizer button is hidden
+            // (IsVisualizerAvailable = false) and the picker tree is
+            // empty. Audio playback is unaffected.
+            if (!Directory.Exists(rootFolder))
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[Visualizer] ProjectM presets directory not present — " +
+                    "visualizer picker will be empty. Audio playback is unaffected.");
+                return;
+            }
 
             var scannedRoots = new List<TempFolderNode>();
             var allPaths = new List<string>();
@@ -220,7 +231,11 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         return node;
     }
 
-    // Skips native runtime directories (win-x64, linux-x64, osx-arm64, etc.) and asset folders
+    // Skips asset folders that shouldn't appear in the preset tree.
+    // (The native libprojectM binaries no longer live under ProjectM/ —
+    // they're in the flat lib/ folder alongside bass.dll, libmpv-2.dll,
+    // etc. The win-/linux-/osx- prefix checks are kept defensively in
+    // case a user drops an old-style ProjectM folder in.)
     private static bool IsNativeOrSystemFolder(string folderName) =>
         string.Equals(folderName, "textures", StringComparison.OrdinalIgnoreCase) ||
         folderName.StartsWith("win-",   StringComparison.OrdinalIgnoreCase) ||

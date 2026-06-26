@@ -30,6 +30,20 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     public Jukebox.Services.IStorageService? StorageService { get; set; }
 
+    /// <summary>
+    /// Reflection-based runtime that probes for the optional
+    /// <c>JukeboxVisualizations.dll</c> wrapper + <c>ProjectM</c> preset
+    /// folder. Exposed as a property so views (ContentView) can drive the
+    /// visualizer control through the same abstraction. Defaults to the
+    /// singleton <c>Jukebox.Services.VisualizerRuntime.Current</c>; tests
+    /// can inject a stub via <see cref="Jukebox.Services.VisualizerRuntime.Override(IVisualizerRuntime?)"/>.
+    /// </summary>
+    // Note: the initializer uses the fully-qualified type name to avoid
+    // ambiguity with this property's own name (the property name would
+    // otherwise shadow the type name within instance members per the
+    // C# member-lookup precedence rules).
+    public IVisualizerRuntime VisualizerRuntime { get; set; } = Jukebox.Services.VisualizerRuntime.Current;
+
     // ── REFACTOR: OSD animation now lives in a dedicated service ──
     // (was TriggerShowPlayingOSDAsync, lines 119-160 in original)
     // See Smell Test Report §4.1 and §7.2 item #8.
@@ -46,6 +60,23 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string? _playlistLogo;
     [ObservableProperty] private Avalonia.Media.Imaging.Bitmap? _playlistLogoBitmap;
     [ObservableProperty] private double  _controlBarHeight  = Constants.DefaultControlBarHeight;
+
+    /// <summary>
+    /// <c>true</c> when the optional <c>JukeboxVisualizations.dll</c>
+    /// wrapper (in <c>lib/</c>) AND the <c>ProjectM</c> preset folder
+    /// (with presets) are present at runtime. Drives:
+    /// <list type="bullet">
+    ///   <item>Visibility of the visualizer toggle button in the transport
+    ///       bar (hidden when <c>false</c>).</item>
+    ///   <item>Whether the visualizer picker side panel can be opened.</item>
+    ///   <item>Whether the ProjectM control is created and bound when
+    ///       audio is playing.</item>
+    /// </list>
+    /// When <c>false</c>, audio plays through BASS normally but no
+    /// visualization is rendered in the MediaHost — the jukebox functions
+    /// as a pure audio player with no ProjectM dependency.
+    /// </summary>
+    [ObservableProperty] private bool    _isVisualizerAvailable;
     #endregion
 
     #region Show Playing OSD
@@ -163,7 +194,28 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     #region UI Toggle Commands
     [RelayCommand] private void TogglePlaylist()  => IsPlaylistVisible  = !IsPlaylistVisible;
     [RelayCommand] private void ToggleEq()        => IsEqVisible        = !IsEqVisible;
-    [RelayCommand] private void TogglePicker()    => IsPickerVisible    = !IsPickerVisible;
+    [RelayCommand(CanExecute = nameof(CanTogglePicker))]
+    private void TogglePicker()    => IsPickerVisible    = !IsPickerVisible;
+    /// <summary>
+    /// The visualizer picker can only be toggled when the optional
+    /// visualizer runtime is available. The transport-bar button is also
+    /// hidden in this case via a <c>IsVisible</c> binding, but the
+    /// CanExecute guard prevents programmatic or keyboard invocation.
+    /// </summary>
+    private bool CanTogglePicker() => IsVisualizerAvailable;
+
+    /// <summary>
+    /// When the visualizer becomes unavailable (e.g. the ProjectM folder
+    /// was removed mid-session), close the picker panel if it was open
+    /// and re-evaluate the TogglePicker command's CanExecute. When it
+    /// becomes available, just re-evaluate CanExecute so the button
+    /// becomes clickable again.
+    /// </summary>
+    partial void OnIsVisualizerAvailableChanged(bool value)
+    {
+        if (!value && IsPickerVisible) IsPickerVisible = false;
+        TogglePickerCommand.NotifyCanExecuteChanged();
+    }
     partial void OnIsRandomPlaybackChanged(bool value)
     {
         if (value) _playedTracks.Clear();

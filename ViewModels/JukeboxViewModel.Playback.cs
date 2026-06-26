@@ -38,6 +38,15 @@ public partial class JukeboxViewModel
     #region Observable Properties
     [ObservableProperty] private bool _isBackendReady;
     [ObservableProperty] private bool _isInitializing;
+
+    // REFACTOR: IsVisualizerVisible retains its original semantic of
+    // "audio mode is active" (i.e. BASS is the active backend, MPV is
+    // not). It does NOT necessarily mean the ProjectM control is on
+    // screen — that requires BOTH IsVisualizerVisible=true AND
+    // IsVisualizerAvailable=true (the latter probes for the optional
+    // ProjectM drop-in at runtime). When audio is playing but
+    // IsVisualizerAvailable is false, BASS plays audio normally and the
+    // MediaHost is left empty (pure audio mode, no ProjectM dependency).
     [ObservableProperty] private bool _isVisualizerVisible = true;
     [ObservableProperty] private string _currentTimeString = "0:00";
     [ObservableProperty] private string _totalTimeString = "0:00";
@@ -108,12 +117,22 @@ public partial class JukeboxViewModel
 
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Backend Initialization completed in {sw.ElapsedMilliseconds}ms overall.");
 
-        // REFACTOR: direct AppDomain.CurrentDomain.BaseDirectory → IPathProvider (smell §6.3).
+        // Diagnostic: log the ProjectM presets folder presence (the
+        // visualizer runtime uses this as its availability check).
         var projectMPath = Jukebox.Services.PathProvider.Current.ProjectMPresetsDirectory;
-        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] ProjectM Path Check: {projectMPath} exists? {System.IO.Directory.Exists(projectMPath)}");
+        var projectMExists = System.IO.Directory.Exists(projectMPath);
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] ProjectM presets path: {projectMPath} exists? {projectMExists}");
+
+        // Probe the optional visualizer runtime (ProjectM + JukeboxVisualizations.dll).
+        // The probe is cached after the first call; we expose the result as
+        // IsVisualizerAvailable so the transport-bar button can hide itself
+        // when the drop-in is absent.
+        var visualizerAvailable = this.VisualizerRuntime.IsAvailable;
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Visualizer runtime available? {visualizerAvailable}");
 
         Dispatcher.UIThread.Post(() =>
         {
+            IsVisualizerAvailable = visualizerAvailable;
             IsBackendReady = true;
             IsInitializing = false;
             _backendReadyTcs.TrySetResult();

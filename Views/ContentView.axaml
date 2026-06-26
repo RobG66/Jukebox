@@ -3,7 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
-             xmlns:vis="using:JukeboxVisualizations.Controls"
              xmlns:localViews="using:Jukebox.Views"
              mc:Ignorable="d" d:DesignWidth="880" d:DesignHeight="655"
              x:Class="Jukebox.Views.ContentView"
@@ -30,11 +29,16 @@
 
             <!--
                 Single host for video/visualizer content.
-                ContentControl swaps between MpvView (video mode) and
-                ProjectMControl (audio mode). Only ONE OpenGlControlBase
-                is in the visual tree at a time — prevents GL context
-                conflicts (each OpenGlControlBase creates its own private
-                GL context; having two simultaneously can break ProjectM).
+                ContentControl swaps between MpvView (video mode),
+                ProjectMControl (audio mode + visualizer available), and
+                empty (audio mode + visualizer unavailable). The
+                ProjectMControl is created dynamically in code-behind
+                via reflection — there is no compile-time reference to
+                the JukeboxVisualizations assembly. Only ONE
+                OpenGlControlBase is in the visual tree at a time —
+                prevents GL context conflicts (each OpenGlControlBase
+                creates its own private GL context; having two
+                simultaneously can break ProjectM).
             -->
             <ContentControl x:Name="MediaHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
 

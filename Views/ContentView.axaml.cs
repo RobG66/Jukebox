@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Interactivity;
+using Jukebox.Services;
 using Jukebox.ViewModels;
 using System;
 using System.ComponentModel;
@@ -12,7 +13,16 @@ public partial class ContentView : UserControl
 {
     private JukeboxViewModel? _currentViewModel;
     private MpvView? _mpvView;
-    private JukeboxVisualizations.Controls.ProjectMControl? _projectMControl;
+
+    /// <summary>
+    /// The optional ProjectM visualizer control, created lazily via the
+    /// reflection-based <see cref="IVisualizerRuntime"/>. Typed as
+    /// <see cref="Avalonia.Controls.Control"/> (the most-derived type
+    /// statically visible to the Jukebox) so the rest of the code does
+    /// not need a compile-time reference to the JukeboxVisualizations
+    /// assembly.
+    /// </summary>
+    private Control? _projectMControl;
     private bool _hasAttachedProjectM;
     private bool _isInVideoMode;
 
@@ -99,11 +109,10 @@ public partial class ContentView : UserControl
 
         if (_projectMControl != null)
         {
-            if (_projectMControl is IDisposable disposableProjectM)
-            {
-                try { disposableProjectM.Dispose(); }
-                catch (Exception ex) { Trace.WriteLine($"[ContentView] ProjectMControl dispose failed: {ex.Message}"); }
-            }
+            // The visualizer runtime defensively checks IDisposable before
+            // invoking Dispose (ProjectMControl currently does NOT implement
+            // IDisposable, but the wrapper future-proofs against API change).
+            _currentViewModel?.VisualizerRuntime.TryDispose(_projectMControl);
             _projectMControl = null;
             _hasAttachedProjectM = false;
         }
@@ -125,20 +134,57 @@ public partial class ContentView : UserControl
             // Mode changed (audio ↔ video) — swap the MediaHost content.
             UpdateMediaHost();
         }
+        else if (e.PropertyName == nameof(JukeboxViewModel.IsVisualizerAvailable))
+        {
+            // Visualizer availability changed (e.g. ProjectM folder was
+            // added/removed). Re-evaluate the media host contents.
+            CheckAndAttachNativeControls();
+            UpdateMediaHost();
+        }
     }
 
     /// <summary>
-    /// Swap the MediaHost between MpvView (video mode) and ProjectMControl
-    /// (audio mode). Only ONE OpenGlControlBase is in the visual tree at a
-    /// time — prevents GL context conflicts.
+    /// Swap the MediaHost between MpvView (video mode), ProjectMControl
+    /// (audio mode with visualizer available), and empty (audio mode with
+    /// visualizer unavailable). Only ONE OpenGlControlBase is in the
+    /// visual tree at a time — prevents GL context conflicts.
+    ///
+    /// When audio is playing but the visualizer is NOT available, the
+    /// MediaHost is left empty (pure audio mode, no ProjectM dependency).
     /// </summary>
     private void UpdateMediaHost()
     {
         if (_currentViewModel == null || !_currentViewModel.IsBackendReady) return;
 
+        // wantVideo = !audio_mode (audio_mode is the existing semantic of
+        // IsVisualizerVisible). Note this is independent of whether the
+        // visualizer is available: when audio is playing without a viz,
+        // wantVideo is still false, but we won't have a ProjectMControl
+        // to show (MediaHost stays empty).
         bool wantVideo = !_currentViewModel.IsVisualizerVisible;
+        bool showVisualizer = _currentViewModel.IsVisualizerVisible
+                              && _currentViewModel.IsVisualizerAvailable;
 
-        if (wantVideo == _isInVideoMode) return; // no change
+        // Compute the desired content for this state.
+        Control? desiredContent;
+        if (wantVideo)
+            desiredContent = _mpvView;             // may be null if not yet created
+        else if (showVisualizer)
+            desiredContent = _projectMControl;     // may be null if not yet created
+        else
+            desiredContent = null;                 // audio mode without viz
+
+        // If MediaHost already holds the desired content, no swap needed.
+        // (desiredContent can be null in two cases: (a) we want empty
+        // MediaHost [audio mode without visualizer] — return if already
+        // empty; (b) we want video/visualizer but the control hasn't
+        // been created yet — fall through to create it.)
+        if (ReferenceEquals(MediaHost.Content, desiredContent))
+        {
+            if (desiredContent != null) return;
+            if (!wantVideo && !showVisualizer) return; // want empty, already empty
+            // else: want video/viz but control not created → fall through
+        }
 
         // Remove the current content — this detaches the OpenGlControlBase
         // from the visual tree, triggering its cleanup (OnOpenGlDeinit,
@@ -154,19 +200,26 @@ public partial class ContentView : UserControl
                 _mpvView[!MpvView.MpvContextProperty] = new Binding(nameof(JukeboxViewModel.MpvContext));
             }
             MediaHost.Content = _mpvView;
+            _isInVideoMode = true;
         }
-        else
+        else if (showVisualizer)
         {
-            // ── Audio mode: show ProjectMControl ──
+            // ── Audio mode + visualizer available: show ProjectMControl ──
             if (_projectMControl == null)
             {
                 EnsureProjectMAttached();
             }
             if (_projectMControl != null)
                 MediaHost.Content = _projectMControl;
+            _isInVideoMode = false;
         }
-
-        _isInVideoMode = wantVideo;
+        else
+        {
+            // ── Audio mode + visualizer unavailable: empty MediaHost ──
+            // BASS still plays audio normally; the UI just shows the
+            // background (no OpenGlControlBase in the visual tree).
+            _isInVideoMode = false;
+        }
     }
 
     private void SuppressNativeRenderDuringLayoutTransition()
@@ -176,7 +229,8 @@ public partial class ContentView : UserControl
             _isSuppressingNativeRender = true;
             // Hide the active control during resize to prevent per-frame
             // GL surface resizes (stutter).
-            if (_projectMControl != null && _currentViewModel is { IsVisualizerVisible: true })
+            if (_projectMControl != null
+                && _currentViewModel is { IsVisualizerVisible: true, IsVisualizerAvailable: true })
             {
                 _projectMControl.IsVisible = false;
             }
@@ -191,20 +245,24 @@ public partial class ContentView : UserControl
         _layoutSettleTimer.Stop();
         _isSuppressingNativeRender = false;
 
-        if (_projectMControl != null && _currentViewModel is { IsVisualizerVisible: true })
+        if (_projectMControl != null
+            && _currentViewModel is { IsVisualizerVisible: true, IsVisualizerAvailable: true })
         {
             _projectMControl.IsVisible = true;
         }
     }
 
     /// <summary>
-    /// Attach the ProjectMControl (lazy creation + engine start).
+    /// Attach the ProjectMControl (lazy creation + engine start). Only
+    /// called when the visualizer runtime reports availability.
     /// </summary>
     private void CheckAndAttachNativeControls()
     {
         if (_currentViewModel == null || !_currentViewModel.IsBackendReady) return;
 
-        if (_currentViewModel.IsBassAvailable && !_hasAttachedProjectM)
+        if (_currentViewModel.IsBassAvailable
+            && _currentViewModel.IsVisualizerAvailable
+            && !_hasAttachedProjectM)
         {
             EnsureProjectMAttached();
         }
@@ -214,22 +272,33 @@ public partial class ContentView : UserControl
     {
         if (_currentViewModel == null || _hasAttachedProjectM) return;
 
+        var runtime = _currentViewModel.VisualizerRuntime;
+        if (!runtime.IsAvailable) return;
+
         _hasAttachedProjectM = true;
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Attaching ProjectM dynamically...");
-        _projectMControl = new JukeboxVisualizations.Controls.ProjectMControl();
-        _projectMControl[!JukeboxVisualizations.Controls.ProjectMControl.PresetPathProperty] =
-            new Binding($"{nameof(JukeboxViewModel.VisualizerViewModel)}.{nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath)}");
 
-        var projectMPath = Jukebox.Services.PathProvider.Current.ProjectMPresetsDirectory;
+        _projectMControl = runtime.CreateControl();
+        if (_projectMControl == null)
+        {
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] ProjectMControl creation returned null — visualizer disabled.");
+            return;
+        }
+
+        runtime.SetPresetPathBinding(
+            _projectMControl,
+            $"{nameof(JukeboxViewModel.VisualizerViewModel)}.{nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath)}");
+
+        var projectMPath = PathProvider.Current.ProjectMPresetsDirectory;
         if (System.IO.Directory.Exists(projectMPath))
         {
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Calling ProjectM StartEngine...");
-            _projectMControl.StartEngine();
+            runtime.StartEngine(_projectMControl);
 
             var currentPreset = _currentViewModel.VisualizerViewModel.SelectedVisualizerPath;
             if (!string.IsNullOrEmpty(currentPreset))
             {
-                _projectMControl.LoadPreset(currentPreset);
+                runtime.LoadPreset(_projectMControl, currentPreset);
             }
         }
     }
@@ -239,14 +308,17 @@ public partial class ContentView : UserControl
         if (e.PropertyName != nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath)) return;
 
         var path = _currentViewModel?.VisualizerViewModel.SelectedVisualizerPath;
-        if (!string.IsNullOrEmpty(path) && _projectMControl != null)
+        if (!string.IsNullOrEmpty(path) && _projectMControl != null && _currentViewModel != null)
         {
-            _projectMControl.LoadPreset(path);
+            _currentViewModel.VisualizerRuntime.LoadPreset(_projectMControl, path);
         }
     }
 
     private void OnPcmDataAvailable(object? sender, short[] e)
     {
-        _projectMControl?.FeedPcm(e);
+        if (_projectMControl != null && _currentViewModel != null)
+        {
+            _currentViewModel.VisualizerRuntime.FeedPcm(_projectMControl, e);
+        }
     }
 }

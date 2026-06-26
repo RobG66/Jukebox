@@ -40,9 +40,18 @@
                     </Button>
                     
                     <!-- Visualizations Button -->
+                    <!--
+                      Hidden entirely when the optional ProjectM drop-in
+                      (JukeboxVisualizations.dll + ProjectM folder) is not
+                      detected at runtime. IsVisible is bound directly to
+                      IsVisualizerAvailable on the VM so the button stays
+                      hidden until the drop-in is added (and the app
+                      restarted, or the runtime re-probed).
+                    -->
                     <Button Command="{Binding TogglePickerCommand}"
                                   Classes="transparentbutton"
                                   Width="40" Height="40"
+                                  IsVisible="{Binding IsVisualizerAvailable}"
                                   ToolTip.Tip="Visualizations">
                         <Image Source="avares://Jukebox/Assets/Icons/visualizer.png" Width="20" Height="20"/>
                     </Button>

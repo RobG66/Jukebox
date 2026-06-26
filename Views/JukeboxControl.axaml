@@ -69,6 +69,17 @@
         </Border>
 
         <!-- Side panel overlay: Visualizer Picker (left-aligned, semi-transparent) -->
+        <!--
+          The picker panel requires BOTH IsPickerVisible (user toggled it
+          on) AND IsVisualizerAvailable (the ProjectM drop-in is present
+          at runtime). MultiBinding with BoolAllConverter would be cleaner
+          but we keep the existing single-binding to IsPickerVisible and
+          rely on the TogglePickerCommand's CanExecute guard plus the
+          transport-bar button's IsVisible binding to keep the picker
+          closed when the visualizer is unavailable. As an extra safety,
+          the VM's OnIsVisualizerAvailableChanged forces IsPickerVisible
+          to false when availability drops.
+        -->
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
                 Width="400"

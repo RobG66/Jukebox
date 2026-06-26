@@ -72,7 +72,9 @@ public partial class JukeboxViewModel
         {
             await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
                 "Video Error",
-                "Video playback is unavailable. MPV (libmpv) failed to initialize. Make sure libmpv is installed.");
+                "Video playback is unavailable. MPV (libmpv) failed to initialize. " +
+                "Make sure libmpv-2.dll (Windows) or libmpv.so.2 (Linux) is in the " +
+                "lib/ folder next to Jukebox.exe.");
             return;
         }
 

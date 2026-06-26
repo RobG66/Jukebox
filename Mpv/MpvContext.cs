@@ -120,10 +120,10 @@ public sealed class MpvContext : IDisposable
         if (_mpv == IntPtr.Zero)
         {
             Trace.WriteLine("[MPV] mpv_create() returned IntPtr.Zero — libmpv not found or failed to initialize.");
-            Trace.WriteLine("[MPV] Check that libmpv is installed:");
-            Trace.WriteLine("[MPV]   Windows: Endpne.LibMPV.Windows NuGet should ship libmpv-2.dll");
-            Trace.WriteLine("[MPV]   Linux:   sudo apt install libmpv-dev");
-            Trace.WriteLine("[MPV]   macOS:   brew install mpv");
+            Trace.WriteLine("[MPV] Check that libmpv is available:");
+            Trace.WriteLine("[MPV]   Windows: place libmpv-2.dll in the lib/ folder next to Jukebox.exe");
+            Trace.WriteLine("[MPV]   Linux:   place libmpv.so.2 in the lib/ folder, OR `sudo apt install libmpv-dev`");
+            Trace.WriteLine("[MPV]   macOS:   brew install mpv (or place libmpv.2.dylib in lib/)");
             return false;
         }
 

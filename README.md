@@ -1,25 +1,24 @@
 # Jukebox
 
-<img width="3840" height="2040" alt="image" src="https://github.com/user-attachments/assets/b22df7a3-8f9e-491c-b51e-f8bcca36e89b" />
-
-
 A cross-platform desktop media player built with Avalonia UI.
 
 ## Dependencies
 
 This application requires:
-- External, unmanaged native libraries (`bass.dll`, `libmpv-2.dll`, and ProjectM assets).
+- External, unmanaged native libraries for audio (`bass.dll` / `libbass.so`) and video (`libmpv-2.dll` / `libmpv.so.2`) playback, dropped into a flat `lib/` folder.
 - Local custom forks of `Avalonia.Controls.DataGrid` and `Avalonia.Controls.TreeDataGrid`.
+- **Optional** — `JukeboxVisualizations.dll` + `lib/libprojectM.*` + `ProjectM/presets/` for music visualizations.
 
 For setup and installation instructions for all dependencies, see [DEPENDENCIES.md](DEPENDENCIES.md).
 
 ## Features
 
-- Audio playback via ManagedBass with a ProjectM (milkdrop) visualizer
-- Video playback via libmpv (custom P/Invoke wrapper rendering directly to OpenGL context)
-- 10-band equalizer with presets
-- Playlist with virtualized metadata tagging
-- Visualizer picker with 10,000+ milkdrop presets, favorites, and randomizer
+- Audio playback via ManagedBass — works with zero ProjectM dependencies.
+- Optional ProjectM (milkdrop) visualizer — activated by dropping the managed wrapper + native binary + preset folder next to the executable.
+- Video playback via libmpv (custom P/Invoke wrapper rendering directly to OpenGL context).
+- 10-band equalizer with presets.
+- Playlist with virtualized metadata tagging.
+- Visualizer picker with 10,000+ milkdrop presets, favorites, and randomizer (only when the ProjectM drop-in is present).
 
 ## Table of Contents
 
@@ -42,10 +41,36 @@ Jukebox.exe -?                       # Show help
 
 ### Native Dependencies
 
-- **Windows:** `bass.dll` (included), `libmpv-2.dll` (included)
-- **Linux:** `libbass.so` (install separately), `libmpv.so.2` (`sudo apt install libmpv-dev`)
+All native runtimes live in a flat `lib/` folder next to `Jukebox.exe`. Windows `.dll` and Linux `.so` files coexist by extension.
 
-The ProjectM native library (`libprojectM`) is provided by the `JukeboxVisualizations` companion project. Download the ProjectM folder (see links below) and place it in the root of the Jukebox project.
+- **Windows:** `lib/bass.dll`, `lib/libmpv-2.dll` (drop into `lib/`)
+- **Linux:** `lib/libbass.so`, `lib/libmpv.so.2` (drop into `lib/`, OR install `libmpv-dev` via apt as a fallback)
+
+The `lib/` folder is intentionally empty in the repo — populate it by running the fetch-natives script:
+
+```bash
+# Windows
+.\fetch-natives.ps1
+
+# Linux / macOS
+./fetch-natives.sh
+```
+
+The script reads `natives.json` (URLs + SHA-256 checksums), downloads each asset for the current platform, verifies the checksum, and extracts into `lib/`. See `lib/README.md` and [DEPENDENCIES.md](DEPENDENCIES.md) for details, and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for licensing.
+
+### Optional: ProjectM Visualizations
+
+Visualizations are entirely optional. The jukebox plays audio out of the box with no ProjectM files present — the visualizer toggle button in the transport bar is hidden when visualizations are not available.
+
+To enable visualizations, three things must be present in the build output directory:
+
+1. **`JukeboxVisualizations.dll`** (managed wrapper) in `lib/` alongside the native runtimes.
+2. **`lib/libprojectM.dll`** (Windows) or **`lib/libprojectM.so.4`** (Linux) — alongside the other native runtimes in `lib/`. On Windows, `lib/glew32.dll` is also required (libprojectM depends on it).
+3. **`ProjectM/presets/`** folder containing the `.milk` preset files.
+
+Build the [Jukebox-Visualizations](https://github.com/RobG66/Jukebox-Visualizations) companion repo with its `build.ps1` / `build.sh` script — it produces a drop-in zip with the wrapper, native libs, and presets in the correct layout. Unzip into your Jukebox build output directory, then drop in Jukebox's own native runtimes (`bass.dll`, `libmpv-2.dll` / `libbass.so`, `libmpv.so.2`) into the same `lib/` folder.
+
+See [DEPENDENCIES.md](DEPENDENCIES.md) for the precise directory layout.
 
 ---
 
@@ -154,7 +179,7 @@ vm.StorageService = new Jukebox.Services.StorageService(hostWindow);
 
 Video is rendered by **libmpv** into Avalonia's OpenGL context via a custom P/Invoke wrapper. No third-party .NET MPV package is used.
 
-- **`Mpv/MpvNative.cs`** — P/Invoke declarations for libmpv C functions. Includes a `NativeLibrary.SetDllImportResolver` that searches for `libmpv-2.dll` / `libmpv.so.2` / `libmpv.2.dylib` per platform.
+- **`Mpv/MpvNative.cs`** — P/Invoke declarations for libmpv C functions. Includes a `NativeLibrary.SetDllImportResolver` that searches `<appdir>/lib/` first for `libmpv-2.dll` / `libmpv.so.2` / `libmpv.2.dylib`, then falls back to the OS default search path.
 - **`Mpv/MpvContext.cs`** — High-level wrapper: `Initialize()`, `LoadFile()`, `Play()` / `Pause()` / `Stop()`, `SeekAbsolute()`, `SetVolume()`, `ObserveProperty()`. Owns the mpv handle, event thread, and render context. Implements `IDisposable`.
 - **`Views/MpvView.cs`** — `OpenGlControlBase` subclass. Creates the render context in `OnOpenGlRender`, sets the update callback, and renders frames. `MpvContext` styled property binds to the VM.
 - **`ViewModels/JukeboxViewModel.PlaybackMPV.cs`** — Partial VM for video playback, using `MpvContext` for all video operations.
@@ -165,7 +190,7 @@ Video is rendered by **libmpv** into Avalonia's OpenGL context via a custom P/In
 
 ### Single OpenGL Control
 
-`ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` (video mode) and `ProjectMControl` (audio mode). Only one `OpenGlControlBase` is in the visual tree at a time to prevent context conflicts.
+`ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView` (video mode), `ProjectMControl` (audio mode + visualizer available), and empty (audio mode + visualizer unavailable). Only one `OpenGlControlBase` is in the visual tree at a time to prevent context conflicts. The `ProjectMControl` is created at runtime via reflection against the optional `JukeboxVisualizations.dll` — see `Services/VisualizerRuntime.cs`. When the assembly (or the `ProjectM` drop-in folder) is absent, the visualizer button is hidden and the MediaHost stays empty during audio playback.
 
 ### Close Sequence
 
@@ -179,9 +204,10 @@ Video is rendered by **libmpv** into Avalonia's OpenGL context via a custom P/In
 
 ### "Video playback is unavailable. MPV failed to initialize."
 
-If the player fails to load `libmpv-2.dll`, verify:
-- The file is in the project root folder.
-- The file successfully copied to `bin/Debug/net8.0/` (or your build output directory).
+If the player fails to load `libmpv-2.dll` (Windows) or `libmpv.so.2` (Linux), verify:
+- The file is in the `lib/` folder (next to `Jukebox.exe`).
+- The `lib/` folder copied to `bin/Debug/net10.0/lib/` (or your build output directory).
+- On Linux, you can alternatively install libmpv system-wide via `sudo apt install libmpv-dev` — the loader falls back to the OS search path if `lib/` doesn't contain it.
 - Review the application output window for `[MPV]` trace statements.
 
 ---

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace Jukebox.Mpv;
@@ -10,6 +11,11 @@ namespace Jukebox.Mpv;
 /// <remarks>
 /// Only the functions we actually use are declared. The full libmpv API
 /// has ~100 functions — we need about 20.
+///
+/// The native binary is loaded from <c>&lt;appdir&gt;/lib/</c> first
+/// (flat — Windows .dll and Linux .so coexist by extension). If not
+/// found there, falls back to the OS default search path so the user
+/// can also install libmpv system-wide on Linux if they prefer.
 /// </remarks>
 internal static class MpvNative
 {
@@ -17,13 +23,33 @@ internal static class MpvNative
 
     static MpvNative()
     {
-        // On Linux/macOS the library name varies. NativeLibrary.Load
-        // tries the exact name first, then falls back to platform search.
-        // We register a resolver so DllImport can find it on all platforms.
+        // We register a DllImportResolver so the [DllImport] declarations
+        // below can find libmpv on all platforms. The resolver first looks
+        // in <appdir>/lib/ (the canonical drop-in location), then falls
+        // back to the OS default search path.
         NativeLibrary.SetDllImportResolver(typeof(MpvNative).Assembly, (name, assembly, path) =>
         {
             if (name == LibName)
             {
+                string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
+                string fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "libmpv-2.dll"
+                    : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                        ? "libmpv.so.2"
+                        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                            ? "libmpv.2.dylib"
+                            : "libmpv";
+
+                // 1) Try the lib/ drop-in folder (canonical location).
+                string fullPath = Path.Combine(libDir, fileName);
+                if (File.Exists(fullPath))
+                {
+                    var h = NativeLibrary.Load(fullPath, assembly, DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
+                    if (h != IntPtr.Zero) return h;
+                }
+
+                // 2) Fall back to OS default search path (lets Linux users
+                //    use `apt install libmpv-dev` if they prefer).
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     return NativeLibrary.Load("libmpv-2.dll");
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

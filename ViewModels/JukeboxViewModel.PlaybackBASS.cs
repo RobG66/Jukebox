@@ -4,6 +4,8 @@ using ManagedBass;
 using ManagedBass.DirectX8;
 using System;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -19,6 +21,11 @@ public partial class JukeboxViewModel
     private int _endSyncHandle;
     private bool _ownsBassContext;
 
+    // Tracks whether we successfully preloaded bass.dll / libbass.so from
+    // the lib/ folder so ManagedBass's internal LoadLibrary call finds it.
+    private static bool _bassPreloaded;
+    private static IntPtr _bassNativeHandle;
+
     public event EventHandler<short[]>? PcmDataAvailable;
     #endregion
 
@@ -33,6 +40,11 @@ public partial class JukeboxViewModel
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Initializing ManagedBass...");
         try
         {
+            // Preload bass.dll / libbass.so from the lib/ drop-in folder
+            // BEFORE Bass.Init() — ManagedBass's internal P/Invoke will
+            // then find the already-loaded library in the OS loader cache.
+            PreloadBassNative();
+
             _dspProcedure = new DSPProcedure(OnDsp);
             _endSyncProcedure = new SyncProcedure(OnBassEndSync);
 
@@ -53,6 +65,56 @@ public partial class JukeboxViewModel
         catch (Exception ex)
         {
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] ManagedBass Init Exception: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Preload the native BASS library from <c>&lt;appdir&gt;/lib/</c>
+    /// (flat — bass.dll on Windows, libbass.so on Linux). Once loaded
+    /// into the process, ManagedBass's internal P/Invoke
+    /// <c>LoadLibrary("bass.dll")</c> / <c>dlopen("libbass.so")</c>
+    /// will resolve to the already-cached handle, no matter what
+    /// directory the OS would otherwise search.
+    ///
+    /// If the file is missing from <c>lib/</c>, falls back to the OS
+    /// default search path (lets Linux users install libbass system-wide
+    /// if they prefer).
+    /// </summary>
+    private static void PreloadBassNative()
+    {
+        if (_bassPreloaded) return;
+        _bassPreloaded = true; // only attempt once per process
+
+        string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
+        string fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "bass.dll"
+            : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                ? "libbass.so"
+                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? "libbass.dylib"
+                    : "bass";
+
+        string fullPath = Path.Combine(libDir, fileName);
+        if (File.Exists(fullPath))
+        {
+            _bassNativeHandle = NativeLibrary.Load(fullPath, typeof(JukeboxViewModel).Assembly,
+                DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
+            if (_bassNativeHandle != IntPtr.Zero)
+            {
+                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Preloaded BASS native library from: {fullPath}");
+                return;
+            }
+        }
+
+        // Fall back to OS default search path.
+        _bassNativeHandle = NativeLibrary.Load(fileName);
+        if (_bassNativeHandle != IntPtr.Zero)
+        {
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Loaded BASS native library from OS search path: {fileName}");
+        }
+        else
+        {
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] BASS native library not found. Looked in: {fullPath} and OS default search path.");
         }
     }
     #endregion

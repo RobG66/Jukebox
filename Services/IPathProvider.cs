@@ -8,18 +8,35 @@ namespace Jukebox.Services;
 /// and §7.2 item #7.
 ///
 /// The default implementation is <see cref="PathProvider"/> (singleton via
-/// <see cref="PathProvider.Instance"/>). To override paths in tests,
+/// <see cref="PathProvider.Current"/>). To override paths in tests,
 /// call <see cref="PathProvider.Override(IPathProvider)"/> with a stub.
 /// </summary>
 public interface IPathProvider
 {
-    /// <summary>Root directory of the bundled ProjectM assets (presets, textures).</summary>
+    /// <summary>
+    /// Directory containing all native runtime libraries (bass, libmpv,
+    /// libprojectM, glew, etc.) AND the optional JukeboxVisualizations.dll
+    /// managed wrapper. Flat layout — Windows .dll and Linux .so files
+    /// coexist by extension. The loader code picks the right filename per
+    /// OS at runtime.
+    /// </summary>
+    string NativeLibDirectory { get; }
+
+    /// <summary>
+    /// Path to the JukeboxVisualizations.dll managed wrapper. Lives in
+    /// <see cref="NativeLibDirectory"/> (<c>&lt;appdir&gt;/lib/</c>)
+    /// alongside the native libprojectM binary — keeping all optional
+    /// drop-in files in one place.
+    /// </summary>
+    string JukeboxVisualizationsDllPath { get; }
+
+    /// <summary>Root directory of the ProjectM preset assets (presets, textures).</summary>
     string ProjectMRoot { get; }
 
     /// <summary>Directory containing ProjectM preset .milk files.</summary>
     string ProjectMPresetsDirectory { get; }
 
-    /// <summary>The "Favorites" subfolder inside the presets directory.</summary>
+    /// <summary>The "favorites" subfolder inside the presets directory.</summary>
     string ProjectMFavoritesDirectory { get; }
 
     /// <summary>File that stores the last-selected visualizer preset path.</summary>

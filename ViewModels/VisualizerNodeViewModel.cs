@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Jukebox.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -19,7 +20,11 @@ public abstract partial class VisualizerNodeViewModel : ObservableObject
         get
         {
             if (!IsFile || string.IsNullOrEmpty(Path)) return false;
-            var favFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "Presets", "Favorites");
+            // REFACTOR: previously hardcoded
+            //   Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "presets", "favorites")
+            // Now routed through IPathProvider (single source of truth, see
+            // Smell Test Report §6.3 — addresses duplicated path logic).
+            var favFolder = PathProvider.Current.ProjectMFavoritesDirectory;
             try
             {
                 var normFilePath = System.IO.Path.GetFullPath(Path);
