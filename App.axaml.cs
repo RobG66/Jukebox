@@ -68,6 +68,13 @@ public partial class App : Application
                         Console.WriteLine(" -playlistlogo [file]    : Render an image logo above the playlist.");
                         Console.WriteLine(" -random                 : Enable random shuffle playback.");
                         Console.WriteLine(" -hidecontrols           : Hide the bottom control bar on startup.");
+                        Console.WriteLine(" -nocontrols             : Disable ALL controls (strictly playback).");
+                        Console.WriteLine(" -novisualizer           : Disable the ProjectM visualizer.");
+                        Console.WriteLine(" -showplaying [timeout]  : Show current track OSD on track change.");
+                        Console.WriteLine("                           If omitted, OSD is not shown.");
+                        Console.WriteLine("                           Optional timeout in seconds (default 10).");
+                        Console.WriteLine(" -randompreset [time]    : Enable visualizer preset randomization.");
+                        Console.WriteLine("                           Optional interval 10-60 seconds (default 10).");
                         Console.WriteLine(" -volume [0-100]         : Set the initial volume.");
                         Console.WriteLine(" -stayontop              : Force window always-on-top.");
                         Console.WriteLine(" -fullscreen / -minimized: Set initial window state.");
@@ -93,6 +100,32 @@ public partial class App : Application
                         vm.IsRandomPlayback = true;
                     else if (arg == "-hidecontrols")
                         vm.IsAutoHideEnabled = true;
+                    else if (arg == "-nocontrols")
+                        vm.IsControlsDisabled = true;
+                    else if (arg == "-novisualizer")
+                        vm.IsVisualizerDisabled = true;
+                    else if (arg == "-showplaying")
+                    {
+                        vm.IsShowPlayingEnabled = true;
+                        // Check if next arg is a number (the timeout)
+                        if (i + 1 < desktop.Args.Length && int.TryParse(desktop.Args[i + 1], out int osdTimeout))
+                        {
+                            vm.ShowPlayingTimeout = osdTimeout;
+                            i++; // consume the timeout
+                        }
+                    }
+                    else if (arg == "-randompreset")
+                    {
+                        vm.VisualizerViewModel.IsVisualizerRandomizerEnabled = true;
+                        // Check if next arg is a number (the interval)
+                        if (i + 1 < desktop.Args.Length && int.TryParse(desktop.Args[i + 1], out int presetInterval))
+                        {
+                            // Clamp to 10-60 range
+                            presetInterval = Math.Clamp(presetInterval, 10, 60);
+                            vm.VisualizerViewModel.VisualizerRandomizerIntervalSeconds = presetInterval;
+                            i++; // consume the interval
+                        }
+                    }
                     else if (arg == "-volume" && i + 1 < desktop.Args.Length && int.TryParse(desktop.Args[++i], out int vol))
                         vm.InitialVolume = vol;
                     else if (arg == "-stayontop")

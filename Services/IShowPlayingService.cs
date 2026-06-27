@@ -32,12 +32,15 @@ public interface IShowPlayingService
     event System.EventHandler<ShowPlayingEventArgs>? Changed;
 
     /// <summary>
-    /// Display the OSD with the given text, hold for the configured duration,
+    /// Display the OSD with the given text, hold for the specified duration,
     /// then fade out. Cancels any previously-running OSD animation.
     /// </summary>
     /// <param name="text">Text to display.</param>
+    /// <param name="holdSeconds">How long to hold the OSD at full opacity
+    /// before fading (in seconds). If null, uses the default
+    /// <see cref="Constants.OsdHoldMs"/> (3 seconds).</param>
     /// <param name="cancellationToken">Optional token to cancel the animation.</param>
-    Task ShowAsync(string text, CancellationToken cancellationToken = default);
+    Task ShowAsync(string text, double? holdSeconds = null, CancellationToken cancellationToken = default);
 
     /// <summary>Immediately hide the OSD and cancel any pending animation.</summary>
     void Hide();

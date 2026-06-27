@@ -27,6 +27,53 @@ public partial class JukeboxControl : UserControl
 
     public static readonly StyledProperty<bool> IsAutoHideEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsAutoHideEnabled));
     public bool IsAutoHideEnabled { get => GetValue(IsAutoHideEnabledProperty); set => SetValue(IsAutoHideEnabledProperty, value); }
+
+    // ── New switches (mirror the command-line args) ──
+
+    /// <summary>
+    /// When true, all UI controls (transport bar, side panels, keyboard
+    /// shortcuts) are disabled — strictly a playback window. Mirrors the
+    /// <c>-nocontrols</c> command-line switch.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsControlsDisabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsControlsDisabled));
+    public bool IsControlsDisabled { get => GetValue(IsControlsDisabledProperty); set => SetValue(IsControlsDisabledProperty, value); }
+
+    /// <summary>
+    /// When true, the ProjectM visualizer is forced off even if available.
+    /// Mirrors the <c>-novisualizer</c> command-line switch.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsVisualizerDisabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsVisualizerDisabled));
+    public bool IsVisualizerDisabled { get => GetValue(IsVisualizerDisabledProperty); set => SetValue(IsVisualizerDisabledProperty, value); }
+
+    /// <summary>
+    /// When true, the "show playing" OSD appears when the track changes.
+    /// Defaults to false (OSD off) — the user must opt in. Mirrors the
+    /// <c>-showplaying</c> command-line switch.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsShowPlayingEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsShowPlayingEnabled));
+    public bool IsShowPlayingEnabled { get => GetValue(IsShowPlayingEnabledProperty); set => SetValue(IsShowPlayingEnabledProperty, value); }
+
+    /// <summary>
+    /// How long (in seconds) the "show playing" OSD holds at full opacity
+    /// before fading. Default 10. Mirrors the <c>-showplaying [timeout]</c>
+    /// command-line switch's optional value.
+    /// </summary>
+    public static readonly StyledProperty<int> ShowPlayingTimeoutProperty = AvaloniaProperty.Register<JukeboxControl, int>(nameof(ShowPlayingTimeout), 10);
+    public int ShowPlayingTimeout { get => GetValue(ShowPlayingTimeoutProperty); set => SetValue(ShowPlayingTimeoutProperty, value); }
+
+    /// <summary>
+    /// When true, the visualizer preset randomizer is enabled at startup.
+    /// Mirrors the <c>-randompreset</c> command-line switch.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsVisualizerRandomizerEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsVisualizerRandomizerEnabled));
+    public bool IsVisualizerRandomizerEnabled { get => GetValue(IsVisualizerRandomizerEnabledProperty); set => SetValue(IsVisualizerRandomizerEnabledProperty, value); }
+
+    /// <summary>
+    /// Preset randomizer interval in seconds (10-60). Default 10. Mirrors
+    /// the <c>-randompreset [time]</c> command-line switch's optional value.
+    /// </summary>
+    public static readonly StyledProperty<int> VisualizerRandomizerIntervalSecondsProperty = AvaloniaProperty.Register<JukeboxControl, int>(nameof(VisualizerRandomizerIntervalSeconds), 10);
+    public int VisualizerRandomizerIntervalSeconds { get => GetValue(VisualizerRandomizerIntervalSecondsProperty); set => SetValue(VisualizerRandomizerIntervalSecondsProperty, value); }
     #endregion
 
     private readonly Avalonia.Threading.DispatcherTimer _inactivityTimer;
@@ -55,7 +102,7 @@ public partial class JukeboxControl : UserControl
 
     private void OnInactivityTimerTick(object? sender, EventArgs e)
     {
-        if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled)
+        if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled && !vm.IsControlsDisabled)
             // REFACTOR: magic number 0 → Constants.HiddenControlBarHeight (smell §5.2, §6.4).
             vm.ControlBarHeight = Constants.HiddenControlBarHeight;
         _inactivityTimer.Stop();
@@ -113,6 +160,9 @@ public partial class JukeboxControl : UserControl
     {
         if (e.Key != Key.Escape || DataContext is not JukeboxViewModel vm) return;
 
+        // When -nocontrols is active, keyboard shortcuts are disabled too.
+        if (vm.IsControlsDisabled) return;
+
         bool handled = false;
         if (vm.IsPlaylistVisible) { vm.IsPlaylistVisible = false; handled = true; }
         if (vm.IsEqVisible)       { vm.IsEqVisible       = false; handled = true; }
@@ -124,6 +174,8 @@ public partial class JukeboxControl : UserControl
     private void ResetInactivity()
     {
         if (DataContext is not JukeboxViewModel vm) return;
+        // When -nocontrols is active, the transport bar never shows.
+        if (vm.IsControlsDisabled) return;
         // REFACTOR: magic number 65 → Constants.DefaultControlBarHeight (smell §5.2, §6.4).
         vm.ControlBarHeight = Constants.DefaultControlBarHeight;
         _inactivityTimer.Stop();
@@ -143,6 +195,12 @@ public partial class JukeboxControl : UserControl
             if (this.IsSet(IsRandomPlaybackProperty)) newVm.IsRandomPlayback = IsRandomPlayback;
             if (this.IsSet(IsLoopEnabledProperty)) newVm.IsLoopEnabled = IsLoopEnabled;
             if (this.IsSet(IsAutoHideEnabledProperty)) newVm.IsAutoHideEnabled = IsAutoHideEnabled;
+            if (this.IsSet(IsControlsDisabledProperty)) newVm.IsControlsDisabled = IsControlsDisabled;
+            if (this.IsSet(IsVisualizerDisabledProperty)) newVm.IsVisualizerDisabled = IsVisualizerDisabled;
+            if (this.IsSet(IsShowPlayingEnabledProperty)) { newVm.IsShowPlayingEnabled = IsShowPlayingEnabled; newVm.ShowPlayingTimeout = ShowPlayingTimeout; }
+            if (this.IsSet(ShowPlayingTimeoutProperty)) newVm.ShowPlayingTimeout = ShowPlayingTimeout;
+            if (this.IsSet(IsVisualizerRandomizerEnabledProperty)) { newVm.VisualizerViewModel.IsVisualizerRandomizerEnabled = IsVisualizerRandomizerEnabled; newVm.VisualizerViewModel.VisualizerRandomizerIntervalSeconds = VisualizerRandomizerIntervalSeconds; }
+            if (this.IsSet(VisualizerRandomizerIntervalSecondsProperty)) newVm.VisualizerViewModel.VisualizerRandomizerIntervalSeconds = VisualizerRandomizerIntervalSeconds;
         }
         else if (DataContext is JukeboxViewModel vm)
         {
@@ -152,6 +210,12 @@ public partial class JukeboxControl : UserControl
             else if (change.Property == IsRandomPlaybackProperty) vm.IsRandomPlayback = IsRandomPlayback;
             else if (change.Property == IsLoopEnabledProperty) vm.IsLoopEnabled = IsLoopEnabled;
             else if (change.Property == IsAutoHideEnabledProperty) vm.IsAutoHideEnabled = IsAutoHideEnabled;
+            else if (change.Property == IsControlsDisabledProperty) vm.IsControlsDisabled = IsControlsDisabled;
+            else if (change.Property == IsVisualizerDisabledProperty) vm.IsVisualizerDisabled = IsVisualizerDisabled;
+            else if (change.Property == IsShowPlayingEnabledProperty) { vm.IsShowPlayingEnabled = IsShowPlayingEnabled; vm.ShowPlayingTimeout = ShowPlayingTimeout; }
+            else if (change.Property == ShowPlayingTimeoutProperty) vm.ShowPlayingTimeout = ShowPlayingTimeout;
+            else if (change.Property == IsVisualizerRandomizerEnabledProperty) { vm.VisualizerViewModel.IsVisualizerRandomizerEnabled = IsVisualizerRandomizerEnabled; vm.VisualizerViewModel.VisualizerRandomizerIntervalSeconds = VisualizerRandomizerIntervalSeconds; }
+            else if (change.Property == VisualizerRandomizerIntervalSecondsProperty) vm.VisualizerViewModel.VisualizerRandomizerIntervalSeconds = VisualizerRandomizerIntervalSeconds;
         }
     }
 }

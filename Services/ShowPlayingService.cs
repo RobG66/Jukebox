@@ -29,7 +29,7 @@ public sealed class ShowPlayingService : IShowPlayingService
 
     public event EventHandler<ShowPlayingEventArgs>? Changed;
 
-    public async Task ShowAsync(string text, CancellationToken cancellationToken = default)
+    public async Task ShowAsync(string text, double? holdSeconds = null, CancellationToken cancellationToken = default)
     {
         CancellationTokenSource cts;
         lock (_lock)
@@ -41,6 +41,12 @@ public sealed class ShowPlayingService : IShowPlayingService
         }
         var token = cts.Token;
 
+        // Use the caller-specified hold duration, or fall back to the
+        // default (3 seconds).
+        int holdMs = holdSeconds.HasValue
+            ? (int)(holdSeconds.Value * 1000)
+            : Constants.OsdHoldMs;
+
         Text = text;
         Opacity = Constants.OsdStartOpacity;
         IsVisible = true;
@@ -48,10 +54,10 @@ public sealed class ShowPlayingService : IShowPlayingService
 
         try
         {
-            await Task.Delay(Constants.OsdHoldMs, token);
+            await Task.Delay(holdMs, token);
 
             int steps = Constants.OsdFadeSteps;
-            int delay = Constants.OsdHoldMs / steps;
+            int delay = holdMs / steps;
             double stepDrop = Constants.OsdStartOpacity / steps;
 
             for (int i = 0; i < steps; i++)

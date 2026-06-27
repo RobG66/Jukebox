@@ -19,6 +19,40 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public bool    NoRecurse       { get; set; }
     public bool    StayOnTop       { get; set; }
     public int     ShowPlayingTimeout { get; set; } = 10;
+
+    // ── New startup switches (set via command-line or JukeboxControl StyledProperty) ──
+    /// <summary>
+    /// When true, all UI controls (transport bar, side panels, keyboard
+    /// shortcuts) are disabled — the window is strictly a playback surface.
+    /// Set via <c>-nocontrols</c> command-line switch or the
+    /// <see cref="Views.JukeboxControl.IsControlsDisabled"/> StyledProperty.
+    /// </summary>
+    public bool    NoControls      { get; set; }
+
+    /// <summary>
+    /// When true, the ProjectM visualizer is forced off even if the
+    /// runtime is available. Set via <c>-novisualizer</c> command-line
+    /// switch or the <see cref="Views.JukeboxControl.IsVisualizerDisabled"/>
+    /// StyledProperty.
+    /// </summary>
+    public bool    NoVisualizer    { get; set; }
+
+    /// <summary>
+    /// When true, the visualizer preset randomizer is enabled at startup.
+    /// Set via <c>-randompreset</c> command-line switch or the
+    /// <see cref="Views.JukeboxControl.IsVisualizerRandomizerEnabled"/>
+    /// StyledProperty.
+    /// </summary>
+    public bool    InitialRandomPreset { get; set; }
+
+    /// <summary>
+    /// The preset randomizer interval in seconds (10-60). Only used when
+    /// <see cref="InitialRandomPreset"/> is true. Set via
+    /// <c>-randompreset [time]</c> or the
+    /// <see cref="Views.JukeboxControl.VisualizerRandomizerIntervalSeconds"/>
+    /// StyledProperty.
+    /// </summary>
+    public int     InitialRandomPresetInterval { get; set; } = 10;
     // MPV does not use a shared-context concept.
     #endregion
 
@@ -77,12 +111,35 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// as a pure audio player with no ProjectM dependency.
     /// </summary>
     [ObservableProperty] private bool    _isVisualizerAvailable;
+
+    /// <summary>
+    /// When true, ALL UI controls are disabled — the transport bar, side
+    /// panels (playlist, EQ, visualizer picker), and keyboard shortcuts
+    /// are hidden/ignored. The window becomes strictly a playback surface
+    /// (video or visualizer fills the entire area). Set via the
+    /// <c>-nocontrols</c> command-line switch or the
+    /// <see cref="Views.JukeboxControl.IsControlsDisabled"/> StyledProperty.
+    /// </summary>
+    [ObservableProperty] private bool    _isControlsDisabled;
+
+    /// <summary>
+    /// When true, the ProjectM visualizer is forced off even if the
+    /// runtime probe found <c>JukeboxVisualizations.dll</c> + libprojectM.
+    /// Audio still plays through BASS; the MediaHost stays empty during
+    /// audio playback (same as when the visualizer is unavailable).
+    /// Set via the <c>-novisualizer</c> command-line switch or the
+    /// <see cref="Views.JukeboxControl.IsVisualizerDisabled"/> StyledProperty.
+    /// </summary>
+    [ObservableProperty] private bool    _isVisualizerDisabled;
     #endregion
 
     #region Show Playing OSD
     private readonly object _osdLock = new();
     private CancellationTokenSource? _showPlayingCts;
-    [ObservableProperty] private bool   _isShowPlayingEnabled = true;
+    // Default is false — the OSD only appears if the user passes
+    // -showplaying on the command line or sets IsShowPlayingEnabled via
+    // the JukeboxControl StyledProperty.
+    [ObservableProperty] private bool   _isShowPlayingEnabled = false;
     [ObservableProperty] private string _showPlayingText    = "";
     [ObservableProperty] private bool   _isShowPlayingVisible = false;
     [ObservableProperty] private double _showPlayingOpacity = Constants.OsdStartOpacity;
@@ -183,7 +240,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     {
         if (value && CurrentTrack != null)
         {
-            _showPlayingService.ShowAsync(CurrentTrack.DisplayName).SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
+            _showPlayingService.ShowAsync(CurrentTrack.DisplayName, ShowPlayingTimeout).SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
         else if (!value)
         {
@@ -216,6 +273,45 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         if (!value && IsPickerVisible) IsPickerVisible = false;
         TogglePickerCommand.NotifyCanExecuteChanged();
     }
+
+    /// <summary>
+    /// When <see cref="IsControlsDisabled"/> is turned on, force-close any
+    /// open panels and collapse the transport bar. Also re-evaluate the
+    /// toggle commands so they can't be invoked programmatically.
+    /// </summary>
+    partial void OnIsControlsDisabledChanged(bool value)
+    {
+        if (value)
+        {
+            // Force-close any open panels.
+            IsPlaylistVisible = false;
+            IsPickerVisible   = false;
+            IsEqVisible       = false;
+            // Collapse the transport bar.
+            ControlBarHeight  = Constants.HiddenControlBarHeight;
+        }
+        else
+        {
+            // Restore the default control bar height.
+            ControlBarHeight = Constants.DefaultControlBarHeight;
+        }
+    }
+
+    /// <summary>
+    /// When <see cref="IsVisualizerDisabled"/> changes, re-probe the
+    /// visualizer availability. The actual probe happens in
+    /// <c>InitializeBackendAsync</c>, but if the user toggles this at
+    /// runtime (via the JukeboxControl StyledProperty), we need to
+    /// re-evaluate.
+    /// </summary>
+    partial void OnIsVisualizerDisabledChanged(bool value)
+    {
+        // Re-evaluate availability: if the runtime says it's available
+        // but the user just disabled it, hide the button. If the user
+        // just enabled it and the runtime is available, show the button.
+        IsVisualizerAvailable = this.VisualizerRuntime.IsAvailable && !value;
+    }
+
     partial void OnIsRandomPlaybackChanged(bool value)
     {
         if (value) _playedTracks.Clear();

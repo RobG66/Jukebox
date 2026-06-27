@@ -126,9 +126,10 @@ public partial class JukeboxViewModel
         // Probe the optional visualizer runtime (ProjectM + JukeboxVisualizations.dll).
         // The probe is cached after the first call; we expose the result as
         // IsVisualizerAvailable so the transport-bar button can hide itself
-        // when the drop-in is absent.
-        var visualizerAvailable = this.VisualizerRuntime.IsAvailable;
-        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Visualizer runtime available? {visualizerAvailable}");
+        // when the drop-in is absent. The -novisualizer switch overrides
+        // this and forces IsVisualizerAvailable to false.
+        var visualizerAvailable = this.VisualizerRuntime.IsAvailable && !IsVisualizerDisabled;
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Visualizer runtime available? {this.VisualizerRuntime.IsAvailable} (disabled by switch? {IsVisualizerDisabled} → effective: {visualizerAvailable})");
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -354,7 +355,7 @@ public partial class JukeboxViewModel
         {
             // REFACTOR: OSD animation delegated to IShowPlayingService
             // (was smell §4.1 Warning: Direct dispatcher coupling in OSD animation).
-            _showPlayingService.ShowAsync(value.DisplayName)
+            _showPlayingService.ShowAsync(value.DisplayName, ShowPlayingTimeout)
                 .SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
 

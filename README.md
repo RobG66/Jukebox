@@ -77,6 +77,10 @@ All switches are case-insensitive. Values are case-sensitive.
 | `-playlistlogo` | `[file path]` | Render an image logo above the playlist |
 | `-random` | — | Enable random/shuffle playback |
 | `-hidecontrols` | — | Hide the bottom control bar on startup (auto-hide ON) |
+| `-nocontrols` | — | Disable ALL controls — strictly a playback window (no transport bar, side panels, or keyboard shortcuts) |
+| `-novisualizer` | — | Disable the ProjectM visualizer (overrides availability) |
+| `-showplaying` | `[timeout]` | Show the current-track OSD on track change. If omitted, OSD is disabled. Optional timeout in seconds (default 10). |
+| `-randompreset` | `[time]` | Enable visualizer preset randomization. Optional interval 10-60 seconds (default 10). |
 | `-volume` | `[0-100]` | Set the initial volume |
 | `-stayontop` | — | Force window always-on-top |
 | `-fullscreen` | — | Start in fullscreen |
@@ -94,6 +98,12 @@ Jukebox.exe -dark -volume 50 -file "D:\Music\Playlist" -loop
 
 # Light theme, random shuffle, stay on top, custom title
 Jukebox.exe -light -random -stayontop -title "Now Playing"
+
+# Kiosk mode: no controls, no visualizer, show track name for 5s
+Jukebox.exe -nocontrols -novisualizer -showplaying 5 -fullscreen -file "C:\Music"
+
+# Audio-only with visualizer + preset randomization every 30s
+Jukebox.exe -file "C:\Music\Album" -randompreset 30
 ```
 
 ---
@@ -132,6 +142,12 @@ The `JukeboxControl` is an embeddable `UserControl` that can be hosted in any Av
 | `IsRandomPlayback` | `bool` | `false` | Enable random/shuffle playback |
 | `IsLoopEnabled` | `bool` | `false` | Loop the playlist continuously |
 | `IsAutoHideEnabled` | `bool` | `false` | Auto-hide the transport bar after inactivity |
+| `IsControlsDisabled` | `bool` | `false` | Disable ALL controls — strictly a playback window |
+| `IsVisualizerDisabled` | `bool` | `false` | Force-disable the ProjectM visualizer |
+| `IsShowPlayingEnabled` | `bool` | `false` | Show the current-track OSD on track change |
+| `ShowPlayingTimeout` | `int` | `10` | OSD hold duration in seconds |
+| `IsVisualizerRandomizerEnabled` | `bool` | `false` | Enable visualizer preset randomization |
+| `VisualizerRandomizerIntervalSeconds` | `int` | `10` | Preset randomizer interval (10-60 seconds) |
 
 ### Code-Behind Embedding
 

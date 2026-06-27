@@ -40,8 +40,8 @@ public static class NativeDependencyChecker
         pathProvider ??= PathProvider.Current;
         var libDir = pathProvider.NativeLibDirectory;
 
-        var missingRequired = new List<MissingLibrary>();
-        var missingOptional = new List<MissingLibrary>();
+        var missingRequired = new List<ExpectedLibrary>();
+        var missingOptional = new List<ExpectedLibrary>();
 
         foreach (var lib in GetExpectedLibraries())
         {
@@ -76,15 +76,15 @@ public static class NativeDependencyChecker
     private static IEnumerable<ExpectedLibrary> GetExpectedLibraries()
     {
         bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-        bool isLinux   = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
-        bool isMac     = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+        bool isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+        bool isMac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
         // ── Required: BASS (audio) ──
         if (isWindows)
         {
             yield return new ExpectedLibrary(
                 "bass.dll",
-                isRequired: true,
+                IsRequired: true,
                 "BASS audio library",
                 "https://www.un4seen.com/ — download bass24.zip (64-bit)");
         }
@@ -92,7 +92,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libbass.so",
-                isRequired: true,
+                IsRequired: true,
                 "BASS audio library",
                 "https://www.un4seen.com/ — download bass24-linux.zip");
         }
@@ -100,7 +100,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libbass.dylib",
-                isRequired: true,
+                IsRequired: true,
                 "BASS audio library",
                 "https://www.un4seen.com/ — download bass24-osx.zip");
         }
@@ -116,7 +116,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libmpv-2.dll",
-                isRequired: true,
+                IsRequired: true,
                 "libmpv video library",
                 "https://sourceforge.net/projects/mpv-player-windows/files/libmpv/ — download mpv-dev-x86_64-*.7z, extract with 7-Zip, find libmpv-2.dll inside");
         }
@@ -131,7 +131,7 @@ public static class NativeDependencyChecker
             {
                 yield return new ExpectedLibrary(
                     "libmpv.so.2",
-                    isRequired: true,
+                    IsRequired: true,
                     "libmpv video library",
                     "Either place libmpv.so.2 in lib/, OR run: sudo apt install libmpv-dev");
             }
@@ -140,7 +140,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libmpv.2.dylib",
-                isRequired: true,
+                IsRequired: true,
                 "libmpv video library",
                 "brew install mpv (or place libmpv.2.dylib in lib/)");
         }
@@ -149,7 +149,7 @@ public static class NativeDependencyChecker
         // Same filename on all platforms (managed assembly).
         yield return new ExpectedLibrary(
             "JukeboxVisualizations.dll",
-            isRequired: false,
+            IsRequired: false,
             "Visualizer managed wrapper",
             "Build from https://github.com/RobG66/Jukebox-Visualizations — run build.ps1 / build.sh, unzip the dropin, find this file in the zip's lib/ folder");
 
@@ -158,13 +158,13 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libprojectM.dll",
-                isRequired: false,
+                IsRequired: false,
                 "ProjectM visualizer engine",
                 "Build from https://github.com/RobG66/Jukebox-Visualizations — dropin zip includes this");
 
             yield return new ExpectedLibrary(
                 "glew32.dll",
-                isRequired: false,
+                IsRequired: false,
                 "GLEW (required by libprojectM on Windows)",
                 "Build from https://github.com/RobG66/Jukebox-Visualizations — dropin zip includes this");
         }
@@ -172,7 +172,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libprojectM.so.4",
-                isRequired: false,
+                IsRequired: false,
                 "ProjectM visualizer engine",
                 "Build from https://github.com/RobG66/Jukebox-Visualizations — dropin zip includes this");
         }
@@ -180,7 +180,7 @@ public static class NativeDependencyChecker
         {
             yield return new ExpectedLibrary(
                 "libprojectM.dylib",
-                isRequired: false,
+                IsRequired: false,
                 "ProjectM visualizer engine",
                 "Build from https://github.com/RobG66/Jukebox-Visualizations — dropin zip includes this");
         }
@@ -216,7 +216,7 @@ public static class NativeDependencyChecker
     /// Format the missing-required-libraries report. Single consistent
     /// format — same message structure every time.
     /// </summary>
-    private static string FormatReport(string libDir, List<MissingLibrary> missing)
+    private static string FormatReport(string libDir, List<ExpectedLibrary> missing)
     {
         var lines = new List<string>();
 
@@ -244,13 +244,14 @@ public static class NativeDependencyChecker
         return string.Join(Environment.NewLine, lines);
     }
 
-    /// <summary>Internal record describing an expected library file.</summary>
+    /// <summary>
+    /// Describes a library the Jukebox expects to find in lib/.
+    /// Required libraries will block playback if missing; optional ones
+    /// only affect the visualizer.
+    /// </summary>
     private sealed record ExpectedLibrary(
         string FileName,
         bool IsRequired,
         string Description,
-        string Source) : MissingLibrary(FileName, Description, Source);
-
-    /// <summary>Internal record for a missing library (file + where to get it).</summary>
-    private abstract record MissingLibrary(string FileName, string Description, string Source);
+        string Source);
 }
