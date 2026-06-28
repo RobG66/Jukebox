@@ -22,10 +22,6 @@
 
         <!-- Converter: ContentView bottom margin based on auto-hide state -->
         <conv:AutoHideMarginConverter x:Key="AutoHideMarginConverter"/>
-        <!-- Converter: transport bar background based on auto-hide state -->
-        <conv:BoolToBrushConverter x:Key="AutoHideBgConverter"
-                                   TrueBrush="{StaticResource TransportBarOverlayBackground}"
-                                   FalseBrush="{StaticResource PanelBackground}"/>
     </UserControl.Resources>
 
     <!--
@@ -107,13 +103,21 @@
           so playback shows through underneath.
           Height: bound to ControlBarHeight — goes to 0 when auto-hidden.
         -->
-        <Border VerticalAlignment="Bottom"
+        <Border Classes.autohide="{Binding IsAutoHideEnabled}"
+                VerticalAlignment="Bottom"
                 HorizontalAlignment="Stretch"
                 Height="{Binding ControlBarHeight}"
-                Background="{Binding IsAutoHideEnabled, Converter={StaticResource AutoHideBgConverter}}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,1,0,0"
                 ClipToBounds="True">
+            <Border.Styles>
+                <Style Selector="Border">
+                    <Setter Property="Background" Value="{DynamicResource PanelBackground}" />
+                </Style>
+                <Style Selector="Border.autohide">
+                    <Setter Property="Background" Value="{StaticResource TransportBarOverlayBackground}" />
+                </Style>
+            </Border.Styles>
             <Border.Transitions>
                 <Transitions>
                     <DoubleTransition Property="Height" Duration="0:0:0.3" Easing="CubicEaseOut"/>
