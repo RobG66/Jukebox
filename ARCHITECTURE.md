@@ -119,6 +119,9 @@ The video backend uses a custom P/Invoke wrapper (`Mpv/MpvNative.cs` + `Mpv/MpvC
 *   **PCM Queueing:** Since PCM data is fed from BASS's audio thread and rendering occurs on the GL thread, data is passed safely via a `ConcurrentQueue<short[]>` inside `ProjectMControl` to avoid lock contention.
 *   **Control Lifecycle:** `ProjectMControl` is an Avalonia `UserControl` and does **not** implement `IDisposable`. Teardown is achieved by removing it from the visual tree (`MediaHost.Content = null`), which triggers Avalonia's `Unloaded` handler — that is the correct lifecycle path for native Avalonia controls. The `IVisualizerRuntime.TryDispose` method defensively checks `is IDisposable` before attempting disposal, future-proofing against a potential API change.
 
+*   **FBO Hooking / Default Framebuffer Redirection:** Upstream `libprojectM` natively targets FBO `0` (the default window system backbuffer) for its final compositing pass. Since Avalonia renders custom controls offscreen into private non-zero Framebuffer Objects (supplied as the `fb` parameter in `OnOpenGlRender`), projectM's drawing commands would otherwise be sent to FBO `0` and never composite. We resolve this by hooking the global `__glewBindFramebuffer` function pointer inside `glew32.dll` immediately after `glewInit()`. During `projectm_opengl_render_frame`, our hook intercepts any binding requests targeting `0` and redirects them to Avalonia's offscreen FBO `fb`. Standard binding behavior is restored immediately after the render call finishes.
+
+
 ### 2.4. No Airspace Issue (MPV Migration)
 
 The previous LibVLCSharp `VideoView` was a `NativeControlHost` that created a native HWND — XAML siblings were painted over by the native video surface (the "airspace problem"). This required complex overlay-window workarounds (two-chrome architecture, LibVLCSharp's detached overlay window, visibility converters) that were fragile and hard to maintain.

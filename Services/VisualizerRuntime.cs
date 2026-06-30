@@ -147,8 +147,13 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
         if (_presetPathProperty == null || control is not AvaloniaObject ao) return;
         try
         {
-            // Equivalent to: control[!ProjectMControl.PresetPathProperty] = new Binding(path);
-            ao[_presetPathProperty] = new Binding(bindingPath);
+            // The `control[!Property] = binding` trick only exists as compile-time
+            // sugar on the strongly-typed indexer — it isn't reachable through
+            // reflection. AvaloniaObject.Bind() is the actual runtime API for
+            // setting up a binding imperatively; the plain object indexer used
+            // previously calls SetValue() and tries to assign the Binding object
+            // itself as the property value, which throws ArgumentException.
+            ao.Bind(_presetPathProperty, new Binding(bindingPath));
         }
         catch (Exception ex)
         {
@@ -176,7 +181,12 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
         if (_loadPresetMethod == null) return;
         try
         {
-            _loadPresetMethod.Invoke(control, new object[] { presetPath });
+            // MethodInfo.Invoke does not honor C# default parameter values —
+            // that's purely a caller-side/compile-time feature. ProjectMControl.
+            // LoadPreset(string path, bool smooth = true) takes two parameters,
+            // so both must be supplied here or this throws
+            // TargetParameterCountException, silently dropping every preset load.
+            _loadPresetMethod.Invoke(control, new object[] { presetPath, true });
         }
         catch (Exception ex)
         {

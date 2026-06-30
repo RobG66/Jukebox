@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Native binaries (download manually)
 bass.dll
 libmpv-2.dll
+
+# Build scripts output
+publish/
