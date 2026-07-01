@@ -278,9 +278,6 @@ public partial class ContentView : UserControl
             return;
         }
 
-        runtime.SetPresetPathBinding(
-            _projectMControl,
-            $"{nameof(JukeboxViewModel.VisualizerViewModel)}.{nameof(JukeboxVisualizerViewModel.SelectedVisualizerPath)}");
 
         var projectMPath = PathProvider.Current.ProjectMPresetsDirectory;
         if (System.IO.Directory.Exists(projectMPath))

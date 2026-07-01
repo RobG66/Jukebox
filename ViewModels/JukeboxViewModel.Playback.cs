@@ -3,11 +3,12 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Jukebox.Extensions;
 using Jukebox.Models;
+using Jukebox.Mpv;
+using Jukebox.Services;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -21,32 +22,21 @@ public partial class JukeboxViewModel
     private bool _isTimerUpdating;
     private readonly TaskCompletionSource _backendReadyTcs = new();
 
-    // REFACTOR: tracks the currently-subscribed track so we can unsubscribe
-    // the CORRECT handler on track change (was smell §4.2 Critical:
-    // OnCurrentTrackChanged leaks event handler — the original code
-    // unsubscribed _lastTrack but if the same track was set twice it would
-    // double-subscribe).
     private JukeboxTrack? _subscribedTrack;
     private bool _isPlaybackDisposed;
 
-    // REFACTOR: lock object protecting _bassStream access between
-    // PlaybackTimer_Tick and DisposeBass (was smell §4.2 Critical: race
-    // condition between PlaybackTimer_Tick and Dispose).
-    private readonly object _bassStreamLock = new();
+    private readonly BassPlaybackEngine _bassEngine = new();
+    private readonly MpvPlaybackEngine _mpvEngine = new();
+    private IMediaPlayerEngine? _activeEngine;
+
+    public event EventHandler<short[]>? PcmDataAvailable;
     #endregion
 
     #region Observable Properties
     [ObservableProperty] private bool _isBackendReady;
     [ObservableProperty] private bool _isInitializing;
-
-    // REFACTOR: IsVisualizerVisible retains its original semantic of
-    // "audio mode is active" (i.e. BASS is the active backend, MPV is
-    // not). It does NOT necessarily mean the ProjectM control is on
-    // screen — that requires BOTH IsVisualizerVisible=true AND
-    // IsVisualizerAvailable=true (the latter probes for the optional
-    // ProjectM drop-in at runtime). When audio is playing but
-    // IsVisualizerAvailable is false, BASS plays audio normally and the
-    // MediaHost is left empty (pure audio mode, no ProjectM dependency).
+    [ObservableProperty] private bool _isBassAvailable;
+    [ObservableProperty] private bool _isMpvAvailable;
     [ObservableProperty] private bool _isVisualizerVisible = true;
     [ObservableProperty] private string _currentTimeString = "0:00";
     [ObservableProperty] private string _totalTimeString = "0:00";
@@ -59,7 +49,7 @@ public partial class JukeboxViewModel
     [ObservableProperty]
     private JukeboxTrack? _currentTrack = new() { DisplayName = "No Track Loaded" };
 
-    private double _playbackPosition = 0;
+    private double _playbackPosition;
     public double PlaybackPosition
     {
         get => _playbackPosition;
@@ -86,11 +76,14 @@ public partial class JukeboxViewModel
         {
             if (SetProperty(ref _volume, value))
             {
-                ApplyBassVolume(value);
-                ApplyMpvVolume(value);
+                _activeEngine?.SetVolume(value);
             }
         }
     }
+    #endregion
+
+    #region Public Properties
+    public MpvContext? MpvContext => _mpvEngine.MpvContext;
     #endregion
 
     #region Initialization
@@ -104,63 +97,45 @@ public partial class JukeboxViewModel
 
         _playbackTimer = new DispatcherTimer
         {
-            // REFACTOR: magic number 250 → named constant (smell §4.2, §6.4).
             Interval = TimeSpan.FromMilliseconds(Constants.PlaybackTimerIntervalMs)
         };
         _playbackTimer.Tick += PlaybackTimer_Tick;
 
         await Task.Run(() =>
         {
-            InitializeBass();
-            InitializeMpv();
+            _bassEngine.Initialize();
+            _mpvEngine.Initialize();
         });
 
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Backend Initialization completed in {sw.ElapsedMilliseconds}ms overall.");
 
-        // Diagnostic: log the ProjectM presets folder presence (the
-        // visualizer runtime uses this as its availability check).
         var projectMPath = Jukebox.Services.PathProvider.Current.ProjectMPresetsDirectory;
         var projectMExists = System.IO.Directory.Exists(projectMPath);
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] ProjectM presets path: {projectMPath} exists? {projectMExists}");
 
-        // Probe the optional visualizer runtime (ProjectM + JukeboxVisualizations.dll).
-        // The probe is cached after the first call; we expose the result as
-        // IsVisualizerAvailable so the transport-bar button can hide itself
-        // when the drop-in is absent. The -novisualizer switch overrides
-        // this and forces IsVisualizerAvailable to false.
         var visualizerAvailable = this.VisualizerRuntime.IsAvailable && !IsVisualizerDisabled;
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Visualizer runtime available? {this.VisualizerRuntime.IsAvailable} (disabled by switch? {IsVisualizerDisabled} → effective: {visualizerAvailable})");
 
         Dispatcher.UIThread.Post(() =>
         {
+            IsBassAvailable = _bassEngine.IsAvailable;
+            IsMpvAvailable = _mpvEngine.IsAvailable;
             IsVisualizerAvailable = visualizerAvailable;
             IsBackendReady = true;
             IsInitializing = false;
             _backendReadyTcs.TrySetResult();
-            // REFACTOR: SafeFireAndForget instead of `_ = InitializeStartupAsync()`
-            // (was smell §4.2 Critical: fire-and-forget InitializeStartupAsync).
             InitializeStartupAsync().SafeFireAndForget(nameof(InitializeStartupAsync));
         });
     }
 
     private void PlaybackTimer_Tick(object? sender, EventArgs e)
     {
-        if (IsSeeking) return;
+        if (IsSeeking || _activeEngine == null) return;
 
         _isTimerUpdating = true;
         try
         {
-            // REFACTOR: lock around native handle read to prevent race with
-            // DisposeBass (was smell §4.2 Critical: race condition between
-            // PlaybackTimer_Tick and Dispose).
-            double positionMs;
-            lock (_bassStreamLock)
-            {
-                positionMs = IsVisualizerVisible
-                    ? GetBassPositionMs()
-                    : GetMpvPositionMs();
-            }
-
+            double positionMs = _activeEngine.GetPositionMs();
             if (positionMs >= 0)
             {
                 PlaybackPosition = positionMs;
@@ -180,19 +155,15 @@ public partial class JukeboxViewModel
     {
         if (!CanPlay) return;
 
-        // Resume from pause
         if (CanStop && CurrentTrack != null)
         {
-            if (IsVisualizerVisible) ResumeBass();
-            else ResumeMpv();
-
+            _activeEngine?.Resume();
             _playbackTimer?.Start();
             CanPlay = false;
             CanPause = true;
             return;
         }
 
-        // Start fresh — pick first track if none set
         if (CurrentTrack == null || string.IsNullOrEmpty(CurrentTrack.FilePath))
         {
             if (PlaylistViewModel.Playlist.Count > 0)
@@ -214,9 +185,7 @@ public partial class JukeboxViewModel
     [RelayCommand]
     private void Pause()
     {
-        if (IsVisualizerVisible) PauseBass();
-        else PauseMpv();
-
+        _activeEngine?.Pause();
         _playbackTimer?.Stop();
         CanPlay = true;
         CanPause = false;
@@ -227,9 +196,7 @@ public partial class JukeboxViewModel
     private void Stop()
     {
         _playbackTimer?.Stop();
-
-        if (IsVisualizerVisible) StopBass();
-        else StopMpv();
+        _activeEngine?.Stop();
 
         CanPlay = PlaylistViewModel.Playlist.Count > 0;
         CanPause = false;
@@ -268,28 +235,57 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Core Playback
-    private async Task StartTrackAsync(bool mpvEndReached = false)
+    private async Task StartTrackAsync()
     {
         if (CurrentTrack == null || string.IsNullOrEmpty(CurrentTrack.FilePath)) return;
+
+        if (_activeEngine != null)
+        {
+            _activeEngine.Stop();
+            _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
+            _activeEngine.DurationChanged -= OnEngineDurationChanged;
+            if (_activeEngine is BassPlaybackEngine oldBass)
+            {
+                oldBass.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
+        }
 
         bool isAudio = Constants.AudioExtensions.Any(ext =>
             CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
-        if (IsVisualizerVisible) StopBass();
-        else StopMpv();
-
         IsVisualizerVisible = isAudio;
 
-        if (isAudio)
-            await PlayAudioAsync();
-        else
-            await PlayVideoAsync();
+        _activeEngine = isAudio ? (IMediaPlayerEngine)_bassEngine : _mpvEngine;
+        _activeEngine.PlaybackEnded += OnEnginePlaybackEnded;
+        _activeEngine.DurationChanged += OnEngineDurationChanged;
+
+        if (_activeEngine is BassPlaybackEngine newBass)
+        {
+            newBass.PcmDataAvailable += OnBassPcmDataAvailable;
+
+            var gains = new double[Constants.EqBandCount];
+            var centerFreqs = new float[Constants.EqBandCount];
+            for (int i = 0; i < Constants.EqBandCount; i++)
+            {
+                if (EqViewModel.EqBands.Count > i)
+                {
+                    gains[i] = EqViewModel.EqBands[i].Gain;
+                    centerFreqs[i] = EqViewModel.EqBands[i].CenterFrequency;
+                }
+            }
+            newBass.InitializeEqBands(gains, centerFreqs);
+        }
+
+        _activeEngine.SetVolume(Volume);
+
+        await _activeEngine.PlayAsync(CurrentTrack);
+
+        SetPlayingState();
     }
 
     private void SeekToPosition(double positionMs)
     {
-        if (IsVisualizerVisible) SeekBass(positionMs);
-        else SeekMpv(positionMs);
+        _activeEngine?.Seek(positionMs);
     }
 
     private void UpdateTrackDuration(double durationMs)
@@ -340,9 +336,6 @@ public partial class JukeboxViewModel
     #region Track Changed
     partial void OnCurrentTrackChanged(JukeboxTrack? value)
     {
-        // REFACTOR: use ReferenceEquals guard before unsubscribing to prevent
-        // double-subscription when the same track is set twice (was smell
-        // §4.2 Critical: OnCurrentTrackChanged leaks event handler).
         if (_subscribedTrack != null && !ReferenceEquals(_subscribedTrack, value))
             _subscribedTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
 
@@ -353,8 +346,6 @@ public partial class JukeboxViewModel
 
         if (IsShowPlayingEnabled)
         {
-            // REFACTOR: OSD animation delegated to IShowPlayingService
-            // (was smell §4.1 Warning: Direct dispatcher coupling in OSD animation).
             _showPlayingService.ShowAsync(value.DisplayName, ShowPlayingTimeout)
                 .SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
@@ -372,6 +363,58 @@ public partial class JukeboxViewModel
         {
             PlaybackLength = CurrentTrack.Length.TotalMilliseconds;
             TotalTimeString = CurrentTrack.DisplayLength;
+        }
+    }
+    #endregion
+
+    #region Callbacks
+    private void OnEnginePlaybackEnded(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (IsRepeatEnabled)
+            {
+                await StartTrackAsync();
+            }
+            else
+            {
+                var next = PickNextTrack(IsRandomPlayback);
+                if (next != null)
+                {
+                    CurrentTrack = next;
+                    await StartTrackAsync();
+                }
+                else
+                {
+                    Stop();
+                }
+            }
+        });
+    }
+
+    private void OnEngineDurationChanged(object? sender, double durationMs)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            UpdateTrackDuration(durationMs);
+            if (CurrentTrack != null && CurrentTrack.Length == TimeSpan.Zero)
+            {
+                CurrentTrack.Length = TimeSpan.FromMilliseconds(durationMs);
+            }
+        });
+    }
+
+    private void OnBassPcmDataAvailable(object? sender, short[] pcm)
+    {
+        PcmDataAvailable?.Invoke(this, pcm);
+    }
+
+    private void OnEqBandUpdated(object? sender, EqSliderViewModel band)
+    {
+        int index = EqViewModel.EqBands.IndexOf(band);
+        if (index >= 0 && index < Constants.EqBandCount)
+        {
+            _bassEngine.UpdateEqBand(index, band.Gain, band.CenterFrequency);
         }
     }
     #endregion
@@ -404,9 +447,6 @@ public partial class JukeboxViewModel
 
     public void LoadSystemLogo(string systemName)
     {
-        // REFACTOR: was `/* placeholder */` empty method — smell §4.2 Minor.
-        // Either implement or remove; for now, log a warning so callers know
-        // the operation is a no-op.
         Debug.WriteLine($"[WARN] LoadSystemLogo('{systemName}') is not implemented.");
     }
     #endregion
@@ -419,29 +459,32 @@ public partial class JukeboxViewModel
 
         try
         {
-            // REFACTOR: unsubscribe the correct track (was _lastTrack, which
-            // could be stale if CurrentTrack changed mid-dispose).
             if (_subscribedTrack != null)
                 _subscribedTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
 
             EqViewModel.EqBandUpdated -= OnEqBandUpdated;
 
-            // Stop the timer BEFORE disposing native handles — eliminates the
-            // race window between PlaybackTimer_Tick and DisposeBass (smell §4.2).
             _playbackTimer?.Stop();
 
-            await DisposeMpvAsync();
-
-            // Lock around Bass dispose to serialize with any in-flight Tick.
-            lock (_bassStreamLock)
+            if (_activeEngine != null)
             {
-                DisposeBass();
+                _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
+                _activeEngine.DurationChanged -= OnEngineDurationChanged;
+                if (_activeEngine is BassPlaybackEngine bass)
+                {
+                    bass.PcmDataAvailable -= OnBassPcmDataAvailable;
+                }
             }
+
+            _bassEngine.Dispose();
+            _mpvEngine.Dispose();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Dispose] Error cleaning up playback backend: {ex.Message}");
         }
+
+        await Task.CompletedTask;
     }
     #endregion
 }

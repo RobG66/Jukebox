@@ -39,8 +39,10 @@ public interface IPathProvider
     /// <summary>The "favorites" subfolder inside the presets directory.</summary>
     string ProjectMFavoritesDirectory { get; }
 
-    /// <summary>File that stores the last-selected visualizer preset path.</summary>
-    string LastPresetFile { get; }
+    /// <summary>Directory that holds a copy of the currently-active visualizer preset (and its textures).
+    /// On startup the Jukebox scans this directory for a .milk file to restore the last-used preset.
+    /// The directory is written by ProjectMControl.LoadPreset — no separate text file is needed.</summary>
+    string CurrentPresetDirectory { get; }
 
     /// <summary>Per-user settings directory (Environment.SpecialFolder.ApplicationData).</summary>
     string SettingsDirectory { get; }

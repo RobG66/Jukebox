@@ -34,6 +34,13 @@ public sealed class MpvContext : IDisposable
     // remain valid for the lifetime of the render context.
     private MpvNative.MpvGetProcAddressDelegate? _getProcAddressDelegate;
 
+    // Pre-allocated unmanaged buffers for Render() — avoids 180+
+    // AllocHGlobal/FreeHGlobal pairs per second at 60fps.
+    private IntPtr _renderParamsPtr;
+    private IntPtr _renderFboPtr;
+    private IntPtr _renderFlipYPtr;
+    private int _renderParamSize;
+
     /// <summary>Gets the raw mpv handle. Used by MpvView to create the render context.</summary>
     internal IntPtr Handle => _mpv;
 
@@ -56,6 +63,24 @@ public sealed class MpvContext : IDisposable
     internal void SetRenderContext(IntPtr ctx)
     {
         _renderContext = ctx;
+        AllocateRenderBuffers();
+    }
+
+    private void AllocateRenderBuffers()
+    {
+        FreeRenderBuffers();
+        _renderParamSize = Marshal.SizeOf<MpvRenderParam>();
+        _renderParamsPtr = Marshal.AllocHGlobal(_renderParamSize * 3);
+        _renderFboPtr = Marshal.AllocHGlobal(Marshal.SizeOf<MpvOpenglFbo>());
+        _renderFlipYPtr = Marshal.AllocHGlobal(sizeof(int));
+        Marshal.WriteInt32(_renderFlipYPtr, 1); // flip Y = true (constant)
+    }
+
+    private void FreeRenderBuffers()
+    {
+        if (_renderParamsPtr != IntPtr.Zero) { Marshal.FreeHGlobal(_renderParamsPtr); _renderParamsPtr = IntPtr.Zero; }
+        if (_renderFboPtr != IntPtr.Zero) { Marshal.FreeHGlobal(_renderFboPtr); _renderFboPtr = IntPtr.Zero; }
+        if (_renderFlipYPtr != IntPtr.Zero) { Marshal.FreeHGlobal(_renderFlipYPtr); _renderFlipYPtr = IntPtr.Zero; }
     }
 
     internal void MarkRenderContextReady()
@@ -389,47 +414,26 @@ public sealed class MpvContext : IDisposable
         // Guard against rendering after disposal — the update callback
         // might have already been queued before we nulled it.
         if (_disposed || _renderContext == IntPtr.Zero || _mpv == IntPtr.Zero) return;
+        if (_renderParamsPtr == IntPtr.Zero) return;
 
-        // Build the render parameter array:
-        // [0] MPV_RENDER_PARAM_OPENGL_FBO → mpv_opengl_fbo { fbo, w, h, internal_format=0 }
-        // [1] MPV_RENDER_PARAM_FLIP_Y → 1 (Avalonia's FBO is upside-down)
-        // [2] MPV_RENDER_PARAM_INVALID → terminator
-
+        // Write per-frame FBO data into the pre-allocated buffer.
         var fboStruct = new MpvOpenglFbo { Fbo = fbo, W = width, H = height, InternalFormat = 0 };
-        var flipY = 1;
+        Marshal.StructureToPtr(fboStruct, _renderFboPtr, false);
 
-        var paramSize = Marshal.SizeOf<MpvRenderParam>();
-        var paramsPtr = Marshal.AllocHGlobal(paramSize * 3);
-        try
-        {
-            // Allocate the fbo struct in unmanaged memory (the param points to it).
-            var fboPtr = Marshal.AllocHGlobal(Marshal.SizeOf<MpvOpenglFbo>());
-            Marshal.StructureToPtr(fboStruct, fboPtr, false);
+        // Build the render parameter array (flip Y is pre-written as 1):
+        // [0] MPV_RENDER_PARAM_OPENGL_FBO → pre-allocated fbo struct
+        // [1] MPV_RENDER_PARAM_FLIP_Y → pre-allocated int (constant 1)
+        // [2] MPV_RENDER_PARAM_INVALID → terminator
+        Marshal.WriteInt32(_renderParamsPtr + 0 * _renderParamSize, MpvNative.MPV_RENDER_PARAM_OPENGL_FBO);
+        Marshal.WriteIntPtr(_renderParamsPtr + 0 * _renderParamSize + IntPtr.Size, _renderFboPtr);
 
-            var flipYPtr = Marshal.AllocHGlobal(sizeof(int));
-            Marshal.WriteInt32(flipYPtr, flipY);
+        Marshal.WriteInt32(_renderParamsPtr + 1 * _renderParamSize, MpvNative.MPV_RENDER_PARAM_FLIP_Y);
+        Marshal.WriteIntPtr(_renderParamsPtr + 1 * _renderParamSize + IntPtr.Size, _renderFlipYPtr);
 
-            // param[0]: OpenGL FBO
-            Marshal.WriteInt32(paramsPtr + 0 * paramSize, MpvNative.MPV_RENDER_PARAM_OPENGL_FBO);
-            Marshal.WriteIntPtr(paramsPtr + 0 * paramSize + IntPtr.Size, fboPtr);
+        Marshal.WriteInt32(_renderParamsPtr + 2 * _renderParamSize, MpvNative.MPV_RENDER_PARAM_INVALID);
+        Marshal.WriteIntPtr(_renderParamsPtr + 2 * _renderParamSize + IntPtr.Size, IntPtr.Zero);
 
-            // param[1]: Flip Y
-            Marshal.WriteInt32(paramsPtr + 1 * paramSize, MpvNative.MPV_RENDER_PARAM_FLIP_Y);
-            Marshal.WriteIntPtr(paramsPtr + 1 * paramSize + IntPtr.Size, flipYPtr);
-
-            // param[2]: Invalid (terminator)
-            Marshal.WriteInt32(paramsPtr + 2 * paramSize, MpvNative.MPV_RENDER_PARAM_INVALID);
-            Marshal.WriteIntPtr(paramsPtr + 2 * paramSize + IntPtr.Size, IntPtr.Zero);
-
-            MpvNative.mpv_render_context_render(_renderContext, paramsPtr);
-
-            Marshal.FreeHGlobal(fboPtr);
-            Marshal.FreeHGlobal(flipYPtr);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(paramsPtr);
-        }
+        MpvNative.mpv_render_context_render(_renderContext, _renderParamsPtr);
     }
 
     // ── Dispose ──
@@ -477,6 +481,8 @@ public sealed class MpvContext : IDisposable
             catch (Exception ex) { Debug.WriteLine($"[MPV] terminate_destroy failed: {ex.Message}"); }
             _mpv = IntPtr.Zero;
         }
+
+        FreeRenderBuffers();
     }
 
     // ── Native structs ──

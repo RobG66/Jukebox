@@ -22,6 +22,8 @@
 
         <!-- Converter: ContentView bottom margin based on auto-hide state -->
         <conv:AutoHideMarginConverter x:Key="AutoHideMarginConverter"/>
+        <!-- Converter: Side panel bottom margin based on control bar height -->
+        <conv:DoubleToBottomThicknessConverter x:Key="DoubleToBottomThicknessConverter"/>
     </UserControl.Resources>
 
     <!--
@@ -48,6 +50,7 @@
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
                 Width="400"
+                Margin="{Binding ControlBarHeight, Converter={StaticResource DoubleToBottomThicknessConverter}}"
                 Background="{StaticResource SidePanelOverlayBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,1,0"
@@ -79,6 +82,7 @@
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
                 Width="400"
+                Margin="{Binding ControlBarHeight, Converter={StaticResource DoubleToBottomThicknessConverter}}"
                 Background="{StaticResource SidePanelOverlayBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,1,0"

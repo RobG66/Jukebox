@@ -15,63 +15,9 @@
 
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Default"> <!-- Light Theme -->
-                    <SolidColorBrush x:Key="PanelBackground">#F5F5F5</SolidColorBrush>
-                    <SolidColorBrush x:Key="PanelBorder">#CCCCCC</SolidColorBrush>
-                    <SolidColorBrush x:Key="SubtleTextBrush">#666666</SolidColorBrush>
-                    <SolidColorBrush x:Key="AccentTextBrush">#E06400</SolidColorBrush>
-                    <SolidColorBrush x:Key="ErrorTextBrush">#CC0000</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderTrackBrush">#FF7B00</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderThumbBrush">#404040</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderThumbHoverBrush">#000000</SolidColorBrush>
-                    
-                    <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="#333333"/>
-                    <SolidColorBrush x:Key="DataGridGridLinesBrush"              Color="#CCCCCC"/>
-                    <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="#E5E5E5"/>
-
-                    <!-- Theme-Aware Container Brushes -->
-                    <SolidColorBrush x:Key="WindowBackground">#EAEAEA</SolidColorBrush>
-                    <SolidColorBrush x:Key="ContentBackground">#FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="SplitPaneBackground">#F0F0F0</SolidColorBrush>
-                    <SolidColorBrush x:Key="PanelTextBrush">#111111</SolidColorBrush>
-                    <SolidColorBrush x:Key="PickerBorderBackground">#15000000</SolidColorBrush>
-                    <SolidColorBrush x:Key="EqOverlayBackground">#E6FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="EqOverlayTextBrush">#333333</SolidColorBrush>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark"> <!-- Dark Theme -->
-                    <SolidColorBrush x:Key="PanelBackground">#181818</SolidColorBrush>
-                    <SolidColorBrush x:Key="PanelBorder">#333333</SolidColorBrush>
-                    <SolidColorBrush x:Key="SubtleTextBrush">#AAAAAA</SolidColorBrush>
-                    <SolidColorBrush x:Key="AccentTextBrush">#FF7B00</SolidColorBrush>
-                    <SolidColorBrush x:Key="ErrorTextBrush">#FF4444</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderTrackBrush">#FF7B00</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderThumbBrush">#E0E0E0</SolidColorBrush>
-                    <SolidColorBrush x:Key="SliderThumbHoverBrush">#FFFFFF</SolidColorBrush>
-                    
-                    <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="#D0D0D0"/>
-                    <SolidColorBrush x:Key="DataGridGridLinesBrush"              Color="#404040"/>
-                    <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="#333333"/>
-
-                    <!-- Theme-Aware Container Brushes -->
-                    <SolidColorBrush x:Key="WindowBackground">#0D0D0D</SolidColorBrush>
-                    <SolidColorBrush x:Key="ContentBackground">#222222</SolidColorBrush>
-                    <SolidColorBrush x:Key="SplitPaneBackground">#1A1A1A</SolidColorBrush>
-                    <SolidColorBrush x:Key="PanelTextBrush">#FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="PickerBorderBackground">#22FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="EqOverlayBackground">#B3000000</SolidColorBrush>
-                    <SolidColorBrush x:Key="EqOverlayTextBrush">#FFFFFF</SolidColorBrush>
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-            
-            <x:Double x:Key="GlobalSmallFontSize">12</x:Double>
-            <x:Double x:Key="GlobalFontSize">14</x:Double>
-            <x:Double x:Key="GlobalHeaderFontSize">18</x:Double>
-            <x:Double x:Key="DataGridFontSizeResource">12</x:Double>
-
-            <!-- ComboBox Compact Sizing -->
-            <x:Double   x:Key="ComboBoxMinHeight">24</x:Double>
-            <Thickness  x:Key="ComboBoxPadding">5,2,5,2</Thickness>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Jukebox/Styles/JukeboxThemeResources.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

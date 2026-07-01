@@ -42,14 +42,6 @@ public interface IVisualizerRuntime
     /// </summary>
     Control? CreateControl();
 
-    /// <summary>
-    /// Bind the control's <c>PresetPath</c> styled property to the given
-    /// binding path on the control's <c>DataContext</c>. Equivalent to:
-    /// <code>
-    /// control[!ProjectMControl.PresetPathProperty] = new Binding(path);
-    /// </code>
-    /// </summary>
-    void SetPresetPathBinding(Control control, string bindingPath);
 
     /// <summary>
     /// Start the ProjectM rendering engine on the control. No-op if the

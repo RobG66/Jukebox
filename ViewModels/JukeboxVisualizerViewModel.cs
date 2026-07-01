@@ -103,17 +103,17 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Loads the last-selected visualizer from disk asynchronously. Should be
-    /// called from the View's Loaded handler (or tests' setup phase).
+    /// Restores the last-used visualizer preset from the current_preset directory.
+    /// Should be called from the View's Loaded handler (or tests' setup phase).
     /// </summary>
     public async Task InitializeAsync()
     {
-        var settingsFile = _pathProvider.LastPresetFile;
-        var savedPath = await Task.Run(async () =>
+        var currentPresetDir = _pathProvider.CurrentPresetDirectory;
+        var savedPath = await Task.Run(() =>
         {
-            if (!File.Exists(settingsFile)) return null;
-            try { return (await File.ReadAllTextAsync(settingsFile)).Trim(); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed reading last_preset.txt: {ex.Message}"); return null; }
+            if (!Directory.Exists(currentPresetDir)) return null;
+            try { return Directory.GetFiles(currentPresetDir, "*.milk").FirstOrDefault(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed scanning current_preset directory: {ex.Message}"); return null; }
         });
 
         if (!string.IsNullOrEmpty(savedPath) && await Task.Run(() => File.Exists(savedPath)))
@@ -260,24 +260,9 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #region Property Change Callbacks
     partial void OnSelectedVisualizerPathChanged(string? value)
     {
-        if (!string.IsNullOrEmpty(value))
-        {
-            // REFACTOR: fire-and-forget Task.Run → SafeFireAndForget (was smell
-            // §4.5 Critical: File.WriteAllText in PropertyChanged handler).
-            // Exceptions during the write are now captured and logged instead
-            // of being silently swallowed.
-            Task.Run(() =>
-            {
-                try
-                {
-                    File.WriteAllText(_pathProvider.LastPresetFile, value);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed to persist last preset: {ex.Message}");
-                }
-            }).SafeFireAndForget(nameof(OnSelectedVisualizerPathChanged));
-        }
+        // No persistence needed here — ProjectMControl.LoadPreset copies the
+        // selected .milk file (and its textures) into current_preset/, which
+        // serves as the restore point on next launch.
     }
 
     partial void OnIsVisualizerRandomizerEnabledChanged(bool value)

@@ -72,8 +72,8 @@ public sealed class PathProvider : IPathProvider
     public string ProjectMFavoritesDirectory =>
         Path.Combine(ProjectMPresetsDirectory, "favorites");
 
-    public string LastPresetFile =>
-        Path.Combine(ProjectMRoot, "last_preset.txt");
+    public string CurrentPresetDirectory =>
+        Path.Combine(ProjectMRoot, "current_preset");
 
     public string SettingsDirectory =>
         Path.Combine(

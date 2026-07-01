@@ -12,8 +12,18 @@
         MinWidth="640" MinHeight="480"
         CanResize="True"
         WindowStartupLocation="CenterOwner"
+        RequestedThemeVariant="Dark"
         Background="{DynamicResource WindowBackground}"
         Topmost="{Binding StayOnTop}">
+
+    <!-- Jukebox-specific element-selector styles scoped to this window.
+         Kept here (not in GM's App.axaml) so they don't override GM's own
+         DataGrid / Slider / ComboBox styles when running in-process. -->
+    <Window.Styles>
+        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ComboBoxStyle.axaml"/>
+    </Window.Styles>
 
     <Design.DataContext>
         <vm:JukeboxViewModel/>
