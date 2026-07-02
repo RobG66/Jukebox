@@ -16,10 +16,10 @@ using System.Runtime.InteropServices;
 /// The check is filesystem-only — it just verifies the files exist in
 /// <c>&lt;appdir&gt;/lib/</c>. It does NOT verify checksums or attempt
 /// to load the libraries (that's the job of the individual loaders:
-/// <c>MpvNative.cs</c>, <c>PlaybackBASS.cs::PreloadBassNative</c>,
+/// <c>MpvNative.cs</c>, <c>BassPlaybackEngine.cs::PreloadBassNative</c>,
 /// <c>VisualizerRuntime.cs</c>).
 ///
-/// Required libraries (bass, libmpv) — if missing, the app shows an
+/// Required libraries (bass, bass_fx, libmpv) — if missing, the app shows an
 /// error dialog at startup and the user must address them before audio
 /// or video playback will work.
 ///
@@ -103,6 +103,36 @@ public static class NativeDependencyChecker
                 IsRequired: true,
                 "BASS audio library",
                 "https://www.un4seen.com/ — download bass24-osx.zip");
+        }
+
+        // ── Required: BASS_FX (audio EQ effects) ──
+        // NEW: BASS_FX is the cross-platform DSP effects add-on for BASS.
+        // It provides the PeakEQ effect used by the 10-band equalizer.
+        // Without it, EQ sliders have no audio effect on any platform.
+        // Download from the same un4seen.com page as BASS (bass_fx add-on).
+        if (isWindows)
+        {
+            yield return new ExpectedLibrary(
+                "bass_fx.dll",
+                IsRequired: true,
+                "BASS_FX audio effects library (required for EQ)",
+                "https://www.un4seen.com/ — download bassfx24-win.zip (64-bit)");
+        }
+        else if (isLinux)
+        {
+            yield return new ExpectedLibrary(
+                "libbass_fx.so",
+                IsRequired: true,
+                "BASS_FX audio effects library (required for EQ)",
+                "https://www.un4seen.com/ — download bassfx24-linux.zip");
+        }
+        else if (isMac)
+        {
+            yield return new ExpectedLibrary(
+                "libbass_fx.dylib",
+                IsRequired: true,
+                "BASS_FX audio effects library (required for EQ)",
+                "https://www.un4seen.com/ — download bassfx24-osx.zip");
         }
 
         // ── Required: libmpv (video) ──

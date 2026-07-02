@@ -99,11 +99,13 @@ The video backend uses a custom P/Invoke wrapper (`Mpv/MpvNative.cs` + `Mpv/MpvC
 ### 2.2. ManagedBass (Audio Playback & DSP)
 *   **DSP Threading:** BASS processes audio streams and runs DSP procedures (`OnDsp`) on its own **unmanaged internal audio thread**.
 *   **Event Dispatch Safety:** When `OnDsp` captures PCM data, it invokes the C# event `PcmDataAvailable`. Since this event executes on BASS's internal thread, all subscribers (such as the UI or rendering controls) must handle thread safety and marshaling carefully.
-*   **Race-Condition Protection (`_bassStreamLock`):** The BASS stream handle (`_bassStream`) is accessed from two threads concurrently — the UI-thread `PlaybackTimer_Tick` reads position via `Bass.ChannelGetPosition`, and `DisposeBass` runs on the close path. To prevent calling BASS APIs on a freed stream (which causes Access Violations), all `_bassStream` access in both `PlaybackTimer_Tick` and `DisposeBass` is serialized via `lock (_bassStreamLock)`. The timer is also stopped **before** the lock is taken in `DisposePlaybackAsync` to minimize the contention window.
+*   **Race-Condition Protection (UI-thread affinity):** The BASS stream handle (`_bassStream`) is read by the UI-thread `PlaybackTimer_Tick` (via `Bass.ChannelGetPosition`) and freed by `BassPlaybackEngine.Dispose()` on the close path. Both run on the UI thread — `PlaybackTimer_Tick` fires from a `DispatcherTimer`, and `DisposePlaybackAsync` runs on the UI thread during window close. Because `DispatcherTimer` callbacks are serialized with other UI-thread work via the message pump, there is no actual concurrency between them. The timer is stopped **before** `Dispose()` is called in `DisposePlaybackAsync` to ensure no further ticks fire after disposal begins. (Note: an earlier version of this doc claimed a `_bassStreamLock` object protected this path — that lock never existed in the code. The actual safety comes from `DispatcherTimer`'s UI-thread affinity, which is sufficient.)
+*   **DSP Callback Race Protection:** `OnDsp` runs on BASS's internal audio thread and invokes the `PcmDataAvailable` event. During shutdown, `PcmDataAvailable` is nulled on the UI thread. To prevent a `NullReferenceException` if the field is nulled between the null-check and the `Invoke` call, `OnDsp` uses the standard **local-copy pattern**: `var handler = PcmDataAvailable; if (handler != null) handler.Invoke(...)`. This captures the delegate reference atomically at entry, so even if the field is nulled mid-call, the local copy remains valid. The `Dispose()` method also explicitly calls `Bass.ChannelRemoveDSP` and `Bass.ChannelRemoveSync` **before** `Bass.StreamFree` to guarantee in-flight callbacks have been drained before the stream memory is released.
 *   **Equalizer (EQ) Integration:** 
-    *   BASS EQ is configured by setting parameters (`DXParamEQParameters`) on unmanaged FX handles (`_eqFxHandles`) attached directly to the active `_bassStream`.
-    *   **Platform Limitation:** `DXParamEQ` is a Windows-only DirectX 8 effect. On Linux and macOS, the EQ FX setup is skipped and a one-time warning is logged. The UI sliders remain functional but have no audio effect on non-Windows platforms. Cross-platform EQ requires adding the `ManagedBass.Fx` NuGet package and switching to `EffectType.PeakEQ` (see Smell Test Report §4.3, §7.2 item #13 — deferred refactor).
-    *   **Track Transitions:** When changing tracks, `StopBass()` releases the old stream (`Bass.StreamFree`) and clears the active FX handles. During `PlayAudioAsync()`, new FX handles are set up for each of the 10 bands (`Constants.EqBandCount`) on the newly created stream and populated with the current band gains.
+    *   BASS EQ uses the cross-platform **BASS_FX `PeakEQ`** effect (replaces the previous Windows-only `DXParamEQ`). A single FX handle (`_eqFxHandle`) is attached to the active `_bassStream`, and the 10 bands are multiplexed via the `lBand` field in the `BASS_BFX_PEAKEQ` parameter struct. Bandwidth is 1.5 octaves (equivalent to the old 18-semitone `DXParamEQ` setting).
+    *   **Cross-Platform:** `PeakEQ` is a pure-DSP effect implemented in the `bass_fx` add-on library (`bass_fx.dll` / `libbass_fx.so` / `libbass_fx.dylib`), which must be shipped in `lib/` alongside `bass.dll` / `libbass.so`. It works on Windows, Linux, and macOS — no platform guards needed. The `bass_fx` binary is preloaded into the process in `BassPlaybackEngine.PreloadBassFxNative()` so BASS can find it when `ChannelSetFX` is called with the PeakEQ effect type.
+    *   **Setup Ordering (Critical):** `InitializeEqBands` must be called **after** `PlayAsync` creates the BASS stream. The method guards on `_bassStream != 0`, and calling it before `PlayAsync` silently no-ops. `JukeboxViewModel.StartTrackAsync` calls `PlayAsync` first, then `InitializeEqBands` — this ensures saved EQ gains are applied at every track start.
+    *   **Track Transitions:** When changing tracks, `Stop()` releases the old stream (`Bass.StreamFree`), which auto-frees the attached FX handle. During `PlayAsync()`, a new stream is created. `InitializeEqBands` then creates a new PeakEQ FX handle on the new stream and sets parameters for all 10 bands (`Constants.EqBandCount`).
     *   **Binding Lifetime:** The `JukeboxViewModel` remains subscribed to the `EqViewModel.EqBandUpdated` event across all track switches, so changes to EQ sliders instantly update the active stream's parameters. The event is only unsubscribed in `DisposePlaybackAsync()` on application exit.
 *   **Stream Creation Failure Handling:** If `Bass.CreateStream` returns `0`, `Bass.LastError` is read and surfaced to the user via `ThreeButtonDialogView.ShowErrorAsync`. The previous behavior (silent return) was a critical UX defect — users clicked Play and nothing happened with no feedback.
 *   **Teardown Safety:** To prevent the unmanaged BASS thread from raising events while the application is tearing down:
@@ -221,17 +223,17 @@ When a user closes the player, the exit sequence is orchestrated to (a) never bl
 [DisposePlaybackAsync()] chains:
        ├─► Unsubscribe _subscribedTrack.PropertyChanged (with ReferenceEquals guard)
        ├─► EqViewModel.EqBandUpdated -= OnEqBandUpdated
-       ├─► _playbackTimer.Stop()  ← BEFORE acquiring _bassStreamLock
-       ├─► await DisposeMpvAsync()
-       │       ├─► Null the render update callback (BEFORE freeing render context)
-       │       ├─► Sleep 50ms (let MPV threads notice null callback)
-       │       ├─► mpv_render_context_free
-       │       └─► mpv_terminate_destroy
-       └─► lock (_bassStreamLock) { DisposeBass(); }
-               ├─► PcmDataAvailable = null
-               ├─► Bass.ChannelRemoveDSP / ChannelRemoveSync
-               ├─► Bass.StreamFree(_bassStream)
-               └─► Bass.Free()  (only if _ownsBassContext)
+       ├─► _playbackTimer.Stop()  ← before engine dispose (DispatcherTimer = UI-thread serialized)
+       ├─► _bassEngine.Dispose()  (synchronous — no Task.Run)
+       │       ├─► PcmDataAvailable = null
+       │       ├─► Bass.ChannelRemoveDSP / ChannelRemoveSync (explicit, before StreamFree)
+       │       ├─► Bass.StreamFree(_bassStream)
+       │       └─► Bass.Free()  (only if _ownsBassContext)
+       └─► _mpvEngine.Dispose()  (synchronous — no Task.Run, was fire-and-forget)
+               ├─► Null the render update callback (BEFORE freeing render context)
+               ├─► Sleep 50ms (let MPV threads notice null callback)
+               ├─► mpv_render_context_free
+               └─► mpv_terminate_destroy
        │
        ▼
 [Window.Close()] (actually terminate the window — called from CloseAsync after await completes)
@@ -250,7 +252,7 @@ When a user closes the player, the exit sequence is orchestrated to (a) never bl
 **Key invariants:**
 *   `OnClosing` is **synchronous** — it cannot throw exceptions that escape to `async void` and crash the process.
 *   `DisposePlaybackAsync` is awaited with a **3-second timeout** (`Constants.DisposeTimeoutMs`). If MPV/BASS disposal hangs (race with native callbacks), the window still closes — the alternative was an indefinite hang.
-*   The `_bassStreamLock` is taken **only inside** `DisposePlaybackAsync` after the timer is stopped, so `PlaybackTimer_Tick` cannot read a freed stream.
+*   The playback timer is stopped **before** engine dispose in `DisposePlaybackAsync`. Since both `PlaybackTimer_Tick` (via `DispatcherTimer`) and `DisposePlaybackAsync` run on the UI thread, they are serialized by the message pump — no lock is needed. (An earlier version of this doc claimed a `_bassStreamLock` protected this path; that was doc drift — the lock never existed in the code.)
 *   The `_subscribedTrack` field tracks the currently-subscribed `JukeboxTrack` (replaces the old `_lastTrack`). A `ReferenceEquals` guard prevents double-subscription when the same track is set twice.
 
 ---
@@ -371,10 +373,10 @@ This document reflects the codebase after the smell-test refactor. The full audi
 | §4.1 | Fire-and-forget DisposePlaybackAsync | **Fixed** — `SafeFireAndForget` |
 | §4.1 | Lambda event subscription | **Fixed** — named method, unsubscribed in Dispose |
 | §4.1 | OSD dispatcher coupling | **Fixed** — extracted to `ShowPlayingService` |
-| §4.2 | Race: Tick vs Dispose | **Fixed** — `_bassStreamLock` + timer-stop-before-lock |
+| §4.2 | Race: Tick vs Dispose | **Fixed** — `DispatcherTimer` UI-thread affinity + timer-stop-before-dispose (doc previously claimed `_bassStreamLock` — corrected) |
 | §4.2 | OnCurrentTrackChanged event leak | **Fixed** — `ReferenceEquals` guard + `_subscribedTrack` |
 | §4.3 | Silent Bass.CreateStream failure | **Fixed** — error dialog with `Bass.LastError` |
-| §4.3 | Cross-platform EQ | **Logged warning** on Linux (full fix deferred — needs `ManagedBass.Fx`) |
+| §4.3 | Cross-platform EQ | **Fixed** — ported to BASS_FX `PeakEQ` (cross-platform, requires `bass_fx.dll`/`libbass_fx.so` in `lib/`) |
 | §4.4 | OnMediaPlayerEndReached double-marshall | **N/A** — VLC removed; MPV uses property observation |
 | §4.4 | Silent VLC catches | **N/A** — VLC removed; MPV errors logged via `Trace.WriteLine` |
 | §4.4 | Volume cast precision | **Fixed** — `(int)Math.Round(Volume)` |

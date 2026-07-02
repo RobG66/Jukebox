@@ -108,6 +108,61 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
     }
 
+    public async Task AddUrlTrackAsync(string url)
+    {
+        InvalidatePlaylist();
+
+        var track = new JukeboxTrack
+        {
+            DisplayName = "Loading Stream Title...",
+            FilePath = url,
+            IsTagged = true // Bypasses default lazy tagger
+        };
+
+        Playlist.Add(track);
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        // Start background metadata fetch
+        FetchUrlMetadataAsync(track).SafeFireAndForget(nameof(FetchUrlMetadataAsync));
+
+        await Task.CompletedTask;
+    }
+
+    private async Task FetchUrlMetadataAsync(JukeboxTrack track)
+    {
+        try
+        {
+            if (Jukebox.Services.YouTubeResolver.IsYouTubeUrl(track.FilePath))
+            {
+                var meta = await Jukebox.Services.YouTubeResolver.GetMetadataAsync(track.FilePath);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    track.DisplayName = meta.Title;
+                    track.Length = meta.Duration;
+                    UpdatePlaylistSummary();
+                });
+            }
+            else
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    track.DisplayName = track.FilePath;
+                    track.Length = TimeSpan.Zero;
+                    UpdatePlaylistSummary();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[JukeboxPlaylistViewModel] Error fetching URL metadata: {ex.Message}");
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                track.DisplayName = track.FilePath;
+            });
+        }
+    }
+
     private async Task TagVisibleRangeAsync(int first, int last, int version, int scrollVersion)
     {
         // REFACTOR: magic number 100 → Constants.TagAllThreshold (smell §4.6, §6.4).
@@ -209,6 +264,12 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private static (string title, TimeSpan length, string bitrate) ReadTags(string filePath)
     {
+        if (filePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            filePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return (filePath, TimeSpan.Zero, "Network Stream");
+        }
+
         try
         {
             using var tfile = TagLib.File.Create(filePath);

@@ -1,4 +1,3 @@
-using Avalonia.Threading;
 using Jukebox.Models;
 using Jukebox.Mpv;
 using System;
@@ -133,6 +132,27 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     #endregion
 
     #region Dispose
+    // FIXED (P1 Issue 4): Dispose is now synchronous instead of fire-and-forget.
+    //
+    // The previous implementation did:
+    //     Task.Run(() => { try { mpv.Dispose(); } catch ... });
+    //
+    // This allowed the window to close (and potentially the process to exit)
+    // while MpvContext.Dispose was still running. MpvContext.Dispose does
+    // serious native work — nulls the update callback, sleeps 50ms for
+    // callback drainage, calls mpv_render_context_free, calls
+    // mpv_terminate_destroy. If this is still in flight when the process
+    // exits, the OS forcefully reclaims native resources, which can crash
+    // cleanup routines or leave GPU state dirty.
+    //
+    // It also raced with MpvView.OnOpenGlRender — if a render callback was
+    // still in flight when mpv_render_context_free ran, AccessViolation.
+    //
+    // The synchronous call blocks for ~50-100ms during close (MpvContext.Dispose
+    // includes a 50ms sleep). This is acceptable: DisposePlaybackAsync is
+    // awaited on the UI thread during close and has a 3-second timeout
+    // (Constants.DisposeTimeoutMs). Blocking for 100ms during window close
+    // is invisible to the user.
     public void Dispose()
     {
         var mpv = _mpv;
@@ -142,11 +162,8 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
         {
             mpv.PropertyChanged -= OnMpvPropertyChanged;
             mpv.EndReached -= OnMpvEndReached;
-            Task.Run(() =>
-            {
-                try { mpv.Dispose(); }
-                catch (Exception ex) { Debug.WriteLine($"[MPV Engine] Dispose failed: {ex.Message}"); }
-            });
+            try { mpv.Dispose(); }
+            catch (Exception ex) { Debug.WriteLine($"[MPV Engine] Dispose failed: {ex.Message}"); }
         }
         IsAvailable = false;
     }

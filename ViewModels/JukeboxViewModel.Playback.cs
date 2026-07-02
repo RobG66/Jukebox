@@ -250,7 +250,10 @@ public partial class JukeboxViewModel
             }
         }
 
-        bool isAudio = Constants.AudioExtensions.Any(ext =>
+        bool isUrl = CurrentTrack.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                     CurrentTrack.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        bool isAudio = isUrl || Constants.AudioExtensions.Any(ext =>
             CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
         IsVisualizerVisible = isAudio;
@@ -259,6 +262,23 @@ public partial class JukeboxViewModel
         _activeEngine.PlaybackEnded += OnEnginePlaybackEnded;
         _activeEngine.DurationChanged += OnEngineDurationChanged;
 
+        _activeEngine.SetVolume(Volume);
+
+        await _activeEngine.PlayAsync(CurrentTrack);
+
+        // FIXED (P0 Bug 1): InitializeEqBands must be called AFTER PlayAsync.
+        //
+        // BassPlaybackEngine.InitializeEqBands guards on _bassStream != 0,
+        // and the stream is created inside PlayAsync (Bass.CreateStream).
+        // Calling InitializeEqBands before PlayAsync silently no-ops because
+        // _bassStream is still 0 at that point. This means saved EQ gains
+        // were never applied at track start — the user had to nudge each
+        // slider to activate that one band.
+        //
+        // Now we subscribe to PCM events and initialize EQ after the stream
+        // is alive. InitializeEqBands internally guards on _bassStream != 0,
+        // and after PlayAsync returns the stream is guaranteed to be non-zero
+        // (or PlayAsync already returned early with an error dialog).
         if (_activeEngine is BassPlaybackEngine newBass)
         {
             newBass.PcmDataAvailable += OnBassPcmDataAvailable;
@@ -275,10 +295,6 @@ public partial class JukeboxViewModel
             }
             newBass.InitializeEqBands(gains, centerFreqs);
         }
-
-        _activeEngine.SetVolume(Volume);
-
-        await _activeEngine.PlayAsync(CurrentTrack);
 
         SetPlayingState();
     }
@@ -464,6 +480,17 @@ public partial class JukeboxViewModel
 
             EqViewModel.EqBandUpdated -= OnEqBandUpdated;
 
+            // Stop the playback timer before disposing engines. The timer
+            // is a DispatcherTimer (fires on UI thread), and DisposePlaybackAsync
+            // also runs on the UI thread, so there is no race between
+            // PlaybackTimer_Tick and the dispose — they're serialized by the
+            // UI thread's message pump. The timer.Stop() call ensures no
+            // further ticks fire after this point.
+            //
+            // (Note: ARCHITECTURE.md previously claimed a _bassStreamLock
+            // protected this path — that lock never existed in the code. The
+            // actual safety comes from DispatcherTimer's UI-thread affinity,
+            // which is sufficient.)
             _playbackTimer?.Stop();
 
             if (_activeEngine != null)
@@ -476,6 +503,12 @@ public partial class JukeboxViewModel
                 }
             }
 
+            // FIXED (P1 Issue 4): Both engine dispose calls are now synchronous.
+            // MpvPlaybackEngine.Dispose previously used Task.Run (fire-and-forget)
+            // which could race with the window close and leave native MPV
+            // resources being freed after process exit. The synchronous call
+            // blocks for ~50-100ms during close — acceptable within the
+            // 3-second DisposeTimeoutMs cap in JukeboxView.CloseAsync.
             _bassEngine.Dispose();
             _mpvEngine.Dispose();
         }

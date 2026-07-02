@@ -345,6 +345,32 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
             await PlaylistViewModel.ProcessAndAddFilesAsync(new List<string> { folderPath }, NoRecurse);
         }
     }
+
+    [RelayCommand]
+    private async Task AddUrlAsync()
+    {
+        var url = await Jukebox.Views.TextInputDialogView.ShowAsync(
+            "Add Stream URL",
+            "Enter the YouTube, YouTube Music, or stream URL:",
+            placeholder: "https://music.youtube.com/watch?v=...",
+            validator: val =>
+            {
+                if (string.IsNullOrWhiteSpace(val))
+                    return (false, "URL cannot be empty.");
+                if (!Uri.TryCreate(val, UriKind.Absolute, out var uriResult) ||
+                    (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+                {
+                    return (false, "Invalid URL format. Must start with http:// or https://");
+                }
+                return (true, string.Empty);
+            }
+        );
+
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            await PlaylistViewModel.AddUrlTrackAsync(url);
+        }
+    }
     #endregion
 
     public void Dispose()

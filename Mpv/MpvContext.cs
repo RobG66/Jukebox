@@ -319,6 +319,43 @@ public sealed class MpvContext : IDisposable
     }
 
     // ── Event loop (background thread) ──
+    //
+    // FIXED (Issue 9): Replaced hardcoded struct offsets and magic event ID
+    // with proper struct definitions and Marshal.PtrToStructure.
+    //
+    // The previous code had TWO bugs that meant property-change events were
+    // NEVER processed:
+    //
+    //   Bug A: eventId == 13
+    //     MPV_EVENT_PROPERTY_CHANGE is 22 in libmpv 2.x (the API version
+    //     the Jukebox uses — libmpv-2.dll / libmpv.so.2). The value 13
+    //     doesn't correspond to any event in the current API. The check
+    //     always failed, so the property-change branch never executed.
+    //
+    //   Bug B: Marshal.ReadIntPtr(eventPtr, 24)
+    //     The mpv_event struct on x64 is 24 bytes total:
+    //       offset 0:  event_id      (int, 4 bytes)
+    //       offset 4:  error         (int, 4 bytes)
+    //       offset 8:  reply_userdata (uint64, 8 bytes)
+    //       offset 16: data          (void*, 8 bytes)
+    //     The `data` field is at offset 16, not 24. Reading at offset 24
+    //     reads past the struct into uninitialized memory — the resulting
+    //     pointer is garbage (typically zero, which causes the
+    //     `if (dataPtr != IntPtr.Zero)` check to fail).
+    //
+    // Combined effect: property changes (duration, time-pos, eof-reached)
+    // were silently dropped. The app "worked" because:
+    //   - Position updates: PlaybackTimer_Tick polls mpv_get_property("time-pos")
+    //     directly, independent of events.
+    //   - Duration: never displayed for video files (the user may not have
+    //     noticed).
+    //   - End-reached: video froze on last frame (keep-open=yes) without
+    //     auto-advancing (the user may have clicked Next manually).
+    //
+    // The fix defines proper structs (MpvEvent, MpvEventProperty) and an
+    // enum (MpvEventId) with correct values from client.h, then uses
+    // Marshal.PtrToStructure to read them. This is self-documenting,
+    // correct on every platform, and survives struct layout changes.
 
     private void EventLoop(CancellationToken ct)
     {
@@ -328,54 +365,58 @@ public sealed class MpvContext : IDisposable
             var eventPtr = MpvNative.mpv_wait_event(_mpv, 1.0);
             if (eventPtr == IntPtr.Zero) continue;
 
-            // mpv_event struct: { event_id (int), error (int), reply_userdata (ulong), data (void*) }
-            // We only care about MPV_EVENT_PROPERTY_CHANGE (13) and MPV_EVENT_NONE (0).
-            int eventId = Marshal.ReadInt32(eventPtr);
-            if (eventId == 13) // MPV_EVENT_PROPERTY_CHANGE
+            // Read the mpv_event struct using Marshal.PtrToStructure.
+            // The struct layout is defined by MpvEvent below — no more
+            // hardcoded offsets.
+            var evt = Marshal.PtrToStructure<MpvEvent>(eventPtr);
+
+            if (evt.EventId == MpvEventId.PropertyChange)
             {
-                // mpv_event_property: { name (char*), format (int), data (void*) }
-                // Layout: name at offset 0 (8 bytes on x64), format at offset 8, data at offset 16.
-                var dataPtr = Marshal.ReadIntPtr(eventPtr, 24); // offset of event.data in mpv_event
-                if (dataPtr != IntPtr.Zero)
+                // evt.Data points to an mpv_event_property struct:
+                //   { const char *name; mpv_format format; void *data; }
+                if (evt.Data == IntPtr.Zero) continue;
+
+                var prop = Marshal.PtrToStructure<MpvEventProperty>(evt.Data);
+                var name = prop.Name != IntPtr.Zero
+                    ? Marshal.PtrToStringAnsi(prop.Name)
+                    : null;
+
+                object? value = null;
+                if (prop.Data != IntPtr.Zero)
                 {
-                    var namePtr = Marshal.ReadIntPtr(dataPtr);
-                    var format = Marshal.ReadInt32(dataPtr, IntPtr.Size);
-                    var propDataPtr = Marshal.ReadIntPtr(dataPtr, IntPtr.Size + 8);
-
-                    var name = namePtr != IntPtr.Zero ? Marshal.PtrToStringAnsi(namePtr) : null;
-                    object? value = null;
-
-                    if (propDataPtr != IntPtr.Zero)
+                    if (prop.Format == MpvFormat.Double)
+                        value = Marshal.PtrToStructure<double>(prop.Data);
+                    else if (prop.Format == MpvFormat.Flag)
+                        value = Marshal.ReadByte(prop.Data) != 0;
+                    else if (prop.Format == MpvFormat.String)
                     {
-                        if ((MpvFormat)format == MpvFormat.Double)
-                            value = Marshal.PtrToStructure<double>(propDataPtr);
-                        else if ((MpvFormat)format == MpvFormat.Flag)
-                            value = Marshal.ReadByte(propDataPtr) != 0;
-                        else if ((MpvFormat)format == MpvFormat.String)
-                        {
-                            var strPtr = Marshal.ReadIntPtr(propDataPtr);
-                            if (strPtr != IntPtr.Zero)
-                                value = Marshal.PtrToStringAnsi(strPtr);
-                        }
+                        var strPtr = Marshal.ReadIntPtr(prop.Data);
+                        if (strPtr != IntPtr.Zero)
+                            value = Marshal.PtrToStringAnsi(strPtr);
                     }
+                }
 
-                    if (name != null)
+                if (name != null)
+                {
+                    // Marshal to UI thread via Task.Run. The subscriber
+                    // (MpvPlaybackEngine.OnMpvPropertyChanged) forwards
+                    // to DurationChanged, and JukeboxViewModel.OnEngineDurationChanged
+                    // dispatches to the UI thread via Dispatcher.UIThread.Post.
+                    // So this is double-dispatched, but that's safe — the
+                    // extra Task.Run just decouples from the MPV event thread.
+                    Task.Run(() =>
                     {
-                        // Marshal to UI thread.
-                        System.Threading.Tasks.Task.Run(() =>
-                        {
-                            try { PropertyChanged?.Invoke(name, value); }
-                            catch (Exception ex) { Debug.WriteLine($"[MPV] PropertyChanged callback error: {ex.Message}"); }
-                        });
+                        try { PropertyChanged?.Invoke(name, value); }
+                        catch (Exception ex) { Debug.WriteLine($"[MPV] PropertyChanged callback error: {ex.Message}"); }
+                    });
 
-                        if (name == "eof-reached" && value is bool b && b)
+                    if (name == "eof-reached" && value is bool b && b)
+                    {
+                        Task.Run(() =>
                         {
-                            System.Threading.Tasks.Task.Run(() =>
-                            {
-                                try { EndReached?.Invoke(); }
-                                catch (Exception ex) { Debug.WriteLine($"[MPV] EndReached callback error: {ex.Message}"); }
-                            });
-                        }
+                            try { EndReached?.Invoke(); }
+                            catch (Exception ex) { Debug.WriteLine($"[MPV] EndReached callback error: {ex.Message}"); }
+                        });
                     }
                 }
             }
@@ -486,6 +527,105 @@ public sealed class MpvContext : IDisposable
     }
 
     // ── Native structs ──
+    //
+    // FIXED (Issue 9): Proper struct definitions replacing the hardcoded
+    // offsets in the old EventLoop. Values from libmpv's client.h.
+
+    /// <summary>
+    /// libmpv event IDs. Values from mpv/client.h (libmpv 2.x API).
+    /// </summary>
+    internal enum MpvEventId
+    {
+        /// <summary>No event. Used internally.</summary>
+        None = 0,
+        /// <summary>Playback was shut down.</summary>
+        Shutdown = 1,
+        /// <summary>A log message was received.</summary>
+        LogMessage = 2,
+        /// <summary>Reply to a mpv_get_property_async request.</summary>
+        GetPropertyReply = 3,
+        /// <summary>Reply to a mpv_set_property_async request.</summary>
+        SetPropertyReply = 4,
+        /// <summary>Reply to a mpv_command_async request.</summary>
+        CommandReply = 5,
+        /// <summary>A new file has started loading.</summary>
+        StartFile = 6,
+        /// <summary>A file has finished loading (or was unloaded).</summary>
+        EndFile = 7,
+        /// <summary>The file has been loaded and is ready for playback.</summary>
+        FileLoaded = 8,
+        // Events 9-10 are deprecated/removed in current API.
+        /// <summary>The player has entered idle mode (no file loaded).</summary>
+        Idle = 11,
+        // Event 12 is deprecated.
+        // Event 13 is deprecated (was MPV_EVENT_PROPERTY_CHANGE in very old
+        // API versions — now 22). The old code checked for 13, which never
+        // matched in libmpv 2.x.
+        /// <summary>Triggered periodically during playback (e.g. for UI updates).</summary>
+        Tick = 14,
+        // Events 15 is deprecated.
+        /// <summary>A client message was received (custom protocol).</summary>
+        ClientMessage = 16,
+        /// <summary>Video parameters changed (resolution, format, etc.).</summary>
+        VideoReconfig = 17,
+        /// <summary>Audio parameters changed (sample rate, channels, etc.).</summary>
+        AudioReconfig = 18,
+        // Event 19 is deprecated.
+        /// <summary>A seek operation was initiated.</summary>
+        Seek = 20,
+        /// <summary>Playback was restarted after a seek or pause.</summary>
+        PlaybackRestart = 21,
+        /// <summary>An observed property changed value. This is the event
+        /// we process in EventLoop to feed PropertyChanged/EndReached.</summary>
+        PropertyChange = 22,
+        // Event 23 is deprecated.
+        /// <summary>The event queue overflowed (events were dropped).</summary>
+        QueueOverflow = 24,
+        /// <summary>A hook was triggered (used for synchronous client integration).</summary>
+        Hook = 25,
+    }
+
+    /// <summary>
+    /// Native mpv_event struct. Layout from mpv/client.h:
+    /// <code>
+    /// typedef struct mpv_event {
+    ///     mpv_event_id event_id;      // int
+    ///     int error;
+    ///     uint64_t reply_userdata;
+    ///     void *data;
+    /// } mpv_event;
+    /// </code>
+    /// On x64: 4 + 4 + 8 + 8 = 24 bytes, with `data` at offset 16.
+    /// The old code read `data` at offset 24 (past the struct) — a bug.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MpvEvent
+    {
+        public MpvEventId EventId;
+        public int Error;
+        public ulong ReplyUserdata;
+        public IntPtr Data;
+    }
+
+    /// <summary>
+    /// Native mpv_event_property struct. Layout from mpv/client.h:
+    /// <code>
+    /// typedef struct mpv_event_property {
+    ///     const char *name;
+    ///     mpv_format format;
+    ///     void *data;
+    /// } mpv_event_property;
+    /// </code>
+    /// On x64: 8 + 4 + 4(pad) + 8 = 24 bytes, with `data` at offset 16
+    /// (after 4 bytes of padding for 8-byte alignment).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MpvEventProperty
+    {
+        public IntPtr Name;        // const char*
+        public MpvFormat Format;   // int (mpv_format)
+        public IntPtr Data;        // void*
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct MpvRenderParam

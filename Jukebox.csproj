@@ -50,6 +50,7 @@
          from the lib/ folder at runtime; see MpvNative.cs. -->
     <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
   </ItemGroup>
 
   <ItemGroup>
