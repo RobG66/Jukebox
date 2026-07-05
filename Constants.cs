@@ -3,16 +3,11 @@ using System.Linq;
 
 namespace Jukebox;
 
-/// <summary>
-/// Application-wide constants. Merges the original media/extension/settings
-/// constants with the named constants extracted during the smell-test refactor
-/// (see Smell Test Report §6.4 and §7.1 item #1 — previously inline magic
-/// numbers scattered across ViewModels and Views).
-/// </summary>
+// Application-wide constants.
 public static class Constants
 {
     // ── Media file extensions ──
-    public static readonly string[] AudioExtensions = { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma" };
+    public static readonly string[] AudioExtensions = { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma", ".vgz", ".vgm", ".vgx", ".zip" };
 
     public static readonly string[] VideoExtensions = { ".mp4", ".mkv", ".avi", ".webm" };
 
@@ -24,44 +19,44 @@ public static class Constants
     public const string EqSettingsFileName = "EqSettings.json";
 
     // ── Playback timer ──
-    /// <summary>UI timer tick interval for playback position updates (ms).</summary>
+    // UI timer tick interval for playback position updates (ms).
     public const int PlaybackTimerIntervalMs = 250;
 
     // ── Show Playing OSD ──
-    /// <summary>How long the OSD stays at full opacity before fading (ms).</summary>
+    // How long the OSD stays at full opacity before fading (ms).
     public const int OsdHoldMs = 3000;
-    /// <summary>Number of fade-out steps used by the OSD animation.</summary>
+    // Number of fade-out steps used by the OSD animation.
     public const int OsdFadeSteps = 60;
-    /// <summary>Starting opacity for the OSD fade animation (0.0 - 1.0).</summary>
-    public const double OsdStartOpacity = 0.5;
+    // Starting opacity for the OSD fade animation (0.0 - 1.0).
+    public const double OsdStartOpacity = 0.7;
 
     // ── Equalizer ──
-    /// <summary>Number of EQ bands. Must match EqViewModel.SetupEqBands and the
-    /// _eqFxHandles array size in PlaybackBASS.cs.</summary>
+    // Number of EQ bands. Must match EqViewModel.SetupEqBands and the
+    // _eqFxHandles array size in PlaybackBASS.cs.
     public const int EqBandCount = 10;
 
     // ── Playlist tag reading ──
-    /// <summary>Number of tracks to tag in one batch when scrolling.</summary>
+    // Number of tracks to tag in one batch when scrolling.
     public const int TagBatchSize = 5;
-    /// <summary>If playlist has this many tracks or fewer, tag them all immediately.</summary>
+    // If playlist has this many tracks or fewer, tag them all immediately.
     public const int TagAllThreshold = 100;
 
     // ── Control bar auto-hide ──
-    /// <summary>Default visible height of the transport control bar (px).</summary>
+    // Default visible height of the transport control bar (px).
     public const double DefaultControlBarHeight = 65;
-    /// <summary>Hidden height of the transport control bar (px).</summary>
+    // Hidden height of the transport control bar (px).
     public const double HiddenControlBarHeight = 0;
-    /// <summary>Inactivity period before the control bar auto-hides (seconds).</summary>
+    // Inactivity period before the control bar auto-hides (seconds).
     public const int ControlBarInactivitySeconds = 5;
 
     // ── Playlist scroll tracking ──
-    /// <summary>Idle period required before visible-range tag refresh fires (ms).</summary>
+    // Idle period required before visible-range tag refresh fires (ms).
     public const int ScrollIdleMs = 500;
-    /// <summary>Poll interval for the scroll debounce timer (ms).</summary>
+    // Poll interval for the scroll debounce timer (ms).
     public const int ScrollDebouncePollMs = 50;
 
     // ── Disposal grace ──
-    /// <summary>Maximum time to wait for playback disposal before giving up
-    /// during window close. Prevents indefinite hangs on misbehaving backends.</summary>
+    // Maximum time to wait for playback disposal before giving up
+    // during window close. Prevents indefinite hangs on misbehaving backends.
     public const int DisposeTimeoutMs = 3000;
 }

@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="../Avalonia.Controls.DataGrid/src/Avalonia.Controls.DataGrid/Avalonia.Controls.DataGrid.csproj" />
+  <Project Path="../Avalonia.Controls.TreeDataGrid/src/Avalonia.Controls.TreeDataGrid/Avalonia.Controls.TreeDataGrid.csproj" />
   <Project Path="Jukebox.csproj" />
 </Solution>

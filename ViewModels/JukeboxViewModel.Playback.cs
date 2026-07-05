@@ -248,6 +248,10 @@ public partial class JukeboxViewModel
             {
                 oldBass.PcmDataAvailable -= OnBassPcmDataAvailable;
             }
+            else if (_activeEngine is VgmPlaybackEngine oldVgm)
+            {
+                oldVgm.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
         }
 
         bool isUrl = CurrentTrack.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -258,7 +262,20 @@ public partial class JukeboxViewModel
 
         IsVisualizerVisible = isAudio;
 
-        _activeEngine = isAudio ? (IMediaPlayerEngine)_bassEngine : _mpvEngine;
+        // Route VGM/VGZ/VGX tracks (local .vgm/.vgz/.vgx files) to the VGM engine if available.
+        bool isVgm = CurrentTrack.FilePath.EndsWith(".vgz", StringComparison.OrdinalIgnoreCase) ||
+                     CurrentTrack.FilePath.EndsWith(".vgm", StringComparison.OrdinalIgnoreCase) ||
+                     CurrentTrack.FilePath.EndsWith(".vgx", StringComparison.OrdinalIgnoreCase);
+        Debug.WriteLine($"[Playback] FilePath={CurrentTrack.FilePath}");
+        Debug.WriteLine($"[Playback] isVgm={isVgm}, VgmEngine={(VgmEngine != null ? "not null" : "NULL")}");
+        Debug.WriteLine($"[Playback] Routing to: {(isVgm && VgmEngine is not null ? "VGM" : (isAudio ? "BASS" : "MPV"))} engine");
+
+        if (isVgm && VgmEngine is not null)
+            _activeEngine = VgmEngine;
+        else if (isAudio)
+            _activeEngine = _bassEngine;
+        else
+            _activeEngine = _mpvEngine;
         _activeEngine.PlaybackEnded += OnEnginePlaybackEnded;
         _activeEngine.DurationChanged += OnEngineDurationChanged;
 
@@ -266,19 +283,18 @@ public partial class JukeboxViewModel
 
         await _activeEngine.PlayAsync(CurrentTrack);
 
-        // FIXED (P0 Bug 1): InitializeEqBands must be called AFTER PlayAsync.
+        // InitializeEqBands must be called AFTER PlayAsync.
         //
         // BassPlaybackEngine.InitializeEqBands guards on _bassStream != 0,
         // and the stream is created inside PlayAsync (Bass.CreateStream).
         // Calling InitializeEqBands before PlayAsync silently no-ops because
         // _bassStream is still 0 at that point. This means saved EQ gains
-        // were never applied at track start — the user had to nudge each
-        // slider to activate that one band.
+        // were never applied at track start.
         //
-        // Now we subscribe to PCM events and initialize EQ after the stream
-        // is alive. InitializeEqBands internally guards on _bassStream != 0,
-        // and after PlayAsync returns the stream is guaranteed to be non-zero
-        // (or PlayAsync already returned early with an error dialog).
+        // Now we initialize EQ after the stream is alive. InitializeEqBands
+        // internally guards on _bassStream != 0, and after PlayAsync returns
+        // the stream is guaranteed to be non-zero (or PlayAsync already
+        // returned early with an error dialog).
         if (_activeEngine is BassPlaybackEngine newBass)
         {
             newBass.PcmDataAvailable += OnBassPcmDataAvailable;
@@ -294,6 +310,22 @@ public partial class JukeboxViewModel
                 }
             }
             newBass.InitializeEqBands(gains, centerFreqs);
+        }
+        else if (_activeEngine is VgmPlaybackEngine vgm)
+        {
+            vgm.PcmDataAvailable += OnBassPcmDataAvailable;
+
+            var gains = new double[Constants.EqBandCount];
+            var centerFreqs = new float[Constants.EqBandCount];
+            for (int i = 0; i < Constants.EqBandCount; i++)
+            {
+                if (EqViewModel.EqBands.Count > i)
+                {
+                    gains[i] = EqViewModel.EqBands[i].Gain;
+                    centerFreqs[i] = EqViewModel.EqBands[i].CenterFrequency;
+                }
+            }
+            vgm.InitializeEqBands(gains, centerFreqs);
         }
 
         SetPlayingState();
@@ -356,6 +388,12 @@ public partial class JukeboxViewModel
             _subscribedTrack.PropertyChanged -= CurrentTrack_PropertyChanged;
 
         _subscribedTrack = value;
+
+        foreach (var track in PlaylistViewModel.Playlist)
+        {
+            track.IsPlaying = (track == value);
+        }
+
         if (value == null) return;
 
         value.PropertyChanged += CurrentTrack_PropertyChanged;
@@ -386,10 +424,14 @@ public partial class JukeboxViewModel
     #region Callbacks
     private void OnEnginePlaybackEnded(object? sender, EventArgs e)
     {
+        Debug.WriteLine("[Playback] OnEnginePlaybackEnded fired — dispatching to UI thread.");
         Dispatcher.UIThread.Post(async () =>
         {
+            Debug.WriteLine($"[Playback] PlaybackEnded handler running. IsRepeat={IsRepeatEnabled}, IsRandom={IsRandomPlayback}, PlaylistCount={PlaylistViewModel.Playlist.Count}");
+
             if (IsRepeatEnabled)
             {
+                Debug.WriteLine("[Playback] Repeat enabled — replaying current track.");
                 await StartTrackAsync();
             }
             else
@@ -397,11 +439,14 @@ public partial class JukeboxViewModel
                 var next = PickNextTrack(IsRandomPlayback);
                 if (next != null)
                 {
+                    Debug.WriteLine($"[Playback] Next track: {next.DisplayName}");
                     CurrentTrack = next;
                     await StartTrackAsync();
                 }
                 else
                 {
+                    Debug.WriteLine("[Playback] No next track — stopping.");
+                    CurrentTrack = null;
                     Stop();
                 }
             }
@@ -413,7 +458,7 @@ public partial class JukeboxViewModel
         Dispatcher.UIThread.Post(() =>
         {
             UpdateTrackDuration(durationMs);
-            if (CurrentTrack != null && CurrentTrack.Length == TimeSpan.Zero)
+            if (CurrentTrack != null)
             {
                 CurrentTrack.Length = TimeSpan.FromMilliseconds(durationMs);
             }
@@ -430,7 +475,14 @@ public partial class JukeboxViewModel
         int index = EqViewModel.EqBands.IndexOf(band);
         if (index >= 0 && index < Constants.EqBandCount)
         {
-            _bassEngine.UpdateEqBand(index, band.Gain, band.CenterFrequency);
+            if (_activeEngine is BassPlaybackEngine bass)
+            {
+                bass.UpdateEqBand(index, band.Gain, band.CenterFrequency);
+            }
+            else if (_activeEngine is VgmPlaybackEngine vgm)
+            {
+                vgm.UpdateEqBand(index, band.Gain, band.CenterFrequency);
+            }
         }
     }
     #endregion
@@ -493,7 +545,7 @@ public partial class JukeboxViewModel
             // which is sufficient.)
             _playbackTimer?.Stop();
 
-            if (_activeEngine != null)
+             if (_activeEngine != null)
             {
                 _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
                 _activeEngine.DurationChanged -= OnEngineDurationChanged;
@@ -501,16 +553,20 @@ public partial class JukeboxViewModel
                 {
                     bass.PcmDataAvailable -= OnBassPcmDataAvailable;
                 }
+                else if (_activeEngine is VgmPlaybackEngine vgm)
+                {
+                    vgm.PcmDataAvailable -= OnBassPcmDataAvailable;
+                }
             }
 
-            // FIXED (P1 Issue 4): Both engine dispose calls are now synchronous.
-            // MpvPlaybackEngine.Dispose previously used Task.Run (fire-and-forget)
-            // which could race with the window close and leave native MPV
+            // Both engine dispose calls are synchronous.
+            // This avoids racing with the window close and leaving native MPV
             // resources being freed after process exit. The synchronous call
             // blocks for ~50-100ms during close — acceptable within the
             // 3-second DisposeTimeoutMs cap in JukeboxView.CloseAsync.
             _bassEngine.Dispose();
             _mpvEngine.Dispose();
+            VgmEngine?.Dispose();
         }
         catch (Exception ex)
         {

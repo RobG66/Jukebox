@@ -3,7 +3,7 @@ using Avalonia.Data.Converters;
 using System;
 using System.Globalization;
 
-namespace Jukebox.Classes.Converters;
+namespace Jukebox.Converters;
 
 /// <summary>
 /// Value converter that maps a double value (representing height)

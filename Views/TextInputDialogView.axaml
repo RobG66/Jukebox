@@ -14,7 +14,7 @@
     <StackPanel Margin="20" Spacing="16">
         <StackPanel Spacing="8">
             <TextBlock x:Name="PromptTextBlock"
-                       Text="Enter stream or YouTube URL:"
+                       Text="Enter stream URL:"
                        FontSize="{DynamicResource GlobalFontSize}"
                        FontWeight="Medium"/>
             <TextBox x:Name="InputTextBox"

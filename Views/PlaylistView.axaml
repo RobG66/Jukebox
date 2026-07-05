@@ -4,9 +4,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Jukebox.ViewModels"
              xmlns:models="using:Jukebox.Models"
+             xmlns:conv="using:Jukebox.Converters"
+             xmlns:controls="using:Jukebox.Controls"
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="680"
              x:Class="Jukebox.Views.PlaylistView"
              x:DataType="vm:JukeboxViewModel">
+
+
 
     <Design.DataContext>
         <vm:JukeboxViewModel/>
@@ -72,8 +76,28 @@
                   RowHeight="32"
                   DoubleTapped="PlaylistDataGrid_DoubleTapped">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Title"   x:DataType="models:JukeboxTrack" Binding="{Binding DisplayName}" Width="5*"/>
-                <DataGridTextColumn Header="Length"  x:DataType="models:JukeboxTrack" Binding="{Binding DisplayLength}" Width="2*"/>
+                <DataGridTemplateColumn Header="Title" x:DataType="models:JukeboxTrack" Width="8*" SortMemberPath="DisplayName">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:JukeboxTrack">
+                            <Grid ColumnDefinitions="16,*" VerticalAlignment="Center">
+                                <Image Grid.Column="0"
+                                       Source="avares://Jukebox/Assets/Icons/nowplaying.png"
+                                       Width="12" Height="12"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Left"
+                                       IsVisible="{Binding IsPlaying}"/>
+                                <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
+                                                                   Text="{Binding DisplayName}"
+                                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Length"  x:DataType="models:JukeboxTrack" Binding="{Binding DisplayLength}" Width="SizeToHeader"/>
                 <DataGridTextColumn Header="Bitrate" x:DataType="models:JukeboxTrack" Binding="{Binding Bitrate}" Width="2*"/>
             </DataGrid.Columns>
         </DataGrid>

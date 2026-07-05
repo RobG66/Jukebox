@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using System;
 using System.Threading.Tasks;
+using Jukebox.Models;
 
 namespace Jukebox.Views
 {

@@ -17,6 +17,7 @@ public partial class JukeboxTrack : ObservableObject
     public string FilePath { get; set; } = string.Empty;
 
     [ObservableProperty] private bool _isSelected;
+    [ObservableProperty] private bool _isPlaying;
 
     // Internal flag — not observable, the DataGrid never binds to it
     public bool IsTagged { get; set; }

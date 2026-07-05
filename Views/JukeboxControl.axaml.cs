@@ -84,7 +84,7 @@ public partial class JukeboxControl : UserControl
     {
         InitializeComponent();
 
-        // REFACTOR: magic number 5 seconds → Constants.ControlBarInactivitySeconds (smell §5.2, §6.4).
+        // Initialize the inactivity timer for the transport control bar.
         _inactivityTimer = new Avalonia.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(Constants.ControlBarInactivitySeconds)
@@ -95,15 +95,13 @@ public partial class JukeboxControl : UserControl
         this.PointerEntered += (_, _) => ResetInactivity();
 
         Loaded   += OnLoaded;
-        // REFACTOR: also stop the timer on Unloaded (was smell §5.2 Warning:
-        // Inactivity timer never disposed).
+        // Stop the inactivity timer when control is unloaded to prevent leaks.
         Unloaded += OnUnloaded;
     }
 
     private void OnInactivityTimerTick(object? sender, EventArgs e)
     {
         if (DataContext is JukeboxViewModel vm && vm.IsAutoHideEnabled && !vm.IsControlsDisabled)
-            // REFACTOR: magic number 0 → Constants.HiddenControlBarHeight (smell §5.2, §6.4).
             vm.ControlBarHeight = Constants.HiddenControlBarHeight;
         _inactivityTimer.Stop();
     }
@@ -129,8 +127,7 @@ public partial class JukeboxControl : UserControl
     {
         var topLevel = TopLevel.GetTopLevel(this);
         topLevel?.RemoveHandler(InputElement.KeyDownEvent, OnPreviewKeyDown);
-        // REFACTOR: stop the inactivity timer to release the Tick handler
-        // closure (was smell §5.2 Warning: Inactivity timer never disposed).
+        // Stop the inactivity timer to release resources and prevent leaks.
         _inactivityTimer.Stop();
 
         // Unsubscribe from window resize notifications.
@@ -168,6 +165,12 @@ public partial class JukeboxControl : UserControl
         if (vm.IsEqVisible)       { vm.IsEqVisible       = false; handled = true; }
         if (vm.IsPickerVisible)   { vm.IsPickerVisible   = false; handled = true; }
 
+        if (!handled && vm.IsFullScreen)
+        {
+            vm.IsFullScreen = false;
+            handled = true;
+        }
+
         if (handled) e.Handled = true;
     }
 
@@ -176,7 +179,6 @@ public partial class JukeboxControl : UserControl
         if (DataContext is not JukeboxViewModel vm) return;
         // When -nocontrols is active, the transport bar never shows.
         if (vm.IsControlsDisabled) return;
-        // REFACTOR: magic number 65 → Constants.DefaultControlBarHeight (smell §5.2, §6.4).
         vm.ControlBarHeight = Constants.DefaultControlBarHeight;
         _inactivityTimer.Stop();
         if (vm.IsAutoHideEnabled)

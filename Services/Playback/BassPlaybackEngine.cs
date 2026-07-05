@@ -13,9 +13,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     #region Fields & Constants
     private int _bassStream;
 
-    // FIXED (EQ Port): Replaced int[10] _eqFxHandles with a single handle.
     // PeakEQ (BASS_FX) uses one FX handle per channel and multiplexes bands
-    // via the lBand field in BASS_BFX_PEAKEQ. The old DXParamEQ approach
+    // via the lBand field in BASS_BFX_PEAKEQ. The previous DXParamEQ approach
     // created one FX handle per band; PeakEQ creates one handle for all bands.
     private int _eqFxHandle;
 
@@ -32,8 +31,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
 
     // ── PeakEQ effect type and parameter struct ──
     //
-    // FIXED (EQ Port): Replaced ManagedBass.DirectX8.DXParamEQ (Windows-only
-    // DirectX 8 DMO) with BASS_FX's PeakEQ (cross-platform pure-DSP effect).
+    // Uses BASS_FX's PeakEQ (cross-platform pure-DSP effect).
     //
     // We define the effect type constant and parameter struct inline rather
     // than adding the ManagedBass.Fx NuGet package, because:
@@ -50,10 +48,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     // into the process in PreloadBassFxNative() so BASS can find it
     // when ChannelSetFX is called with the PeakEQ effect type.
     //
-    // FIXED: ManagedBass 4.0.2 already defines EffectType.PeakEQ (= 0x10004,
-    // matching the native BASS_FX_BFX_PEAKEQ constant in bass_fx.h). We use
-    // the enum value directly rather than a custom cast — earlier code
-    // incorrectly used 0x10002, which is BASS_FX_BFX_FIRST + 2, not PEAKEQ.
+    // ManagedBass defines EffectType.PeakEQ (= 0x10004, matching the native
+    // BASS_FX_BFX_PEAKEQ constant in bass_fx.h). We use the enum value directly.
     //
     // Must match the native BASS_BFX_PEAKEQ struct layout from bass_fx.h:
     //   typedef struct {
@@ -61,16 +57,20 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     //     int   lChannel;     // BASS_BFX_CHANxxx flags (0 = all channels)
     //     float fCenter;      // center frequency in Hz
     //     float fGain;        // gain in dB (-30 to +30)
-    //     float fBandwidth;   // bandwidth in octaves (0.1 to 4.0)
+    //     float fBandwidth;   // bandwidth in octaves (0.1 to 4.0) [fQ can be used instead]
+    //     float fQ;           // Q factor (0.1 to 10.0) [fBandwidth can be used instead]
     //   } BASS_BFX_PEAKEQ;
+    // Must match the 24-byte native layout (2 ints + 4 floats). Passing less than 24 bytes
+    // would result in random garbage for fQ. Setting fQ = 0 tells BASS to use fBandwidth instead.
     [StructLayout(LayoutKind.Sequential)]
     private struct PeakEqParams
     {
         public int lBand;
-        public int lChannel;
+        public float fBandwidth;
+        public float fQ;
         public float fCenter;
         public float fGain;
-        public float fBandwidth;
+        public int lChannel;
     }
 
     // Bandwidth in octaves. The old DXParamEQ used 18 semitones (= 1.5 octaves).
@@ -114,11 +114,10 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             }
             else
             {
-                // FIXED (flicker): On Windows, the default BASS update period is
-                // 100ms — the DSP callback (which feeds PCM to the visualizer)
-                // fires only ~10 times/sec. At 60fps, this means projectM gets
-                // audio data in bursts: 5-6 frames with no new data, then 1
-                // frame with a large burst. This causes visible flickering in
+                // On Windows, the default BASS update period is 100ms — the DSP callback
+                // (which feeds PCM to the visualizer) fires only ~10 times/sec. At 60fps,
+                // this means projectM gets audio data in bursts: 5-6 frames with no new data,
+                // then 1 frame with a large burst. This causes visible flickering in
                 // the visualization — it reacts strongly on the burst frame,
                 // then is relatively static for the next 5 frames.
                 //
@@ -173,10 +172,6 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         try
         {
             string urlToPlay = track.FilePath;
-            if (YouTubeResolver.IsYouTubeUrl(urlToPlay))
-            {
-                urlToPlay = await YouTubeResolver.ResolveAudioUrlAsync(urlToPlay);
-            }
 
             if (urlToPlay.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 urlToPlay.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -285,10 +280,9 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         }
     }
 
-    // FIXED (EQ Port): Now uses cross-platform BASS_FX PeakEQ instead of
-    // Windows-only DXParamEQ. The OperatingSystem.IsWindows() guard has
-    // been removed — EQ now works on Linux and macOS too (requires
-    // bass_fx.dll / libbass_fx.so / libbass_fx.dylib in lib/).
+    // Uses cross-platform BASS_FX PeakEQ instead of Windows-only DXParamEQ.
+    // EQ works on Linux and macOS (requires bass_fx.dll / libbass_fx.so /
+    // libbass_fx.dylib in the lib/ directory).
     public void InitializeEqBands(double[] gains, float[] centerFrequencies)
     {
         if (!IsAvailable || _bassStream == 0) return;
@@ -307,10 +301,9 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                             "Ensure bass_fx.dll / libbass_fx.so is in the lib/ folder.");
             return;
         }
+        Debug.WriteLine($"[BASS Engine] EQ FX created (handle={_eqFxHandle}).");
 
-        // Set parameters for each band. PeakEQ uses one FX handle with
-        // lBand to multiplex bands — each FXSetParameters call configures
-        // one band.
+        // Set parameters for each band.
         for (int i = 0; i < Constants.EqBandCount; i++)
         {
             if (gains.Length > i && centerFrequencies.Length > i)
@@ -320,16 +313,19 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         }
     }
 
-    // FIXED (EQ Port): Cross-platform — no more OperatingSystem.IsWindows() guard.
+    // Updates a specific EQ band on all target channels.
     public void UpdateEqBand(int index, double gain, float centerFrequency)
     {
         if (!IsAvailable || _bassStream == 0 || index < 0 || index >= Constants.EqBandCount) return;
 
         if (_eqFxHandle == 0)
         {
-            // Lazy-init: create the EQ FX on first band update.
             _eqFxHandle = Bass.ChannelSetFX(_bassStream, EffectType.PeakEQ, 0);
-            if (_eqFxHandle == 0) return;
+            if (_eqFxHandle == 0)
+            {
+                Debug.WriteLine($"[BASS Engine] UpdateEqBand: ChannelSetFX failed. Error: {Bass.LastError}.");
+                return;
+            }
         }
 
         SetPeakEqParameters(index, centerFrequency, (float)gain);
@@ -355,17 +351,25 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         var p = new PeakEqParams
         {
             lBand = band,
-            lChannel = 0,
+            fBandwidth = EqBandwidthOctaves,
+            fQ = 0.0f,
             fCenter = centerFreq,
             fGain = gainDb,
-            fBandwidth = EqBandwidthOctaves
+            lChannel = -1 // Apply to all channels (BASS_BFX_CHANALL)
         };
 
+        // Use manual marshaling via IntPtr — ManagedBass's IEffectParameter
+        // interface requires a FXType property we don't want to implement.
+        // The IntPtr overload of FXSetParameters passes the raw struct bytes
+        // directly to BASS_FXSetParameters.
         IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<PeakEqParams>());
         try
         {
             Marshal.StructureToPtr(p, ptr, false);
-            Bass.FXSetParameters(_eqFxHandle, ptr);
+            if (!Bass.FXSetParameters(_eqFxHandle, ptr))
+            {
+                Debug.WriteLine($"[BASS Engine] FXSetParameters failed for band {band} (freq={centerFreq}Hz, gain={gainDb}dB). Error: {Bass.LastError}");
+            }
         }
         finally
         {
@@ -385,12 +389,13 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // P/Invoke. The resolver makes it work on both platforms.
         NativeLibrary.SetDllImportResolver(typeof(Bass).Assembly, (name, assembly, path) =>
         {
+            string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
+
             if (name == "bass")
             {
                 if (_bassNativeHandle != IntPtr.Zero)
                     return _bassNativeHandle;
 
-                string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
                 string fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? "bass.dll"
                     : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
@@ -416,6 +421,31 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 }
 
                 Debug.WriteLine($"[BASS Engine] BASS native library not found. Looked in: {fullPath} and OS default search path.");
+            }
+
+            if (name == "bass_fx")
+            {
+                if (_bassFxNativeHandle != IntPtr.Zero)
+                    return _bassFxNativeHandle;
+                string fxFile = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "bass_fx.dll"
+                    : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                        ? "libbass_fx.so"
+                        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                            ? "libbass_fx.dylib"
+                            : "bass_fx";
+                string fxFullPath = Path.Combine(libDir, fxFile);
+                if (File.Exists(fxFullPath) && NativeLibrary.TryLoad(fxFullPath, out _bassFxNativeHandle))
+                {
+                    Debug.WriteLine($"[BASS Engine] Loaded BASS_FX from: {fxFullPath}");
+                    return _bassFxNativeHandle;
+                }
+                if (NativeLibrary.TryLoad(fxFile, out _bassFxNativeHandle))
+                {
+                    Debug.WriteLine($"[BASS Engine] Loaded BASS_FX from OS search path: {fxFile}");
+                    return _bassFxNativeHandle;
+                }
+                Debug.WriteLine($"[BASS Engine] BASS_FX NOT FOUND. EQ will not work. Looked in: {fxFullPath}");
             }
 
             return IntPtr.Zero;
@@ -465,8 +495,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                         "EQ will not be available. Download from https://www.un4seen.com/ (bass_fx add-on).");
     }
 
-    // FIXED (P0 Bug 2): Use the standard event-invocation pattern with a
-    // local copy to prevent NullReferenceException during shutdown.
+    // Use the standard event-invocation pattern with a local copy to prevent
+    // NullReferenceException during shutdown.
     //
     // OnDsp runs on BASS's internal audio thread. The dispose path on the
     // UI thread nulls PcmDataAvailable, then calls Bass.StreamFree. Without

@@ -132,7 +132,7 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     #endregion
 
     #region Dispose
-    // FIXED (P1 Issue 4): Dispose is now synchronous instead of fire-and-forget.
+    // Dispose is synchronous instead of fire-and-forget.
     //
     // The previous implementation did:
     //     Task.Run(() => { try { mpv.Dispose(); } catch ... });

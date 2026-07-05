@@ -129,15 +129,18 @@ public partial class App : Application
                     else if (arg == "-volume" && i + 1 < desktop.Args.Length && int.TryParse(desktop.Args[++i], out int vol))
                         vm.InitialVolume = vol;
                     else if (arg == "-stayontop")
+                    {
+                        vm.StayOnTop = true;
                         window.Topmost = true;
+                    }
                     else if (arg == "-fullscreen")
-                        window.WindowState = Avalonia.Controls.WindowState.FullScreen;
+                        vm.WindowState = Avalonia.Controls.WindowState.FullScreen;
                     else if (arg == "-file" && i + 1 < desktop.Args.Length)
                         vm.InitialFile = desktop.Args[++i];
                     else if (arg == "-loop")
                         vm.IsLoopEnabled = true;
                     else if (arg == "-minimized")
-                        window.WindowState = Avalonia.Controls.WindowState.Minimized;
+                        vm.WindowState = Avalonia.Controls.WindowState.Minimized;
                     else if (arg == "-title" && i + 1 < desktop.Args.Length)
                         window.Title = desktop.Args[++i];
                 }

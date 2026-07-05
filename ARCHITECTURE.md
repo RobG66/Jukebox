@@ -8,9 +8,10 @@ This document outlines the architecture, threading constraints, native resource 
 
 The Jukebox application is a cross-platform desktop media player built with:
 *   **Avalonia UI (12.x):** The cross-platform UI framework (using compiled bindings).
-*   **.NET 8 / C# 12:** Target framework.
+*   **.NET 10.0 / C# 13:** Target framework.
 *   **libmpv:** For video playback (custom P/Invoke wrapper — `Mpv/MpvNative.cs` + `Mpv/MpvContext.cs`). Renders video into Avalonia's OpenGL context via `OpenGlControlBase`. No native HWND, no airspace issue.
 *   **ManagedBass:** For audio playback and DSP/PCM audio data extraction (wraps native BASS).
+*   **libvgm:** For VGM/VGZ/VGX audio file emulation and playback (custom P/Invoke wrapper via `Native/VgmNative.cs` and `Services/Playback/VgmPlaybackEngine.cs`). Feeds rendered PCM back into BASS push stream. Supports playing ZIP files containing audio.
 *   **JukeboxVisualizations (ProjectM):** An **optional** companion library wrapping native OpenGL `libprojectM` to render milkdrop visualizer presets. Loaded at runtime via reflection — the Jukebox no longer holds a compile-time reference to this assembly. When absent, the visualizer button is hidden and audio plays without any ProjectM dependency.
 *   **TagLibSharp:** For background media metadata extraction.
 *   **CommunityToolkit.Mvvm:** Source-generator-based MVVM framework (`[ObservableProperty]`, `[RelayCommand]`).
@@ -39,42 +40,64 @@ graph TD
 Jukebox/
 ├── Constants.cs                 # Merged: media extensions + named constants
 ├── Models/
-│   └── JukeboxTrack.cs          # Track data model (ObservableObject)
+│   ├── JukeboxTrack.cs          # Track data model (ObservableObject)
+│   └── ThreeButtonDialogConfig.cs # Configuration parameters for ThreeButtonDialog
 ├── Extensions/
 │   └── TaskExtensions.cs        # SafeFireAndForget — observes fire-and-forget Tasks
 ├── Services/
-│   ├── IPathProvider.cs         # Interface for canonical filesystem paths
-│   ├── PathProvider.cs          # Default impl (singleton via PathProvider.Current)
-│   ├── IShowPlayingService.cs   # OSD animation interface
-│   ├── ShowPlayingService.cs    # OSD hold + fade impl (extracted from VM)
-│   ├── IVisualizerRuntime.cs    # Optional-visualizer abstraction
-│   └── VisualizerRuntime.cs     # Reflection-based loader for JukeboxVisualizations.dll
-├── Mpv/                         # Custom libmpv wrapper (replaces LibVLCSharp)
+│   ├── Playback/
+│   │   ├── BassPlaybackEngine.cs     # ManagedBass audio playback engine
+│   │   ├── IMediaPlayerEngine.cs     # Abstraction for media playback engines
+│   │   ├── IVisualizerRuntime.cs     # Optional-visualizer abstraction
+│   │   ├── MpvPlaybackEngine.cs      # libmpv video playback engine
+│   │   ├── VgmPlaybackEngine.cs      # libvgm VGM playback engine
+│   │   └── VisualizerRuntime.cs      # Reflection-based loader for JukeboxVisualizations.dll
+│   ├── System/
+│   │   ├── IPathProvider.cs          # Canonical filesystem paths interface
+│   │   ├── PathProvider.cs           # Default path provider implementation
+│   │   ├── IStorageService.cs        # Storage/file picker interface
+│   │   ├── StorageService.cs         # Storage/file picker implementation
+│   │   └── NativeDependencyChecker.cs # Verification of required native DLLs/SOs
+│   └── UI/
+│       ├── IShowPlayingService.cs    # Now-playing OSD animation interface
+│       ├── ShowPlayingService.cs     # OSD animation service implementation
+│       ├── IUserDialogService.cs     # User dialog service interface
+│       ├── UserDialogService.cs      # User dialog service implementation
+│       └── ThemeService.cs           # Theme service implementation
+├── Mpv/                         # Custom libmpv wrapper
 │   ├── MpvNative.cs             # P/Invoke declarations for libmpv C API
-│   ├── MpvContext.cs            # High-level wrapper: playback, properties, events, render
-│   └── (MpvView.cs is in Views/)
+│   └── MpvContext.cs            # High-level wrapper: playback, properties, events, render
 ├── ViewModels/
 │   ├── ViewModelBase.cs         # Abstract base (ObservableObject)
 │   ├── JukeboxViewModel.cs      # Main VM (partial: state, OSD, dispose)
-│   ├── JukeboxViewModel.Playback.cs       # Partial: play/pause/seek/timer
-│   ├── JukeboxViewModel.PlaybackBASS.cs   # Partial: ManagedBass audio backend
-│   ├── JukeboxViewModel.PlaybackMPV.cs    # Partial: libmpv video backend (replaces PlaybackVLC.cs)
+│   ├── JukeboxViewModel.Playback.cs       # Partial: play/pause/seek/timer/engines coordinator
 │   ├── JukeboxPlaylistViewModel.cs        # Playlist + virtualized tag loading
 │   ├── JukeboxVisualizerViewModel.cs      # ProjectM preset tree + favorites
 │   ├── JukeboxEqViewModel.cs              # 10-band EQ + presets + persistence
 │   ├── EqSliderViewModel.cs               # Single EQ band VM
-│   └── VisualizerNodeViewModel.cs         # TreeDataGrid node base + Folder/File subclasses
+│   ├── VisualizerNodeViewModel.cs         # TreeDataGrid node base
+│   ├── VisualizerFolderViewModel.cs       # TreeDataGrid folder node
+│   └── VisualizerFileViewModel.cs         # TreeDataGrid file node
 └── Views/
-    ├── JukeboxView.axaml.cs     # Main window (lifecycle, close handling, media host detach)
-    ├── JukeboxControl.axaml.cs  # Embeddable UserControl (StyledProperties, inactivity timer)
-    ├── ContentView.axaml.cs     # Media host — swaps MpvView / ProjectMControl / empty
-    ├── MpvView.cs               # OpenGlControlBase subclass — renders MPV video into GL context
-    ├── PlaylistView.axaml.cs    # DataGrid + scroll tracking
-    ├── TransportBarView.axaml.cs# Transport bar + click-to-seek sliders
-    ├── VisualizerPickerView.axaml.cs
-    ├── RenameDialogView.axaml.cs
-    ├── ThreeButtonDialogView.axaml.cs
-    └── ThreeButtonDialogConfig.cs
+    ├── JukeboxView.axaml
+    ├── JukeboxView.axaml.cs     # Main window lifecycle and media host control
+    ├── JukeboxControl.axaml
+    ├── JukeboxControl.axaml.cs  # Main user control and inactivity timer
+    ├── ContentView.axaml
+    ├── ContentView.axaml.cs     # Media host (swaps MpvView / ProjectMControl / empty)
+    ├── MpvView.cs               # OpenGL control for libmpv rendering
+    ├── PlaylistView.axaml
+    ├── PlaylistView.axaml.cs    # Playlist DataGrid and visible range notifications
+    ├── TransportBarView.axaml
+    ├── TransportBarView.axaml.cs# Media controls and seeking sliders
+    ├── VisualizerPickerView.axaml
+    ├── VisualizerPickerView.axaml.cs # Visualizer tree picker panel
+    ├── RenameDialogView.axaml
+    ├── RenameDialogView.axaml.cs # File renaming input dialog
+    ├── TextInputDialogView.axaml
+    ├── TextInputDialogView.axaml.cs # General text input dialog
+    ├── ThreeButtonDialogView.axaml
+    └── ThreeButtonDialogView.axaml.cs # Dialog with up to three choice buttons
 ```
 
 ---
@@ -130,9 +153,18 @@ The previous LibVLCSharp `VideoView` was a `NativeControlHost` that created a na
 
 **MPV eliminates the airspace problem entirely.** `MpvView` is an `OpenGlControlBase` subclass that renders video into Avalonia's OpenGL context — no native HWND, no separate window. Side panels (Playlist, Visualizer Picker), transport bar, and EQ overlay are normal XAML siblings of `ContentView` that render on top via standard Z-order. No overlay windows, no chrome instances, no visibility converters.
 
-**Single `OpenGlControlBase` at a time:** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between three states — `MpvView` (video mode), `ProjectMControl` (audio mode + visualizer available), and empty (audio mode + visualizer unavailable). Only one `OpenGlControlBase` is in the visual tree at a time — each creates its own private GL context, and having two simultaneously can break ProjectM's initialization. When switching modes, the old control is removed (`MediaHost.Content = null`), triggering `OnOpenGlDeinit` and GL context cleanup, before the new control is attached. The empty state is used when audio is playing but the optional `ProjectM` drop-in is not present — the MediaHost simply has no content (no `OpenGlControlBase`), and BASS plays audio normally with no GL cost.
+**Single `OpenGlControlBase` at a time:** `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between three states — `MpvView` (video mode), `ProjectMControl` (audio mode + visualizer available), and empty (audio mode + visualizer unavailable). Only one `OpenGlControlBase` is in the visual tree at a time — each creates its own private GL context, and having two simultaneously can break ProjectM's initialization. When switching modes, the old control is removed (`MediaHost.Content = null`), triggering `OnOpenGlDeinit` and GL context cleanup, before the new control is attached. The empty state is used when audio (including VGM files or ZIP audio contents) is playing but the optional `ProjectM` drop-in is not present — the MediaHost simply has no content (no `OpenGlControlBase`), and BASS plays audio normally with no GL cost.
 
-### 2.5. Media Host Teardown in `ContentView`
+### 2.5. libvgm (VGM Emulation Playback)
+
+The VGM playback engine plays `.vgm`, `.vgz`, and `.vgx` video game music files.
+
+*   **C API Shim:** Valley Bell's native `libvgm` is built in C++. Because C++ classes cannot be directly P/Invoked, we ship a custom flat C API wrapper (`vgm-player` / `libvgm-player.so` / `libvgm-player.dylib` in the `lib/` directory) wrapping `PlayerA` and sound cores.
+*   **P/Invoke Loading & Export Resolution:** Because `MpvNative` already registers a DLL import resolver for the assembly, the `VgmNative` static class performs manual library loading via `NativeLibrary.Load` and resolves function exports directly into delegates.
+*   **Audio Rendering Loop:** When a track begins, `VgmPlaybackEngine` starts a dedicated rendering loop on a background thread. This thread continuously pulls 16-bit signed stereo 44100Hz PCM samples from `libvgm`.
+*   **BASS Integration:** The rendered PCM bytes are written into a BASS push stream (`Bass.StreamPutData`). This allows VGM audio emulation to run through the standard ManagedBass pipeline, automatically supporting equalizer sliders, DSP PCM callbacks, and visualizations.
+
+### 2.6. Media Host Teardown in `ContentView`
 `ContentView` uses a `ContentControl` (`MediaHost`) that swaps between `MpvView`, `ProjectMControl`, and empty. Teardown on window close:
 *   `JukeboxView.CloseAsync` calls `ContentView.DetachMediaHost()` — sets `MediaHost.Content = null`, removing the active `OpenGlControlBase` from the visual tree BEFORE `DisposePlaybackAsync` runs. This triggers `OnOpenGlDeinit` and GL context cleanup, preventing AccessViolation from the render callback firing on a freed render context.
 *   `OnUnloaded` detaches all VM event handlers (`PropertyChanged`, `VisualizerViewModel.PropertyChanged`, `PcmDataAvailable`), clears `MediaHost.Content`, and asks the `IVisualizerRuntime` to dispose the `ProjectMControl` if it implements `IDisposable`.

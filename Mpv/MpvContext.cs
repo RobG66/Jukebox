@@ -54,9 +54,7 @@ public sealed class MpvContext : IDisposable
     /// decoding with no output surface, producing a black screen.
     /// </summary>
     /// <remarks>
-    /// This is the root cause of the "first video is black" bug:
-    /// https://github.com/damontecres/Wholphin/issues/576
-    /// MPV begins playback before the UI has attached the render context.
+    /// Prevent MPV from beginning playback before the UI has attached the render context.
     /// </remarks>
     public bool IsRenderContextReady { get; private set; }
 
@@ -320,28 +318,18 @@ public sealed class MpvContext : IDisposable
 
     // ── Event loop (background thread) ──
     //
-    // FIXED (Issue 9): Replaced hardcoded struct offsets and magic event ID
-    // with proper struct definitions and Marshal.PtrToStructure.
+    // Replaced hardcoded struct offsets and magic event ID with proper struct 
+    // definitions and Marshal.PtrToStructure.
     //
-    // The previous code had TWO bugs that meant property-change events were
-    // NEVER processed:
+    // Note on mpv_event layout on x64 (24 bytes total):
+    //   offset 0:  event_id      (int, 4 bytes)
+    //   offset 4:  error         (int, 4 bytes)
+    //   offset 8:  reply_userdata (uint64, 8 bytes)
+    //   offset 16: data          (void*, 8 bytes)
     //
-    //   Bug A: eventId == 13
-    //     MPV_EVENT_PROPERTY_CHANGE is 22 in libmpv 2.x (the API version
-    //     the Jukebox uses — libmpv-2.dll / libmpv.so.2). The value 13
-    //     doesn't correspond to any event in the current API. The check
-    //     always failed, so the property-change branch never executed.
-    //
-    //   Bug B: Marshal.ReadIntPtr(eventPtr, 24)
-    //     The mpv_event struct on x64 is 24 bytes total:
-    //       offset 0:  event_id      (int, 4 bytes)
-    //       offset 4:  error         (int, 4 bytes)
-    //       offset 8:  reply_userdata (uint64, 8 bytes)
-    //       offset 16: data          (void*, 8 bytes)
-    //     The `data` field is at offset 16, not 24. Reading at offset 24
-    //     reads past the struct into uninitialized memory — the resulting
-    //     pointer is garbage (typically zero, which causes the
-    //     `if (dataPtr != IntPtr.Zero)` check to fail).
+    // The MPV_EVENT_PROPERTY_CHANGE event ID is 22 in libmpv 2.x (which is used 
+    // by this application). The `data` field containing the property change details
+    // is at offset 16.
     //
     // Combined effect: property changes (duration, time-pos, eof-reached)
     // were silently dropped. The app "worked" because:
@@ -528,8 +516,7 @@ public sealed class MpvContext : IDisposable
 
     // ── Native structs ──
     //
-    // FIXED (Issue 9): Proper struct definitions replacing the hardcoded
-    // offsets in the old EventLoop. Values from libmpv's client.h.
+    // Struct definitions matching libmpv's client.h.
 
     /// <summary>
     /// libmpv event IDs. Values from mpv/client.h (libmpv 2.x API).
@@ -596,7 +583,6 @@ public sealed class MpvContext : IDisposable
     /// } mpv_event;
     /// </code>
     /// On x64: 4 + 4 + 8 + 8 = 24 bytes, with `data` at offset 16.
-    /// The old code read `data` at offset 24 (past the struct) — a bug.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct MpvEvent

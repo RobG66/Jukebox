@@ -14,7 +14,8 @@
         WindowStartupLocation="CenterOwner"
         RequestedThemeVariant="Dark"
         Background="{DynamicResource WindowBackground}"
-        Topmost="{Binding StayOnTop}">
+        Topmost="{Binding StayOnTop}"
+        WindowState="{Binding WindowState, Mode=TwoWay}">
 
     <!-- Jukebox-specific element-selector styles scoped to this window.
          Kept here (not in GM's App.axaml) so they don't override GM's own

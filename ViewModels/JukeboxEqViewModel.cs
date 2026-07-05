@@ -23,10 +23,8 @@ public partial class JukeboxEqViewModel : ViewModelBase
 
     private bool _isApplyingPreset = false;
 
-    // REFACTOR: debounced save timer — instead of writing to disk on every
-    // slider drag tick, we wait 300ms after the last change before persisting
-    // (was smell §4.7 Warning: Synchronous JSON file IO in constructor and
-    // SaveEqSettings). Load also moved out of constructor into LoadAsync.
+    // Debounced save timer — instead of writing to disk on every slider drag tick, 
+    // we wait 300ms after the last change before persisting to disk.
     private readonly Avalonia.Threading.DispatcherTimer _saveDebounce;
     private readonly IPathProvider _pathProvider;
 
@@ -80,7 +78,7 @@ public partial class JukeboxEqViewModel : ViewModelBase
                     }
                     if (!_isApplyingPreset)
                     {
-                        // REFACTOR: trigger debounced save instead of writing on every change.
+                        // Trigger debounced save instead of writing on every slider tick.
                         ScheduleSave();
                     }
                 }
@@ -144,8 +142,7 @@ public partial class JukeboxEqViewModel : ViewModelBase
             var settings = new { Preset = SelectedEqPreset, Gains = gains };
             var json = JsonSerializer.Serialize(settings);
 
-            // REFACTOR: use IPathProvider + async write (was smell §4.7 Warning:
-            // Synchronous JSON file IO + Direct Environment.SpecialFolder.ApplicationData coupling).
+            // Write setting changes asynchronously using PathProvider settings directory.
             var dir = _pathProvider.SettingsDirectory;
             await Task.Run(() =>
             {

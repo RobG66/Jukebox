@@ -14,8 +14,6 @@ namespace Jukebox.Views;
 
 public partial class PlaylistView : UserControl
 {
-    private const int ScrollIdleMs = 500;
-
     private readonly HashSet<int> _loadedRowIndices = new();
     private DateTime _lastScrollTime = DateTime.MinValue;
     private readonly Avalonia.Threading.DispatcherTimer _scrollDebounce;
@@ -26,11 +24,11 @@ public partial class PlaylistView : UserControl
 
         _scrollDebounce = new Avalonia.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(50)
+            Interval = TimeSpan.FromMilliseconds(Constants.ScrollDebouncePollMs)
         };
         _scrollDebounce.Tick += (_, _) =>
         {
-            if ((DateTime.UtcNow - _lastScrollTime).TotalMilliseconds >= ScrollIdleMs)
+            if ((DateTime.UtcNow - _lastScrollTime).TotalMilliseconds >= Constants.ScrollIdleMs)
             {
                 _scrollDebounce.Stop();
                 ReportVisibleRange();

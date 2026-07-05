@@ -120,13 +120,22 @@
                 <!-- Right side buttons -->
                 <!-- Right side buttons -->
                 <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <!-- Auto-Hide ToggleSwitch -->
-                    <ToggleSwitch IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}"
-                                  OnContent="Auto-Hide"
-                                  OffContent="Auto-Hide"
-                                  Margin="10,0,15,0"
+                    <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                                  Margin="0,0,10,0"
                                   VerticalAlignment="Center"
-                                  ToolTip.Tip="Automatically hide controls" />
+                                  ToolTip.Tip="Toggle Auto-Hide"
+                                  IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}">
+                        <Image Source="avares://Jukebox/Assets/Icons/visible.png" Width="18" Height="18"/>
+                    </ToggleButton>
+
+                    <!-- Fullscreen ToggleButton -->
+                    <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                                  Margin="0,0,15,0"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="Toggle Fullscreen"
+                                  IsChecked="{Binding IsFullScreen, Mode=TwoWay}">
+                        <Image Source="avares://Jukebox/Assets/Icons/fullscreen.png" Width="18" Height="18"/>
+                    </ToggleButton>
 
                     <!-- Volume Slider -->
                     <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume}"

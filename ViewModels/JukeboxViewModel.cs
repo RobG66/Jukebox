@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Jukebox.Extensions;
 using Jukebox.Models;
 using Jukebox.Services;
+using Avalonia.Controls;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -19,6 +20,9 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     public bool    NoRecurse       { get; set; }
     public bool    StayOnTop       { get; set; }
     public int     ShowPlayingTimeout { get; set; } = 10;
+
+
+    public VgmPlaybackEngine? VgmEngine { get; set; }
 
     // ── New startup switches (set via command-line or JukeboxControl StyledProperty) ──
     /// <summary>
@@ -78,9 +82,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     // C# member-lookup precedence rules).
     public IVisualizerRuntime VisualizerRuntime { get; set; } = Jukebox.Services.VisualizerRuntime.Current;
 
-    // ── REFACTOR: OSD animation now lives in a dedicated service ──
-    // (was TriggerShowPlayingOSDAsync, lines 119-160 in original)
-    // See Smell Test Report §4.1 and §7.2 item #8.
+    // Service to manage the "Now Playing" OSD animations.
     private readonly IShowPlayingService _showPlayingService;
 
     #region UI State
@@ -91,6 +93,26 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool    _isRepeatEnabled   = false;
     [ObservableProperty] private bool    _isRandomPlayback  = false;
     [ObservableProperty] private bool    _isAutoHideEnabled = false;
+    [ObservableProperty] private WindowState _windowState = WindowState.Normal;
+    [ObservableProperty] private bool    _isFullScreen = false;
+
+    partial void OnWindowStateChanged(WindowState value)
+    {
+        var targetFullScreen = (value == WindowState.FullScreen);
+        if (IsFullScreen != targetFullScreen)
+        {
+            IsFullScreen = targetFullScreen;
+        }
+    }
+
+    partial void OnIsFullScreenChanged(bool value)
+    {
+        var targetState = value ? WindowState.FullScreen : WindowState.Normal;
+        if (WindowState != targetState)
+        {
+            WindowState = targetState;
+        }
+    }
     [ObservableProperty] private string? _playlistLogo;
     [ObservableProperty] private Avalonia.Media.Imaging.Bitmap? _playlistLogoBitmap;
     [ObservableProperty] private double  _controlBarHeight  = Constants.DefaultControlBarHeight;
@@ -159,10 +181,9 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
         Volume = InitialVolume;
         PlaylistViewModel.PlaylistCleared += OnPlaylistCleared;
-        // REFACTOR: Lambda replaced with named method so we can unsubscribe
-        // in Dispose (was line 57-64, smell §4.1: Lambda event subscription
-        // without unsubscribe).
+        // Use named method so we can unsubscribe in Dispose.
         PlaylistViewModel.Playlist.CollectionChanged += OnPlaylistCollectionChanged;
+        VgmEngine = new VgmPlaybackEngine();
     }
 
     private void OnPlaylistCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -201,10 +222,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
     partial void OnPlaylistLogoChanged(string? value)
     {
-        // REFACTOR: file existence check moved to a background thread to
-        // avoid UI-thread stalls on network filesystems (smell §4.1: Direct
-        // file existence check on UI thread). For a logo path, we accept
-        // the tiny race in exchange for not blocking the UI.
+        // File existence check is performed asynchronously on a background thread
+        // to avoid UI-thread stalls on network filesystems.
         if (string.IsNullOrEmpty(value))
         {
             PlaylistLogoBitmap = null;
@@ -230,7 +249,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            // REFACTOR: Console.WriteLine → Debug.WriteLine (smell §4.1, §6.5)
             Debug.WriteLine($"Failed to load playlist logo: {ex.Message}");
             PlaylistLogoBitmap = null;
         }
@@ -351,8 +369,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     {
         var url = await Jukebox.Views.TextInputDialogView.ShowAsync(
             "Add Stream URL",
-            "Enter the YouTube, YouTube Music, or stream URL:",
-            placeholder: "https://music.youtube.com/watch?v=...",
+            "Enter stream URL:",
+            placeholder: "http://example.com/stream.mp3",
             validator: val =>
             {
                 if (string.IsNullOrWhiteSpace(val))
@@ -378,7 +396,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         if (_isDisposed) return;
         _isDisposed = true;
 
-        // REFACTOR: unsubscribe the previously-lambda'd handler (smell §4.1).
         PlaylistViewModel.Playlist.CollectionChanged -= OnPlaylistCollectionChanged;
         PlaylistViewModel.PlaylistCleared -= OnPlaylistCleared;
         _showPlayingService.Changed -= OnShowPlayingChanged;
@@ -395,10 +412,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         _showPlayingService.Hide();
         VisualizerViewModel?.Dispose();
 
-        // REFACTOR: fire-and-forget dispose is now observed via SafeFireAndForget
-        // (was `_ = DisposePlaybackAsync();` — smell §4.1 Critical: fire-and-forget
-        // DisposePlaybackAsync). The dispose still happens asynchronously to
-        // avoid blocking, but exceptions are now captured and logged.
+        // Dispose the playback backend asynchronously to avoid blocking,
+        // using SafeFireAndForget to capture and log any exceptions.
         DisposePlaybackAsync().SafeFireAndForget(nameof(DisposePlaybackAsync));
     }
 }

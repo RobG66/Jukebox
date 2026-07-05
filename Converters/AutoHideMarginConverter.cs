@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 
-namespace Jukebox.Classes.Converters;
+namespace Jukebox.Converters;
 
 /// <summary>
 /// Multi-value converter that computes the bottom margin for the content area

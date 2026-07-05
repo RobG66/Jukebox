@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Jukebox.Extensions;
+using Jukebox.Models;
 using Jukebox.Services;
 using System;
 using System.Collections.Generic;
@@ -25,9 +26,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     private bool _isLoadingVisualizers = false;
     private ObservableCollection<VisualizerNodeViewModel> _rootNodes = new();
 
-    // REFACTOR: Regex cached as static readonly field instead of being
-    // recompiled on every AddToFavorites call (was smell §4.5 Warning:
-    // Regex compilation on every AddToFavorites call).
+    // Regex for matching texture filenames (e.g. image extensions).
     private static readonly Regex TextureFileRegex = new(
         @"[a-zA-Z0-9_-]+\.(?:jpg|png|bmp|tga)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -96,10 +95,8 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             SelectedNode = VisualizerSource.RowSelection?.SelectedItems?.FirstOrDefault();
         };
 
-        // REFACTOR: synchronous file IO in constructor moved to async
-        // InitializeAsync (was smell §4.5 Critical: Synchronous file IO on UI
-        // thread in constructor). The constructor no longer touches the disk.
-        // The View should call InitializeAsync() in its Loaded handler.
+        // Initialization that touches the disk has been moved to InitializeAsync()
+        // which should be called in the View's Loaded handler.
     }
 
     /// <summary>
@@ -134,9 +131,6 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
     public async Task LoadVisualizersAsync()
     {
-        // REFACTOR: Interlocked.CompareExchange would be slightly cleaner,
-        // but the existing bool flag is sufficient for the single-threaded
-        // UI context. Left as-is to minimize diff (smell §4.5 Minor).
         if (_isLoadingVisualizers) return;
         _isLoadingVisualizers = true;
 
@@ -298,8 +292,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         var destPath = Path.Combine(favFolder, Path.GetFileName(fileVm.Path));
         if (fileVm.Path.Equals(destPath, StringComparison.OrdinalIgnoreCase)) return;
 
-        // REFACTOR: confirm before overwrite (was smell §4.5 Warning: File.Copy
-        // without overwrite check semantics). The user may have customized the
+        // Confirm before overwrite. The user may have customized the
         // existing favorite — silent overwrite would lose their work.
         if (File.Exists(destPath))
         {
@@ -382,16 +375,15 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
         if (!fileVm.Path.StartsWith(favFolder, StringComparison.OrdinalIgnoreCase)) return;
 
-        // REFACTOR: confirm before delete (was smell §4.5 Warning: File.Delete
-        // with no confirmation). The delete is irreversible — there's no
-        // recycle bin on Linux, and even on Windows File.Delete bypasses it.
+        // Confirm before delete since File.Delete is irreversible
+        // (bypasses the recycle bin on both Windows and Linux).
         bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
             "Delete Favorite",
             $"Permanently delete '{Path.GetFileName(fileVm.Path)}' from Favorites?\n" +
             "This cannot be undone.",
             confirmText: "Delete",
             cancelText: "Cancel",
-            icon: Jukebox.Views.DialogIconTheme.Warning);
+            icon: DialogIconTheme.Warning);
         if (!confirm) return;
 
         try
@@ -479,9 +471,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             }
             catch (Exception ex)
             {
-                // REFACTOR: Console.WriteLine → Debug.WriteLine + user-facing
-                // error dialog (was smell §4.5 Warning: Fire-and-forget
-                // RenameVisualizerAsync).
+                // Log and show user-facing error dialog.
                 System.Diagnostics.Debug.WriteLine($"[Error] RenameVisualizerAsync failed: {ex.Message}");
                 await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
                     "Rename Failed",

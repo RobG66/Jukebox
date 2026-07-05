@@ -3,14 +3,90 @@
              x:Class="Jukebox.App"
              RequestedThemeVariant="Dark">
 
-    <Application.Styles>
-        <FluentTheme />
+      <Application.Styles>
+        <FluentTheme DensityStyle="Compact">
+            <FluentTheme.Palettes>
+                <!-- Light palette: white region, standard Fluent light chrome colors -->
+                <ColorPaletteResources x:Key="Light"
+                    Accent="#0078D4"
+                    RegionColor="#FFFFFF"
+                    ErrorText="#C42B1C"
+                    AltHigh="#FFFFFF"
+                    AltLow="#33FFFFFF"
+                    AltMedium="#99FFFFFF"
+                    AltMediumHigh="#CCFFFFFF"
+                    AltMediumLow="#66FFFFFF"
+                    BaseHigh="#000000"
+                    BaseLow="#33000000"
+                    BaseMedium="#99000000"
+                    BaseMediumHigh="#CC000000"
+                    BaseMediumLow="#66000000"
+                    ChromeAltLow="#171717"
+                    ChromeBlackHigh="#000000"
+                    ChromeBlackLow="#33000000"
+                    ChromeBlackMedium="#CC000000"
+                    ChromeBlackMediumLow="#66000000"
+                    ChromeDisabledHigh="#CCCCCC"
+                    ChromeDisabledLow="#7A7A7A"
+                    ChromeGray="#767676"
+                    ChromeHigh="#CCCCCC"
+                    ChromeLow="#F2F2F2"
+                    ChromeMedium="#E6E6E6"
+                    ChromeMediumLow="#F2F2F2"
+                    ChromeWhite="#FFFFFF"
+                    ListLow="#19000000"
+                    ListMedium="#33000000"/>
+                <!-- Dark palette: dark region, standard Fluent dark chrome colors -->
+                <ColorPaletteResources x:Key="Dark"
+                    Accent="#0078D4"
+                    RegionColor="#1E1E1E"
+                    ErrorText="#FF99A4"
+                    AltHigh="#1C1C1C"
+                    AltLow="#331C1C1C"
+                    AltMedium="#991C1C1C"
+                    AltMediumHigh="#CC1C1C1C"
+                    AltMediumLow="#661C1C1C"
+                    BaseHigh="#FFFFFF"
+                    BaseLow="#33FFFFFF"
+                    BaseMedium="#99FFFFFF"
+                    BaseMediumHigh="#CCFFFFFF"
+                    BaseMediumLow="#66FFFFFF"
+                    ChromeAltLow="#F2F2F2"
+                    ChromeBlackHigh="#000000"
+                    ChromeBlackLow="#33000000"
+                    ChromeBlackMedium="#CC000000"
+                    ChromeBlackMediumLow="#66000000"
+                    ChromeDisabledHigh="#333333"
+                    ChromeDisabledLow="#858585"
+                    ChromeGray="#767676"
+                    ChromeHigh="#767676"
+                    ChromeLow="#1C1C1C"
+                    ChromeMedium="#2B2B2B"
+                    ChromeMediumLow="#2B2B2B"
+                    ChromeWhite="#FFFFFF"
+                    ListLow="#19FFFFFF"
+                    ListMedium="#33FFFFFF"/>
+            </FluentTheme.Palettes>
+        </FluentTheme>
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
         <StyleInclude Source="avares://Avalonia.Controls.TreeDataGrid/Themes/Fluent.axaml"/>
+        <!-- Class-based Jukebox styles: safe to include globally (no element selector conflicts) -->
         <StyleInclude Source="avares://Jukebox/Styles/TransparentButtonStyle.axaml"/>
-        <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
-        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <!-- Application styles -->
+        <StyleInclude Source="avares://Jukebox/Styles/TransparentButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/RadioButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/CheckBoxStyle.axaml"/>
         <StyleInclude Source="avares://Jukebox/Styles/ComboBoxStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/TextBoxStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/NavigationButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/DescriptionTextBoxStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/GridSplitterStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/NumericUpDownStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/TileButtonStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ContextMenuStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
     </Application.Styles>
 
     <Application.Resources>

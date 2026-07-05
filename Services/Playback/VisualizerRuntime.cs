@@ -19,10 +19,9 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
     private static IVisualizerRuntime? _current;
     private static IVisualizerRuntime? _override;
 
-    // FIXED (Issue 8): Regex cached as static readonly with Compiled flag.
-    // The previous code constructed a new Regex instance on every LoadPreset
-    // call. Since LoadPreset is now async and may fire rapidly (user clicking
-    // through the picker tree), caching the compiled regex is important.
+    // Regex cached as static readonly with Compiled flag.
+    // Since LoadPreset is async and may fire rapidly (user clicking through
+    // the picker tree), caching the compiled regex is important.
     private static readonly Regex TextureFileRegex = new(
         @"[a-zA-Z0-9_-]+\.(?:jpg|png|bmp|tga)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -42,13 +41,11 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
     private Assembly? _assembly;
     private Type? _projectMControlType;
 
-    // FIXED (reflection churn): Cached typed delegates instead of MethodInfo.
+    // Cached typed delegates instead of MethodInfo.
     //
-    // The previous code used MethodInfo.Invoke on every FeedPcm call (~33
-    // times/sec). Each Invoke allocates a new object[] for arguments and
-    // boxes parameters — 33 allocations/sec on the real-time audio thread,
-    // increasing GC pressure and causing occasional latency spikes when
-    // Gen0 collection runs.
+    // Using MethodInfo.Invoke on every FeedPcm call (~33 times/sec) would allocate 
+    // a new object[] for arguments and box parameters on the real-time audio thread, 
+    // increasing GC pressure and causing occasional latency spikes.
     //
     // Delegate.CreateDelegate creates a typed delegate that can be invoked
     // directly — no boxing, no array allocation, no reflection overhead.
@@ -135,28 +132,21 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
         }
     }
 
-    // FIXED (Issue 5): LoadPreset now runs file IO on a background thread.
+    // LoadPreset runs file IO on a background thread.
     //
-    // The previous implementation did all file IO (ReadAllText, WriteAllText,
-    // File.Copy for textures) synchronously on the UI thread — called from
-    // ContentView.OnVisualizerPropertyChanged which is a PropertyChanged
-    // callback. Preset files can be 50-200KB; texture files can be megabytes.
-    // With multiple textures, the UI froze for tens to hundreds of
-    // milliseconds per preset click.
+    // File IO (ReadAllText, WriteAllText, File.Copy for textures) is performed
+    // on a background thread using Task.Run to prevent freezing the UI thread.
     //
-    // The fix wraps the file IO in Task.Run, serialized via a SemaphoreSlim
-    // to prevent rapid-click races. A CancellationTokenSource cancels
-    // in-flight loads when a new preset is selected — if the user clicks
-    // A then B quickly, A's load is canceled before it reaches the
-    // LoadPresetData invoke, so B wins.
+    // The file IO is serialized via a SemaphoreSlim to prevent rapid-click races.
+    // A CancellationTokenSource cancels in-flight loads when a new preset is 
+    // selected — if the user clicks A then B quickly, A's load is canceled 
+    // before it reaches the LoadPresetData invoke.
     //
-    // FIXED (Issue 7): Uses LoadPresetData(string content, bool smooth)
-    // via reflection when available, eliminating the duplicate file read
-    // that occurred when VisualizerRuntime wrote a normalized copy to
-    // current_preset/ and ProjectMControl.LoadPreset re-read it.
+    // Uses LoadPresetData(string content, bool smooth) via reflection when available, 
+    // eliminating the duplicate file read that occurred when VisualizerRuntime wrote 
+    // a normalized copy to current_preset/ and ProjectMControl.LoadPreset re-read it.
     //
-    // FIXED (Issue 8): Uses the static readonly TextureFileRegex instead
-    // of constructing a new Regex per call.
+    // Uses the static readonly TextureFileRegex instead of constructing a new Regex per call.
     public void LoadPreset(Control control, string presetPath)
     {
         EnsureProbed();
@@ -351,10 +341,9 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
                 return;
             }
 
-            // FIXED (reflection churn): Create typed delegates once instead of
-            // using MethodInfo.Invoke per call. Delegate.CreateDelegate produces
-            // a directly-callable delegate — no boxing, no object[] allocation,
-            // no per-call reflection overhead.
+            // Create typed delegates once instead of using MethodInfo.Invoke per call. 
+            // Delegate.CreateDelegate produces a directly-callable delegate — no boxing, 
+            // no object[] allocation, no per-call reflection overhead.
             //
             // Method signatures in ProjectMControl:
             //   void StartEngine()

@@ -4,8 +4,7 @@ using System.Threading.Tasks;
 namespace Jukebox.Extensions;
 
 /// <summary>
-/// Extension methods for Task — addresses the fire-and-forget async smell
-/// documented in Smell Test Report §6.1 (11 occurrences) and §7.1 item #3.
+/// Extension methods for Task to safely observe and log exceptions in fire-and-forget operations.
 /// </summary>
 public static class TaskExtensions
 {
@@ -30,8 +29,7 @@ public static class TaskExtensions
         {
             if (t.IsFaulted && t.Exception != null)
             {
-                // Log to Debug.WriteLine — invisible in Release builds, but
-                // upgrade to ILogger&lt;T&gt; once DI is in place (see §7.3 item #16).
+                // Log to Debug.WriteLine — invisible in Release builds.
                 Debug.WriteLine($"[SafeFireAndForget] {operationName} failed: {t.Exception.Flatten().Message}");
             }
         }, TaskContinuationOptions.None);

@@ -1,4 +1,4 @@
-namespace Jukebox.Views
+namespace Jukebox.Models
 {
     public class ThreeButtonDialogConfig
     {

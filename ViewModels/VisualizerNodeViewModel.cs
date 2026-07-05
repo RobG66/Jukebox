@@ -47,18 +47,3 @@ public abstract partial class VisualizerNodeViewModel : ObservableObject
     }
 }
 
-public partial class VisualizerFolderViewModel : VisualizerNodeViewModel
-{
-    public ObservableCollection<VisualizerNodeViewModel> Children { get; } = new();
-
-    public VisualizerFolderViewModel(string name, string path) : base(name, path)
-    {
-    }
-}
-
-public partial class VisualizerFileViewModel : VisualizerNodeViewModel
-{
-    public VisualizerFileViewModel(string name, string path) : base(name, path)
-    {
-    }
-}

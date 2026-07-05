@@ -1,0 +1,16 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Border.card style — used by VgmRipsBrowserView.axaml for panel containers.
+        Previously the class was referenced but never defined, so borders rendered
+        with no background, no border, no corner radius (transparent containers).
+    -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+</Styles>

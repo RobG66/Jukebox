@@ -24,33 +24,21 @@ public partial class JukeboxView : Window
         base.OnLoaded(e);
         if (DataContext is JukeboxViewModel vm)
         {
-            // REFACTOR: SafeFireAndForget instead of fire-and-forget init calls
-            // (was smell §5.3 Warning: Fire-and-forget InitializeBackendAsync on Loaded).
-            // Backend init / visualizer load failures are now captured and logged.
+            // Initialize the backend asynchronously and safely capture/log any failures.
             vm.InitializeBackendAsync().SafeFireAndForget(nameof(vm.InitializeBackendAsync));
 
-            // REFACTOR: VisualizerViewModel.InitializeAsync and EqViewModel.LoadAsync
-            // are the new async entry points replacing sync IO in constructors
-            // (was smell §4.5 Critical: Synchronous file IO on UI thread in constructor,
-            // and §4.7 Warning: Synchronous JSON file IO in constructor).
-            //
-            // LoadVisualizersAsync already no-ops cleanly when the ProjectM
-            // drop-in folder is absent (it returns immediately if
-            // ProjectMPresetsDirectory does not exist). We still call it
-            // unconditionally so that, if the user drops in the ProjectM
-            // folder before the app starts, the picker tree is populated
-            // and ready when they open the picker panel.
+            // Perform asynchronous initialization for visualizer and equalizer,
+            // keeping synchronous I/O off the UI thread.
+            // Note: LoadVisualizersAsync no-ops if the ProjectM folder is absent.
             vm.VisualizerViewModel.LoadVisualizersAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.LoadVisualizersAsync));
             vm.VisualizerViewModel.InitializeAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.InitializeAsync));
             vm.EqViewModel.LoadAsync().SafeFireAndForget(nameof(vm.EqViewModel.LoadAsync));
         }
     }
 
-    // REFACTOR: this was `protected override async void OnClosing(...)`.
-    // async void is dangerous — exceptions after the first await crash the
-    // process. Replaced with a synchronous override that defers the actual
-    // cleanup to a fire-and-forget Task (with proper error capture).
-    // (was smell §5.3 Critical: async void OnClosing)
+    // We override OnClosing to prevent async void issues on window close.
+    // The closing event is cancelled, and we perform the actual async cleanup
+    // inside CloseAsync() before calling the base close.
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         if (_isClosing)
