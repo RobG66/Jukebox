@@ -41,8 +41,9 @@
                                    Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
                         <Slider Minimum="10" Maximum="60"
                                 Value="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds}"
-                                Width="80" VerticalAlignment="Center"
-                                TickPlacement="BottomRight" TickFrequency="10"/>
+                                Width="100" VerticalAlignment="Center"
+                                TickPlacement="BottomRight" TickFrequency="10"
+                                PointerPressed="OnSliderPointerPressed"/>
                         <TextBlock Text="{Binding VisualizerViewModel.VisualizerRandomizerIntervalSeconds, StringFormat=\{0\}s}"
                                    VerticalAlignment="Center" Foreground="{DynamicResource PanelTextBrush}"
                                    FontSize="12" Width="30"/>
