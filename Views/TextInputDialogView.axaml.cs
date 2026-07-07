@@ -11,23 +11,24 @@ public partial class TextInputDialogView : Window
 {
     private readonly Func<string, (bool IsValid, string ErrorMessage)>? _validator;
 
-    public static async Task<string?> ShowAsync(string title, string prompt, string placeholder = "", Func<string, (bool IsValid, string ErrorMessage)>? validator = null, Window? owner = null)
+    public static async Task<string?> ShowAsync(string title, string prompt, string placeholder = "", Func<string, (bool IsValid, string ErrorMessage)>? validator = null, string okButtonText = "OK", Window? owner = null)
     {
         owner ??= (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
         if (owner == null) return null;
 
-        var dialog = new TextInputDialogView(title, prompt, placeholder, validator);
+        var dialog = new TextInputDialogView(title, prompt, placeholder, validator, okButtonText);
         return await dialog.ShowDialog<string?>(owner);
     }
 
-    public TextInputDialogView() : this("Dialog", "Enter input:", string.Empty, null) { }
+    public TextInputDialogView() : this("Dialog", "Enter input:", string.Empty, null, "OK") { }
 
-    public TextInputDialogView(string title, string prompt, string placeholder, Func<string, (bool IsValid, string ErrorMessage)>? validator = null)
+    public TextInputDialogView(string title, string prompt, string placeholder, Func<string, (bool IsValid, string ErrorMessage)>? validator = null, string okButtonText = "OK")
     {
         InitializeComponent();
         Title = title;
         PromptTextBlock.Text = prompt;
         InputTextBox.PlaceholderText = placeholder;
+        OkButton.Content = okButtonText;
         _validator = validator;
 
         Loaded += (s, e) =>

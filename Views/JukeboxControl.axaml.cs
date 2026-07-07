@@ -47,10 +47,10 @@ public partial class JukeboxControl : UserControl
 
     /// <summary>
     /// When true, the "show playing" OSD appears when the track changes.
-    /// Defaults to false (OSD off) — the user must opt in. Mirrors the
+    /// Defaults to true (OSD on) — Always Show by default. Mirrors the
     /// <c>-showplaying</c> command-line switch.
     /// </summary>
-    public static readonly StyledProperty<bool> IsShowPlayingEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsShowPlayingEnabled));
+    public static readonly StyledProperty<bool> IsShowPlayingEnabledProperty = AvaloniaProperty.Register<JukeboxControl, bool>(nameof(IsShowPlayingEnabled), defaultValue: true);
     public bool IsShowPlayingEnabled { get => GetValue(IsShowPlayingEnabledProperty); set => SetValue(IsShowPlayingEnabledProperty, value); }
 
     /// <summary>

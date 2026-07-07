@@ -29,7 +29,7 @@ public sealed class ShowPlayingService : IShowPlayingService
 
     public event EventHandler<ShowPlayingEventArgs>? Changed;
 
-    public async Task ShowAsync(string text, double? holdSeconds = null, CancellationToken cancellationToken = default)
+    public async Task ShowAsync(string text, double? holdSeconds = null, bool alwaysShow = false, CancellationToken cancellationToken = default)
     {
         CancellationTokenSource cts;
         lock (_lock)
@@ -51,6 +51,11 @@ public sealed class ShowPlayingService : IShowPlayingService
         Opacity = Constants.OsdStartOpacity;
         IsVisible = true;
         RaiseChanged();
+
+        if (alwaysShow)
+        {
+            return;
+        }
 
         try
         {

@@ -21,7 +21,7 @@ public abstract partial class VisualizerNodeViewModel : ObservableObject
         {
             if (!IsFile || string.IsNullOrEmpty(Path)) return false;
             // REFACTOR: previously hardcoded
-            //   Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "presets", "favorites")
+            //   Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ProjectM", "presets", "Favorites")
             // Now routed through IPathProvider (single source of truth, see
             // Smell Test Report §6.3 — addresses duplicated path logic).
             var favFolder = PathProvider.Current.ProjectMFavoritesDirectory;

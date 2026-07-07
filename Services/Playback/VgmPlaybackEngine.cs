@@ -84,6 +84,9 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     private DSPProcedure? _dspProcedure;
     private readonly object _renderLock = new();
 
+    // One-shot guard for PlaybackStarted — same pattern as BassPlaybackEngine.
+    private int _playbackStartedFired;
+
     [StructLayout(LayoutKind.Sequential)]
     private struct PeakEqParams
     {
@@ -112,7 +115,11 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
 
     #region Public Events (IMediaPlayerEngine + concrete-class extra)
     public event EventHandler? PlaybackEnded;
+    public event EventHandler? PlaybackStarted;
     public event EventHandler<double>? DurationChanged;
+#pragma warning disable 0067
+    public event EventHandler<string>? MetadataChanged;
+#pragma warning restore 0067
 
     /// <summary>
     /// PCM tap for the visualizer. Mirrors <see cref="BassPlaybackEngine.PcmDataAvailable"/>:
@@ -176,11 +183,8 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         if (!IsAvailable)
         {
             Debug.WriteLine("[VGM Engine] PlayAsync called but vgm-player is not available.");
-            await Views.ThreeButtonDialogView.ShowErrorAsync(
-                "Audio Error",
-                "VGM/VGZ playback is unavailable. vgm-player was not found in the lib/ folder.\n\n" +
+            throw new InvalidOperationException("VGM/VGZ playback is unavailable. vgm-player was not found in the lib/ folder.\n\n" +
                 "See Patches/BUILD-LIBVGM.md for build instructions.");
-            return;
         }
 
         Stop();
@@ -305,9 +309,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         catch (Exception ex)
         {
             Debug.WriteLine($"[VGM Engine] PlayAsync failed: {ex.Message}");
-            await Views.ThreeButtonDialogView.ShowErrorAsync(
-                "Audio Error",
-                $"Could not play VGM/VGZ track:\n{track.FilePath}\n\nReason: {ex.Message}");
+            throw;
         }
     }
 
@@ -329,6 +331,10 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
 
     public void Stop()
     {
+        // Reset the one-shot PlaybackStarted guard so the next PlayAsync can
+        // re-fire it when fresh PCM data arrives.
+        Interlocked.Exchange(ref _playbackStartedFired, 0);
+
         _isPlaying = false;
         _renderCts?.Cancel();
         _renderCts?.Dispose();
@@ -592,6 +598,14 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     private void OnBassPcmTap(int handle, int channel, IntPtr buffer, int length, IntPtr user)
     {
         if (length <= 0) return;
+
+        // First PCM buffer => raise PlaybackStarted (one-shot per stream).
+        // Same Interlocked pattern as BassPlaybackEngine.OnDsp.
+        if (Interlocked.CompareExchange(ref _playbackStartedFired, 1, 0) == 0)
+        {
+            PlaybackStarted?.Invoke(this, EventArgs.Empty);
+        }
+
         var handler = PcmDataAvailable;
         if (handler == null) return;
 

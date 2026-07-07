@@ -303,7 +303,7 @@ public interface IPathProvider
     string JukeboxVisualizationsDllPath { get; }   // <appdir>/lib/JukeboxVisualizations.dll
     string ProjectMRoot { get; }                   // <appdir>/ProjectM (preset data only)
     string ProjectMPresetsDirectory { get; }       // <appdir>/ProjectM/presets
-    string ProjectMFavoritesDirectory { get; }     // <appdir>/ProjectM/presets/favorites
+    string ProjectMFavoritesDirectory { get; }     // <appdir>/ProjectM/presets/Favorites
     string LastPresetFile { get; }                 // <appdir>/ProjectM/last_preset.txt
     string SettingsDirectory { get; }              // <AppData>/Jukebox (cross-platform)
     string EqSettingsFile { get; }                 // <AppData>/Jukebox/EqSettings.json

@@ -34,6 +34,29 @@
             </StackPanel>
 
             <!--
+                Connecting overlay - shown while a URL stream (radio) is
+                being opened and no audio has started flowing yet. Bound
+                to IsConnecting, which is set to true in
+                JukeboxViewModel.StartTrackAsync right before PlayAsync is
+                called, and cleared on PlaybackStarted (success), on a
+                thrown exception (HTTP/SSL error), or on a 15-second
+                timeout (no audio received). The ConnectingMessage is
+                pre-formatted as "Connecting to host:port..." by the VM.
+            -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20" IsVisible="{Binding IsConnecting}">
+                <TextBlock Text="{Binding ConnectingMessage}"
+                           Foreground="#CCCCCC"
+                           HorizontalAlignment="Center"
+                           FontSize="20"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"/>
+                <ProgressBar IsIndeterminate="True"
+                             Width="200"
+                             Height="4"
+                             HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!--
                 Single host for video/visualizer content.
                 ContentControl swaps between MpvView (video mode),
                 ProjectMControl (audio mode + visualizer available), and

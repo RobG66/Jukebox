@@ -1,0 +1,284 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Jukebox.ViewModels"
+        xmlns:models="using:Jukebox.Models"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        mc:Ignorable="d" d:DesignWidth="750" d:DesignHeight="500"
+        x:Class="Jukebox.Views.RadioBrowserView"
+        x:DataType="vm:RadioBrowserViewModel"
+        Title="Radio Browser"
+        Width="750" Height="500"
+        MinWidth="600" MinHeight="400"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackground}">
+
+    <Window.Styles>
+        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ComboBoxStyle.axaml"/>
+    </Window.Styles>
+
+    <Grid Margin="15" RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Search Controls -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,10">
+            <TextBox Grid.Column="0"
+                     Text="{Binding SearchQuery}"
+                     PlaceholderText="Search radio stations..."
+                     Margin="0,0,5,0"
+                     VerticalAlignment="Center">
+                <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}"/>
+                </TextBox.KeyBindings>
+            </TextBox>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding FilterTypes}"
+                      SelectedItem="{Binding SelectedFilterType}"
+                      Width="110"
+                      Margin="0,0,5,0"
+                      VerticalAlignment="Center"/>
+            <Button Grid.Column="2"
+                    Content="Search"
+                    Command="{Binding SearchCommand}"
+                    Classes="rounded green"
+                    IsEnabled="{Binding !IsSearching}"
+                    VerticalAlignment="Center"/>
+            <Button Grid.Column="3"
+                    Content="🔄 Refresh Cache"
+                    Command="{Binding RefreshCacheCommand}"
+                    Classes="rounded secondary"
+                    IsEnabled="{Binding !IsSearching}"
+                    Margin="5,0,0,0"
+                    VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Filter Controls -->
+        <!--
+          Each ComboBox has a fixed Width + HorizontalAlignment="Left" so the
+          closed control's width does NOT track the length of the currently-
+          selected item's text. Previously they used HorizontalAlignment="Stretch"
+          inside *-width Grid columns, which caused the columns to fight over
+          available space and the ComboBoxes to visibly grow/shrink as the
+          user scrolled through the dropdown and different-length items
+          cycled into the selected position.
+
+          The Grid columns are still *,*,*,Auto so they share horizontal
+          space equally; the fixed Width on each ComboBox means the column
+          has more than enough room and the ComboBox sits left-aligned
+          within it. The Reset button column stays Auto so it takes only
+          the space it needs.
+        -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,Auto" Margin="0,0,0,10">
+            <!-- Country Filter -->
+            <!--
+              The explicit <ComboBox.ItemsPanel> with a plain StackPanel
+              disables UI virtualization. By default, the ComboBox popup
+              only measures the widths of items currently visible in the
+              scroll viewport, which causes the popup to visibly resize
+              (jump wider/narrower) as the user scrolls through long item
+              lists. Forcing a StackPanel items panel makes the popup
+              measure ALL items up front, so the popup width is dictated
+              by the widest item in the entire list and stays stable.
+            -->
+            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                <TextBlock Text="Country" FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" Margin="2,0,0,2"/>
+                <ComboBox ItemsSource="{Binding Countries}"
+                          SelectedItem="{Binding SelectedCountry}"
+                          Width="180"
+                          HorizontalAlignment="Left">
+                    <ComboBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ComboBox.ItemsPanel>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- State Filter -->
+            <StackPanel Grid.Column="1" Margin="5,0,5,0">
+                <TextBlock Text="State / Region" FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" Margin="2,0,0,2"/>
+                <ComboBox ItemsSource="{Binding States}"
+                          SelectedItem="{Binding SelectedState}"
+                          Width="180"
+                          HorizontalAlignment="Left">
+                    <ComboBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ComboBox.ItemsPanel>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Language Filter -->
+            <StackPanel Grid.Column="2" Margin="5,0,0,0">
+                <TextBlock Text="Language" FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" Margin="2,0,0,2"/>
+                <ComboBox ItemsSource="{Binding Languages}"
+                          SelectedItem="{Binding SelectedLanguage}"
+                          Width="180"
+                          HorizontalAlignment="Left">
+                    <ComboBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ComboBox.ItemsPanel>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Reset Button -->
+            <StackPanel Grid.Column="3" Margin="10,0,0,0">
+                <TextBlock Text=" " FontSize="11" Margin="2,0,0,2"/>
+                <Button Content="Reset"
+                        Command="{Binding ResetFiltersCommand}"
+                        Classes="rounded grey"
+                        HorizontalAlignment="Stretch"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Results Table (Wrapped in layout clipping border for performance) -->
+        <Border Grid.Row="2"
+                 Background="{DynamicResource WindowBackground}"
+                 BorderBrush="{DynamicResource PanelBorder}"
+                 BorderThickness="1"
+                 CornerRadius="4"
+                 ClipToBounds="True">
+            <Grid>
+                <DataGrid ItemsSource="{Binding StationsView}"
+                          SelectedItem="{Binding SelectedStation}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="Horizontal"
+                          DoubleTapped="DataGrid_DoubleTapped"
+                          HeadersVisibility="Column"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Background="Transparent"
+                          BorderThickness="0">
+                    <DataGrid.Columns>
+                        <!--
+                          Each column uses a DataGridTemplateColumn with a TextBlock
+                          that binds both Text and ToolTip.Tip to the same property.
+                          Hovering a cell shows the full text in a tooltip, which is
+                          useful when the cell's text is trimmed (cut off by the
+                          column width).
+
+                          DataGridTemplateColumn is used instead of DataGridTextColumn
+                          + ElementStyle because DataGridTextColumn.ElementStyle is not
+                          recognized by Avalonia's compiled binding engine (AVLN2000).
+                          The DataTemplate approach is fully compiled-binding-compatible.
+
+                          Avalonia's DataGrid has no built-in "show tooltip only when
+                          trimmed" mode, so the tooltip appears on every cell hover
+                          regardless — acceptable trade-off for getting the
+                          truncated-text reveal.
+                        -->
+                        <DataGridTemplateColumn Header="Station Name" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding Name}"
+                                               ToolTip.Tip="{Binding Name}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Genre / Tags" Width="190">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding Tags}"
+                                               ToolTip.Tip="{Binding Tags}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Country" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding Country}"
+                                               ToolTip.Tip="{Binding Country}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="State" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding State}"
+                                               ToolTip.Tip="{Binding State}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Language" Width="SizeToHeader">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding LanguageCodes}"
+                                               ToolTip.Tip="{Binding LanguageCodes}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Bitrate" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:RadioStation">
+                                    <TextBlock Text="{Binding Bitrate, StringFormat={}{0} kbps}"
+                                               ToolTip.Tip="{Binding Bitrate, StringFormat={}{0} kbps}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Loading Overlay -->
+                <Border Background="#90000000"
+                        IsVisible="{Binding IsSearching}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="180"
+                                     Height="4"
+                                     Foreground="{DynamicResource SliderTrackBrush}"/>
+                        <TextBlock Text="{Binding StatusText}"
+                                   HorizontalAlignment="Center"
+                                   Foreground="White"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Footer / Status & Action Buttons -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,10,0,0">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding StatusText}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource SubtleTextBrush}"
+                       FontSize="{DynamicResource GlobalSmallFontSize}"/>
+
+            <Button Grid.Column="1"
+                    Content="Play Now"
+                    Command="{Binding PlaySelectedCommand}"
+                    Classes="rounded green"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Center"/>
+            <Button Grid.Column="2"
+                    Content="Add to Playlist"
+                    Command="{Binding AddSelectedCommand}"
+                    Classes="rounded green"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Center"/>
+            <Button Grid.Column="3"
+                    Content="Close"
+                    Click="CloseButton_Click"
+                    Classes="rounded grey"
+                    VerticalAlignment="Center"/>
+        </Grid>
+    </Grid>
+</Window>

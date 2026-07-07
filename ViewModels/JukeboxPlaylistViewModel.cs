@@ -9,44 +9,81 @@ using System.IO;
 using Avalonia.Collections;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace Jukebox.ViewModels;
 
 public partial class JukeboxPlaylistViewModel : ViewModelBase
 {
+    #region Fields & Constants
+    private string PlaylistsDirectory => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "Playlists");
+    private string ActiveLibraryPlaylistStateFile => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "ActiveLibraryPlaylist.txt");
+    private string ActiveRadioPlaylistStateFile => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "ActiveRadioPlaylist.txt");
+
+    private bool _isSwitchingPlaylist = false;
     private int _playlistVersion = 0;
     private int _scrollVersion = 0;
     private int _pendingFirst = 0;
     private int _pendingLast = Constants.TagBatchSize - 1;
+    #endregion
 
-    public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
-    public DataGridCollectionView FilteredPlaylist { get; }
+    #region Observable Properties
+    [ObservableProperty] private string? _selectedLibraryPlaylist;
+    [ObservableProperty] private string? _selectedRadioPlaylist;
+
+    [ObservableProperty] private string _libraryPlaylistSummary = "0 Tracks | 0h 0m total";
+    [ObservableProperty] private string _radioPlaylistSummary = "0 Stations | 0h 0m total";
+
+    [ObservableProperty] private string _searchLibraryText = "";
+    [ObservableProperty] private string _searchRadioText = "";
 
     [ObservableProperty] private bool _hasMultipleTracks = false;
-    [ObservableProperty] private string _playlistSummary = "0 Tracks | 0h 0m total";
-    [ObservableProperty] private string _searchText = "";
+    #endregion
 
+    #region Public Properties
+    public ObservableCollection<string> SavedLibraryPlaylists { get; } = new();
+    public ObservableCollection<string> SavedRadioPlaylists { get; } = new();
+    public ObservableCollection<JukeboxTrack> Playlist { get; } = new();
+    public DataGridCollectionView FilteredLibraryPlaylist { get; }
+    public DataGridCollectionView FilteredRadioPlaylist { get; }
+    #endregion
+
+    #region Constructor
     public JukeboxPlaylistViewModel()
     {
-        FilteredPlaylist = new DataGridCollectionView(Playlist);
-        FilteredPlaylist.Filter = FilterTrack;
-    }
+        FilteredLibraryPlaylist = new DataGridCollectionView(Playlist);
+        FilteredLibraryPlaylist.Filter = FilterLibraryTrack;
 
-    partial void OnSearchTextChanged(string value)
+        FilteredRadioPlaylist = new DataGridCollectionView(Playlist);
+        FilteredRadioPlaylist.Filter = FilterRadioTrack;
+    }
+    #endregion
+
+    #region Property Change Callbacks
+    partial void OnSearchLibraryTextChanged(string value)
     {
-        FilteredPlaylist.Refresh();
+        FilteredLibraryPlaylist.Refresh();
     }
 
-    private bool FilterTrack(object arg)
+    partial void OnSearchRadioTextChanged(string value)
     {
-        if (string.IsNullOrWhiteSpace(SearchText)) return true;
-        if (arg is JukeboxTrack track)
-        {
-            return track.DisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true;
-        }
-        return false;
+        FilteredRadioPlaylist.Refresh();
     }
 
+    partial void OnSelectedLibraryPlaylistChanged(string? oldValue, string? newValue)
+    {
+        if (_isSwitchingPlaylist) return;
+        SwitchLibraryPlaylistAsync(oldValue, newValue).SafeFireAndForget(nameof(SwitchLibraryPlaylistAsync));
+    }
+
+    partial void OnSelectedRadioPlaylistChanged(string? oldValue, string? newValue)
+    {
+        if (_isSwitchingPlaylist) return;
+        SwitchRadioPlaylistAsync(oldValue, newValue).SafeFireAndForget(nameof(SwitchRadioPlaylistAsync));
+    }
+    #endregion
+
+    #region Public Methods
     public event EventHandler? PlaylistCleared;
 
     public void NotifyVisibleRange(int firstIndex, int lastIndex)
@@ -55,31 +92,6 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         _pendingLast = lastIndex;
         int sv = ++_scrollVersion;
         TagVisibleRangeAsync(firstIndex, lastIndex, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
-    }
-
-    [RelayCommand]
-    private void ClearPlaylist()
-    {
-        InvalidatePlaylist();
-        Playlist.Clear();
-        HasMultipleTracks = false;
-        UpdatePlaylistSummary();
-        PlaylistCleared?.Invoke(this, EventArgs.Empty);
-    }
-
-    [RelayCommand]
-    private void RemoveSelected(System.Collections.IList? selectedItems)
-    {
-        if (selectedItems == null) return;
-        InvalidatePlaylist();
-        foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
-            Playlist.Remove(item);
-
-        HasMultipleTracks = Playlist.Count > 1;
-        UpdatePlaylistSummary();
-
-        int sv = ++_scrollVersion;
-        TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
     }
 
     public async Task ProcessAndAddFilesAsync(List<string> paths, bool noRecurse = false)
@@ -118,27 +130,396 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
         int sv = ++_scrollVersion;
         TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
+
+        await AutoSaveCurrentPlaylistAsync();
     }
 
     public async Task AddUrlTrackAsync(string url)
     {
+        var existing = Playlist.FirstOrDefault(t => t.FilePath.Equals(url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) return;
+
         InvalidatePlaylist();
+
+        string streamType = "—";
+        if (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+            streamType = "HLS";
+        else if (url.Contains(".m3u", StringComparison.OrdinalIgnoreCase))
+            streamType = "M3U";
+        else if (url.Contains(".pls", StringComparison.OrdinalIgnoreCase))
+            streamType = "PLS";
+        else if (url.Contains(".ashx", StringComparison.OrdinalIgnoreCase))
+            streamType = "ASHX";
+        else if (url.Contains(".mp3", StringComparison.OrdinalIgnoreCase))
+            streamType = "MP3";
+        else if (url.Contains(".flac", StringComparison.OrdinalIgnoreCase))
+            streamType = "FLAC";
 
         var track = new JukeboxTrack
         {
             DisplayName = "Loading Stream Title...",
             FilePath = url,
-            IsTagged = true // Bypasses default lazy tagger
+            Bitrate = streamType,
+            Genre = "—",
+            Country = "—",
+            IsTagged = true
         };
 
         Playlist.Add(track);
         HasMultipleTracks = Playlist.Count > 1;
         UpdatePlaylistSummary();
 
-        // Start background metadata fetch
         FetchUrlMetadataAsync(track).SafeFireAndForget(nameof(FetchUrlMetadataAsync));
 
+        await AutoSaveCurrentPlaylistAsync();
+
         await Task.CompletedTask;
+    }
+
+    public async Task<JukeboxTrack> AddRadioStationTrackAsync(string name, string url, string? codec = null, int? bitrate = null, string? genre = null, string? country = null)
+    {
+        var existing = Playlist.FirstOrDefault(t => t.FilePath.Equals(url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) return existing;
+
+        InvalidatePlaylist();
+
+        string bitrateString = "—";
+        if (!string.IsNullOrEmpty(codec))
+        {
+            bitrateString = (bitrate.HasValue && bitrate.Value > 0)
+                ? $"{codec} ({bitrate.Value} kbps)"
+                : codec;
+        }
+        else if (bitrate.HasValue && bitrate.Value > 0)
+        {
+            bitrateString = $"{bitrate.Value} kbps";
+        }
+        else if (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+        {
+            bitrateString = "HLS";
+        }
+        else if (url.Contains(".m3u", StringComparison.OrdinalIgnoreCase))
+        {
+            bitrateString = "M3U";
+        }
+
+        var track = new JukeboxTrack
+        {
+            DisplayName = name,
+            FilePath = url,
+            Bitrate = bitrateString,
+            Genre = string.IsNullOrWhiteSpace(genre) ? "—" : genre,
+            Country = string.IsNullOrWhiteSpace(country) ? "—" : country.ToUpperInvariant().Trim(),
+            IsTagged = true
+        };
+
+        Playlist.Add(track);
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        await AutoSaveCurrentPlaylistAsync();
+
+        return track;
+    }
+
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            var libraryFolder = Path.Combine(PlaylistsDirectory, "Library");
+            var radioFolder = Path.Combine(PlaylistsDirectory, "Radio");
+
+            if (!Directory.Exists(libraryFolder)) Directory.CreateDirectory(libraryFolder);
+            if (!Directory.Exists(radioFolder)) Directory.CreateDirectory(radioFolder);
+
+            var libraryFiles = Directory.GetFiles(libraryFolder, "*.json");
+            SavedLibraryPlaylists.Clear();
+            foreach (var file in libraryFiles)
+            {
+                SavedLibraryPlaylists.Add(Path.GetFileNameWithoutExtension(file));
+            }
+            if (SavedLibraryPlaylists.Count == 0)
+            {
+                SavedLibraryPlaylists.Add("Default");
+                await SavePlaylistToFileInternalAsync("Default", isRadio: false);
+            }
+
+            var radioFiles = Directory.GetFiles(radioFolder, "*.json");
+            SavedRadioPlaylists.Clear();
+            foreach (var file in radioFiles)
+            {
+                SavedRadioPlaylists.Add(Path.GetFileNameWithoutExtension(file));
+            }
+            if (SavedRadioPlaylists.Count == 0)
+            {
+                SavedRadioPlaylists.Add("Default");
+                await SavePlaylistToFileInternalAsync("Default", isRadio: true);
+            }
+
+            var activeLibraryName = await LoadActivePlaylistNameAsync(isRadio: false);
+            if (!SavedLibraryPlaylists.Contains(activeLibraryName)) activeLibraryName = SavedLibraryPlaylists[0];
+
+            var activeRadioName = await LoadActivePlaylistNameAsync(isRadio: true);
+            if (!SavedRadioPlaylists.Contains(activeRadioName)) activeRadioName = SavedRadioPlaylists[0];
+
+            _isSwitchingPlaylist = true;
+            SelectedLibraryPlaylist = activeLibraryName;
+            SelectedRadioPlaylist = activeRadioName;
+            _isSwitchingPlaylist = false;
+
+            Playlist.Clear();
+
+            var libraryTracks = await LoadPlaylistFromFileInternalAsync(activeLibraryName, isRadio: false);
+            foreach (var track in libraryTracks) Playlist.Add(track);
+
+            var radioTracks = await LoadPlaylistFromFileInternalAsync(activeRadioName, isRadio: true);
+            foreach (var track in radioTracks) Playlist.Add(track);
+
+            HasMultipleTracks = Playlist.Count > 1;
+            UpdatePlaylistSummary();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Playlist] InitializeAsync failed: {ex.Message}");
+        }
+    }
+
+    public async Task AutoSaveCurrentPlaylistAsync()
+    {
+        if (!string.IsNullOrEmpty(SelectedLibraryPlaylist))
+        {
+            await SavePlaylistToFileInternalAsync(SelectedLibraryPlaylist, isRadio: false);
+        }
+        if (!string.IsNullOrEmpty(SelectedRadioPlaylist))
+        {
+            await SavePlaylistToFileInternalAsync(SelectedRadioPlaylist, isRadio: true);
+        }
+    }
+    #endregion
+
+    #region Commands
+    [RelayCommand]
+    private async Task SaveLibraryPlaylistAsAsync()
+    {
+        var name = await Jukebox.Views.TextInputDialogView.ShowAsync(
+            "Save Library Playlist As",
+            "Enter playlist name:",
+            validator: val =>
+            {
+                if (string.IsNullOrWhiteSpace(val)) return (false, "Name cannot be empty.");
+                var invalid = Path.GetInvalidFileNameChars();
+                if (val.Any(c => invalid.Contains(c))) return (false, "Name contains invalid characters.");
+                return (true, string.Empty);
+            },
+            okButtonText: "Save"
+        );
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        await SavePlaylistToFileInternalAsync(name, isRadio: false);
+
+        if (!SavedLibraryPlaylists.Contains(name))
+        {
+            SavedLibraryPlaylists.Add(name);
+        }
+
+        SelectedLibraryPlaylist = name;
+        await SaveActivePlaylistNameAsync(name, isRadio: false);
+    }
+
+    [RelayCommand]
+    private async Task SaveRadioPlaylistAsAsync()
+    {
+        var name = await Jukebox.Views.TextInputDialogView.ShowAsync(
+            "Save Radio Playlist As",
+            "Enter playlist name:",
+            validator: val =>
+            {
+                if (string.IsNullOrWhiteSpace(val)) return (false, "Name cannot be empty.");
+                var invalid = Path.GetInvalidFileNameChars();
+                if (val.Any(c => invalid.Contains(c))) return (false, "Name contains invalid characters.");
+                return (true, string.Empty);
+            },
+            okButtonText: "Save"
+        );
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        await SavePlaylistToFileInternalAsync(name, isRadio: true);
+
+        if (!SavedRadioPlaylists.Contains(name))
+        {
+            SavedRadioPlaylists.Add(name);
+        }
+
+        SelectedRadioPlaylist = name;
+        await SaveActivePlaylistNameAsync(name, isRadio: true);
+    }
+
+    [RelayCommand]
+    private async Task DeleteLibraryPlaylistAsync()
+    {
+        if (string.IsNullOrEmpty(SelectedLibraryPlaylist)) return;
+
+        if (SavedLibraryPlaylists.Count <= 1)
+        {
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Delete Playlist",
+                "Cannot delete the last remaining library playlist. You must have at least one.");
+            return;
+        }
+
+        bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+            "Delete Library Playlist",
+            $"Are you sure you want to delete the playlist '{SelectedLibraryPlaylist}'?");
+        if (!confirm) return;
+
+        try
+        {
+            var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{SelectedLibraryPlaylist}.json");
+            if (File.Exists(filePath)) File.Delete(filePath);
+
+            var toRemove = SelectedLibraryPlaylist;
+            SavedLibraryPlaylists.Remove(toRemove);
+
+            SelectedLibraryPlaylist = SavedLibraryPlaylists[0];
+            await SaveActivePlaylistNameAsync(SelectedLibraryPlaylist, isRadio: false);
+        }
+        catch (Exception ex)
+        {
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync("Delete Playlist Error", $"Could not delete playlist:\n{ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteRadioPlaylistAsync()
+    {
+        if (string.IsNullOrEmpty(SelectedRadioPlaylist)) return;
+
+        if (SavedRadioPlaylists.Count <= 1)
+        {
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Delete Playlist",
+                "Cannot delete the last remaining radio playlist. You must have at least one.");
+            return;
+        }
+
+        bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+            "Delete Radio Playlist",
+            $"Are you sure you want to delete the playlist '{SelectedRadioPlaylist}'?");
+        if (!confirm) return;
+
+        try
+        {
+            var filePath = Path.Combine(PlaylistsDirectory, "Radio", $"{SelectedRadioPlaylist}.json");
+            if (File.Exists(filePath)) File.Delete(filePath);
+
+            var toRemove = SelectedRadioPlaylist;
+            SavedRadioPlaylists.Remove(toRemove);
+
+            SelectedRadioPlaylist = SavedRadioPlaylists[0];
+            await SaveActivePlaylistNameAsync(SelectedRadioPlaylist, isRadio: true);
+        }
+        catch (Exception ex)
+        {
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync("Delete Playlist Error", $"Could not delete playlist:\n{ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task ClearLibraryPlaylistAsync()
+    {
+        bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+            "Clear Library Playlist",
+            "Are you sure you want to clear all tracks in the library playlist?");
+        if (!confirm) return;
+
+        InvalidatePlaylist();
+        var libraryTracks = Playlist.Where(t => !IsUrlTrack(t)).ToList();
+        foreach (var track in libraryTracks)
+        {
+            Playlist.Remove(track);
+        }
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+        PlaylistCleared?.Invoke(this, EventArgs.Empty);
+
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
+    private async Task ClearRadioPlaylistAsync()
+    {
+        bool confirm = await Jukebox.Views.ThreeButtonDialogView.ShowConfirmAsync(
+            "Clear Radio Playlist",
+            "Are you sure you want to clear all stations in the radio playlist?");
+        if (!confirm) return;
+
+        InvalidatePlaylist();
+        var radioTracks = Playlist.Where(t => IsUrlTrack(t)).ToList();
+        foreach (var track in radioTracks)
+        {
+            Playlist.Remove(track);
+        }
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+        PlaylistCleared?.Invoke(this, EventArgs.Empty);
+
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
+    private async Task RemoveLibrarySelectedAsync(System.Collections.IList? selectedItems)
+    {
+        if (selectedItems == null) return;
+        InvalidatePlaylist();
+        foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+            Playlist.Remove(item);
+
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        int sv = ++_scrollVersion;
+        TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
+
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
+    private async Task RemoveRadioSelectedAsync(System.Collections.IList? selectedItems)
+    {
+        if (selectedItems == null) return;
+        InvalidatePlaylist();
+        foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+            Playlist.Remove(item);
+
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        int sv = ++_scrollVersion;
+        TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
+
+        await AutoSaveCurrentPlaylistAsync();
+    }
+    #endregion
+
+    #region Private Methods
+    private bool FilterLibraryTrack(object arg)
+    {
+        if (arg is not JukeboxTrack track) return false;
+        if (IsUrlTrack(track)) return false;
+
+        if (string.IsNullOrWhiteSpace(SearchLibraryText)) return true;
+        return track.DisplayName?.Contains(SearchLibraryText, StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private bool FilterRadioTrack(object arg)
+    {
+        if (arg is not JukeboxTrack track) return false;
+        if (!IsUrlTrack(track)) return false;
+
+        if (string.IsNullOrWhiteSpace(SearchRadioText)) return true;
+        return track.DisplayName?.Contains(SearchRadioText, StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private async Task FetchUrlMetadataAsync(JukeboxTrack track)
@@ -165,7 +546,6 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private async Task TagVisibleRangeAsync(int first, int last, int version, int scrollVersion)
     {
-        // If the playlist is small, tag all items at once.
         if (Playlist.Count <= Constants.TagAllThreshold)
         {
             first = 0;
@@ -192,7 +572,6 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
             if (toTag.Count == 0) continue;
 
-            // Mark as tagged immediately to prevent concurrent calls from processing the same tracks
             foreach (var (_, track) in toTag)
                 track.IsTagged = true;
 
@@ -200,8 +579,6 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                 toTag.Select(t => (t.index, t.track, tags: ReadTags(t.track.FilePath))).ToList()
             );
 
-            // Only _playlistVersion gates the write-back — scroll position is irrelevant
-            // to whether the tags themselves are valid. Always commit completed reads.
             if (_playlistVersion != version) return;
 
             foreach (var (index, track, tags) in results)
@@ -212,10 +589,13 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                 track.Bitrate = tags.bitrate;
             }
 
-            // Refresh filter if tags were updated and search is active
-            if (!string.IsNullOrWhiteSpace(SearchText))
+            if (!string.IsNullOrWhiteSpace(SearchLibraryText) || !string.IsNullOrWhiteSpace(SearchRadioText))
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => FilteredPlaylist.Refresh());
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    FilteredLibraryPlaylist.Refresh();
+                    FilteredRadioPlaylist.Refresh();
+                });
             }
         }
 
@@ -243,7 +623,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
                         IgnoreInaccessible = true,
                         RecurseSubdirectories = !noRecurse
                     };
-                    
+
                     foreach (var file in Directory.EnumerateFiles(path, "*.*", options))
                     {
                         string ext = Path.GetExtension(file);
@@ -347,14 +727,207 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private void UpdatePlaylistSummary()
     {
-        int count = Playlist.Count;
-        double totalSeconds = 0;
-        foreach (var track in Playlist)
+        var libTracks = Playlist.Where(t => !IsUrlTrack(t)).ToList();
+        double libSeconds = libTracks.Sum(t => t.Length.TotalSeconds);
+        if (libSeconds > 0)
         {
-            totalSeconds += track.Length.TotalSeconds;
+            int libHours = (int)libSeconds / 3600;
+            int libMinutes = ((int)libSeconds % 3600) / 60;
+            LibraryPlaylistSummary = $"{libTracks.Count} Track{(libTracks.Count != 1 ? "s" : "")} | {libHours}h {libMinutes}m total";
         }
-        int hours = (int)totalSeconds / 3600;
-        int minutes = ((int)totalSeconds % 3600) / 60;
-        PlaylistSummary = $"{count} Track{(count != 1 ? "s" : "")} | {hours}h {minutes}m total";
+        else
+        {
+            LibraryPlaylistSummary = $"{libTracks.Count} Track{(libTracks.Count != 1 ? "s" : "")}";
+        }
+
+        var radTracks = Playlist.Where(t => IsUrlTrack(t)).ToList();
+        double radSeconds = radTracks.Sum(t => t.Length.TotalSeconds);
+        if (radSeconds > 0)
+        {
+            int radHours = (int)radSeconds / 3600;
+            int radMinutes = ((int)radSeconds % 3600) / 60;
+            RadioPlaylistSummary = $"{radTracks.Count} Station{(radTracks.Count != 1 ? "s" : "")} | {radHours}h {radMinutes}m total";
+        }
+        else
+        {
+            RadioPlaylistSummary = $"{radTracks.Count} Station{(radTracks.Count != 1 ? "s" : "")}";
+        }
     }
+
+    private async Task SwitchLibraryPlaylistAsync(string? oldName, string? newName)
+    {
+        _isSwitchingPlaylist = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(oldName))
+            {
+                await SavePlaylistToFileInternalAsync(oldName, isRadio: false);
+            }
+
+            var libraryTracks = Playlist.Where(t => !IsUrlTrack(t)).ToList();
+            foreach (var track in libraryTracks)
+            {
+                Playlist.Remove(track);
+            }
+
+            if (!string.IsNullOrEmpty(newName))
+            {
+                var tracks = await LoadPlaylistFromFileInternalAsync(newName, isRadio: false);
+                foreach (var track in tracks)
+                {
+                    Playlist.Add(track);
+                }
+                await SaveActivePlaylistNameAsync(newName, isRadio: false);
+            }
+
+            HasMultipleTracks = Playlist.Count > 1;
+            UpdatePlaylistSummary();
+        }
+        finally
+        {
+            _isSwitchingPlaylist = false;
+        }
+    }
+
+    private async Task SwitchRadioPlaylistAsync(string? oldName, string? newName)
+    {
+        _isSwitchingPlaylist = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(oldName))
+            {
+                await SavePlaylistToFileInternalAsync(oldName, isRadio: true);
+            }
+
+            var radioTracks = Playlist.Where(t => IsUrlTrack(t)).ToList();
+            foreach (var track in radioTracks)
+            {
+                Playlist.Remove(track);
+            }
+
+            if (!string.IsNullOrEmpty(newName))
+            {
+                var tracks = await LoadPlaylistFromFileInternalAsync(newName, isRadio: true);
+                foreach (var track in tracks)
+                {
+                    Playlist.Add(track);
+                }
+                await SaveActivePlaylistNameAsync(newName, isRadio: true);
+            }
+
+            HasMultipleTracks = Playlist.Count > 1;
+            UpdatePlaylistSummary();
+        }
+        finally
+        {
+            _isSwitchingPlaylist = false;
+        }
+    }
+
+    private async Task SavePlaylistToFileInternalAsync(string name, bool isRadio)
+    {
+        try
+        {
+            var folder = Path.Combine(PlaylistsDirectory, isRadio ? "Radio" : "Library");
+            if (!Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+            }
+
+            var filePath = Path.Combine(folder, $"{name}.json");
+            var filteredTracks = Playlist.Where(t => IsUrlTrack(t) == isRadio).ToList();
+
+            var dto = new SavedPlaylistDto
+            {
+                Name = name,
+                Tracks = filteredTracks.Select(t => new SavedTrackDto
+                {
+                    DisplayName = t.DisplayName,
+                    FilePath = t.FilePath,
+                    Length = t.Length,
+                    Bitrate = t.Bitrate,
+                    Genre = t.Genre,
+                    Country = t.Country,
+                    IsTagged = t.IsTagged
+                }).ToList()
+            };
+
+            var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(filePath, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Playlist] Save failed: {ex.Message}");
+        }
+    }
+
+    private async Task<List<JukeboxTrack>> LoadPlaylistFromFileInternalAsync(string name, bool isRadio)
+    {
+        try
+        {
+            var folder = Path.Combine(PlaylistsDirectory, isRadio ? "Radio" : "Library");
+            var filePath = Path.Combine(folder, $"{name}.json");
+            if (!File.Exists(filePath)) return new List<JukeboxTrack>();
+
+            var json = await File.ReadAllTextAsync(filePath);
+            var dto = JsonSerializer.Deserialize<SavedPlaylistDto>(json);
+            if (dto?.Tracks == null) return new List<JukeboxTrack>();
+
+            return dto.Tracks.Select(t => new JukeboxTrack
+            {
+                DisplayName = t.DisplayName,
+                FilePath = t.FilePath,
+                Length = t.Length,
+                Bitrate = t.Bitrate,
+                Genre = t.Genre,
+                Country = string.IsNullOrWhiteSpace(t.Country) ? "—" : t.Country.ToUpperInvariant().Trim(),
+                IsTagged = t.IsTagged
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Playlist] Load failed: {ex.Message}");
+            return new List<JukeboxTrack>();
+        }
+    }
+
+    private async Task SaveActivePlaylistNameAsync(string name, bool isRadio)
+    {
+        try
+        {
+            var file = isRadio ? ActiveRadioPlaylistStateFile : ActiveLibraryPlaylistStateFile;
+            await File.WriteAllTextAsync(file, name);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Playlist] Save active state failed: {ex.Message}");
+        }
+    }
+
+    private async Task<string> LoadActivePlaylistNameAsync(bool isRadio)
+    {
+        try
+        {
+            var file = isRadio ? ActiveRadioPlaylistStateFile : ActiveLibraryPlaylistStateFile;
+            if (File.Exists(file))
+            {
+                var name = await File.ReadAllTextAsync(file);
+                return name.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Playlist] Load active state failed: {ex.Message}");
+        }
+        return "Default";
+    }
+    #endregion
+
+    #region Helpers
+    public static bool IsUrlTrack(JukeboxTrack track)
+    {
+        return track.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               track.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    }
+    #endregion
 }

@@ -139,6 +139,10 @@ public partial class ContentView : UserControl
             CheckAndAttachNativeControls();
             UpdateMediaHost();
         }
+        else if (e.PropertyName == nameof(JukeboxViewModel.IsVisualizerEnabled))
+        {
+            UpdateMediaHost();
+        }
     }
 
     /// <summary>
@@ -161,7 +165,8 @@ public partial class ContentView : UserControl
         // to show (MediaHost stays empty).
         bool wantVideo = !_currentViewModel.IsVisualizerVisible;
         bool showVisualizer = _currentViewModel.IsVisualizerVisible
-                              && _currentViewModel.IsVisualizerAvailable;
+                              && _currentViewModel.IsVisualizerAvailable
+                              && _currentViewModel.IsVisualizerEnabled;
 
         // Compute the desired content for this state.
         Control? desiredContent;

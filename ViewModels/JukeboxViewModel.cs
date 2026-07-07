@@ -15,11 +15,18 @@ namespace Jukebox.ViewModels;
 public partial class JukeboxViewModel : ViewModelBase, IDisposable
 {
     #region Startup Properties
-    public int     InitialVolume   { get; set; } = 100;
-    public string? InitialFile     { get; set; }
-    public bool    NoRecurse       { get; set; }
-    public bool    StayOnTop       { get; set; }
-    public int     ShowPlayingTimeout { get; set; } = 10;
+    public int InitialVolume { get; set; } = 100;
+    public string? InitialFile { get; set; }
+    public bool NoRecurse { get; set; }
+    /// <summary>
+    /// When true, the main window is kept topmost (always-on-top). Bound
+    /// two-way from the transport-bar toggle button so the user can flip
+    /// it at runtime, and also bound to <c>Window.Topmost</c> in
+    /// <see cref="Views.JukeboxView"/>. Initially set via the
+    /// <c>-stayontop</c> command-line switch.
+    /// </summary>
+    [ObservableProperty] private bool _stayOnTop;
+    public int ShowPlayingTimeout { get; set; } = 10;
 
 
     public VgmPlaybackEngine? VgmEngine { get; set; }
@@ -31,7 +38,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// Set via <c>-nocontrols</c> command-line switch or the
     /// <see cref="Views.JukeboxControl.IsControlsDisabled"/> StyledProperty.
     /// </summary>
-    public bool    NoControls      { get; set; }
+    public bool NoControls { get; set; }
 
     /// <summary>
     /// When true, the ProjectM visualizer is forced off even if the
@@ -39,7 +46,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// switch or the <see cref="Views.JukeboxControl.IsVisualizerDisabled"/>
     /// StyledProperty.
     /// </summary>
-    public bool    NoVisualizer    { get; set; }
+    public bool NoVisualizer { get; set; }
 
     /// <summary>
     /// When true, the visualizer preset randomizer is enabled at startup.
@@ -47,7 +54,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// <see cref="Views.JukeboxControl.IsVisualizerRandomizerEnabled"/>
     /// StyledProperty.
     /// </summary>
-    public bool    InitialRandomPreset { get; set; }
+    public bool InitialRandomPreset { get; set; }
 
     /// <summary>
     /// The preset randomizer interval in seconds (10-60). Only used when
@@ -56,13 +63,13 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// <see cref="Views.JukeboxControl.VisualizerRandomizerIntervalSeconds"/>
     /// StyledProperty.
     /// </summary>
-    public int     InitialRandomPresetInterval { get; set; } = 10;
+    public int InitialRandomPresetInterval { get; set; } = 10;
     // MPV does not use a shared-context concept.
     #endregion
 
     #region Sub-ViewModels
-    public JukeboxPlaylistViewModel  PlaylistViewModel  { get; } = new();
-    public JukeboxEqViewModel        EqViewModel        { get; } = new();
+    public JukeboxPlaylistViewModel PlaylistViewModel { get; } = new();
+    public JukeboxEqViewModel EqViewModel { get; } = new();
     public JukeboxVisualizerViewModel VisualizerViewModel { get; } = new();
     #endregion
 
@@ -86,15 +93,30 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     private readonly IShowPlayingService _showPlayingService;
 
     #region UI State
-    [ObservableProperty] private bool    _isPlaylistVisible;
-    [ObservableProperty] private bool    _isPickerVisible;
-    [ObservableProperty] private bool    _isEqVisible       = false;
-    [ObservableProperty] private bool    _isLoopEnabled;
-    [ObservableProperty] private bool    _isRepeatEnabled   = false;
-    [ObservableProperty] private bool    _isRandomPlayback  = false;
-    [ObservableProperty] private bool    _isAutoHideEnabled = false;
+    [ObservableProperty] private bool _isPlaylistVisible;
+    [ObservableProperty] private bool _isPickerVisible;
+    [ObservableProperty] private bool _isEqVisible = false;
+    [ObservableProperty] private bool _isLoopEnabled;
+    [ObservableProperty] private bool _isRepeatEnabled = false;
+    [ObservableProperty] private bool _isRandomPlayback = false;
+    [ObservableProperty] private bool _isAutoHideEnabled = false;
     [ObservableProperty] private WindowState _windowState = WindowState.Normal;
-    [ObservableProperty] private bool    _isFullScreen = false;
+    [ObservableProperty] private bool _isFullScreen = false;
+
+    /// <summary>
+    /// True while a URL stream (radio) is being opened and has not yet
+    /// started producing audio. Drives the "Connecting..." overlay in
+    /// ContentView. Cleared on success (engine raises PlaybackStarted)
+    /// or on failure (timeout, HTTP error, SSL error, etc.).
+    /// </summary>
+    [ObservableProperty] private bool _isConnecting;
+
+    /// <summary>
+    /// Human-readable host/URL being connected to, shown in the overlay
+    /// (e.g. "Connecting to stream.radiox.sk:8443..."). Set together with
+    /// <see cref="IsConnecting"/> at the start of stream playback.
+    /// </summary>
+    [ObservableProperty] private string _connectingMessage = "";
 
     partial void OnWindowStateChanged(WindowState value)
     {
@@ -115,7 +137,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     }
     [ObservableProperty] private string? _playlistLogo;
     [ObservableProperty] private Avalonia.Media.Imaging.Bitmap? _playlistLogoBitmap;
-    [ObservableProperty] private double  _controlBarHeight  = Constants.DefaultControlBarHeight;
+    [ObservableProperty] private double _controlBarHeight = Constants.DefaultControlBarHeight;
 
     /// <summary>
     /// <c>true</c> when the optional <c>JukeboxVisualizations.dll</c>
@@ -132,7 +154,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// visualization is rendered in the MediaHost — the jukebox functions
     /// as a pure audio player with no ProjectM dependency.
     /// </summary>
-    [ObservableProperty] private bool    _isVisualizerAvailable;
+    [ObservableProperty] private bool _isVisualizerAvailable;
 
     /// <summary>
     /// When true, ALL UI controls are disabled — the transport bar, side
@@ -142,7 +164,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// <c>-nocontrols</c> command-line switch or the
     /// <see cref="Views.JukeboxControl.IsControlsDisabled"/> StyledProperty.
     /// </summary>
-    [ObservableProperty] private bool    _isControlsDisabled;
+    [ObservableProperty] private bool _isControlsDisabled;
 
     /// <summary>
     /// When true, the ProjectM visualizer is forced off even if the
@@ -152,7 +174,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     /// Set via the <c>-novisualizer</c> command-line switch or the
     /// <see cref="Views.JukeboxControl.IsVisualizerDisabled"/> StyledProperty.
     /// </summary>
-    [ObservableProperty] private bool    _isVisualizerDisabled;
+    [ObservableProperty] private bool _isVisualizerDisabled;
     #endregion
 
     #region Show Playing OSD
@@ -161,10 +183,32 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     // Default is false — the OSD only appears if the user passes
     // -showplaying on the command line or sets IsShowPlayingEnabled via
     // the JukeboxControl StyledProperty.
-    [ObservableProperty] private bool   _isShowPlayingEnabled = false;
-    [ObservableProperty] private string _showPlayingText    = "";
-    [ObservableProperty] private bool   _isShowPlayingVisible = false;
+    [ObservableProperty] private bool _isShowPlayingEnabled = false;
+    [ObservableProperty] private string _showPlayingText = "";
+    [ObservableProperty] private bool _isShowPlayingVisible = false;
     [ObservableProperty] private double _showPlayingOpacity = Constants.OsdStartOpacity;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPlayingModeTooltip))]
+    [NotifyPropertyChangedFor(nameof(ShowPlayingModeBrush))]
+    private ShowPlayingMode _showPlayingMode = ShowPlayingMode.Always;
+
+    public string ShowPlayingModeTooltip => ShowPlayingMode switch
+    {
+        ShowPlayingMode.Off => "Show Now Playing: Off",
+        ShowPlayingMode.Briefly => "Show Now Playing: Show Briefly",
+        ShowPlayingMode.Always => "Show Now Playing: Always Show",
+        _ => "Show Now Playing"
+    };
+
+    public Avalonia.Media.IBrush ShowPlayingModeBrush => ShowPlayingMode switch
+    {
+        ShowPlayingMode.Off => Avalonia.Media.Brushes.Gray,
+        ShowPlayingMode.Briefly => Avalonia.Media.Brushes.White,
+        ShowPlayingMode.Always => Avalonia.Media.Brushes.LightGreen,
+        _ => Avalonia.Media.Brushes.Gray
+    };
+
     private bool _isDisposed;
     #endregion
 
@@ -218,6 +262,14 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
     partial void OnIsPickerVisibleChanged(bool value)
     {
         if (value) IsPlaylistVisible = false;
+
+        // Suspend the randomizer timer while the picker panel is open so
+        // the current preset stays put while the user browses / adds to
+        // favorites. Resume on close if the toggle is still on. This
+        // bypasses IsVisualizerRandomizerEnabled entirely — the toggle
+        // state is preserved, only the timer is paused/resumed.
+        if (value) VisualizerViewModel.SuspendTimer();
+        else VisualizerViewModel.ResumeTimer();
     }
 
     partial void OnPlaylistLogoChanged(string? value)
@@ -254,23 +306,53 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         }
     }
 
-    partial void OnIsShowPlayingEnabledChanged(bool value)
+    partial void OnShowPlayingModeChanged(ShowPlayingMode value)
     {
-        if (value && CurrentTrack != null)
+        IsShowPlayingEnabled = (value != ShowPlayingMode.Off);
+
+        if (value != ShowPlayingMode.Off)
         {
-            _showPlayingService.ShowAsync(CurrentTrack.DisplayName, ShowPlayingTimeout).SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
+            if (CurrentTrack != null)
+            {
+                bool always = (value == ShowPlayingMode.Always);
+                _showPlayingService.ShowAsync(CurrentTrack.DisplayName, ShowPlayingTimeout, always).SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
+            }
         }
-        else if (!value)
+        else
         {
             _showPlayingService.Hide();
         }
     }
 
+    partial void OnIsShowPlayingEnabledChanged(bool value)
+    {
+        if (value && ShowPlayingMode == ShowPlayingMode.Off)
+        {
+            ShowPlayingMode = ShowPlayingMode.Always;
+        }
+        else if (!value && ShowPlayingMode != ShowPlayingMode.Off)
+        {
+            ShowPlayingMode = ShowPlayingMode.Off;
+        }
+    }
+
     #region UI Toggle Commands
-    [RelayCommand] private void TogglePlaylist()  => IsPlaylistVisible  = !IsPlaylistVisible;
-    [RelayCommand] private void ToggleEq()        => IsEqVisible        = !IsEqVisible;
+    [RelayCommand]
+    private void CycleShowPlayingMode()
+    {
+        ShowPlayingMode = ShowPlayingMode switch
+        {
+            ShowPlayingMode.Always => ShowPlayingMode.Briefly,
+            ShowPlayingMode.Briefly => ShowPlayingMode.Off,
+            ShowPlayingMode.Off => ShowPlayingMode.Always,
+            _ => ShowPlayingMode.Always
+        };
+    }
+
+    [RelayCommand] private void TogglePlaylist() => IsPlaylistVisible = !IsPlaylistVisible;
+    [RelayCommand] private void ToggleEq() => IsEqVisible = !IsEqVisible;
     [RelayCommand(CanExecute = nameof(CanTogglePicker))]
-    private void TogglePicker()    => IsPickerVisible    = !IsPickerVisible;
+    private void TogglePicker() => IsPickerVisible = !IsPickerVisible;
     /// <summary>
     /// The visualizer picker can only be toggled when the optional
     /// visualizer runtime is available. The transport-bar button is also
@@ -303,10 +385,10 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         {
             // Force-close any open panels.
             IsPlaylistVisible = false;
-            IsPickerVisible   = false;
-            IsEqVisible       = false;
+            IsPickerVisible = false;
+            IsEqVisible = false;
             // Collapse the transport bar.
-            ControlBarHeight  = Constants.HiddenControlBarHeight;
+            ControlBarHeight = Constants.HiddenControlBarHeight;
         }
         else
         {
@@ -335,7 +417,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         if (value) _playedTracks.Clear();
     }
 
-    [RelayCommand] private void ToggleAutoHide()  => IsAutoHideEnabled  = !IsAutoHideEnabled;
+    [RelayCommand] private void ToggleAutoHide() => IsAutoHideEnabled = !IsAutoHideEnabled;
 
     [RelayCommand]
     private async Task AddFilesAsync()
@@ -381,12 +463,41 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
                     return (false, "Invalid URL format. Must start with http:// or https://");
                 }
                 return (true, string.Empty);
-            }
+            },
+            okButtonText: "Add"
         );
 
         if (!string.IsNullOrWhiteSpace(url))
         {
             await PlaylistViewModel.AddUrlTrackAsync(url);
+        }
+    }
+    [RelayCommand]
+    private async Task OpenRadioBrowserAsync()
+    {
+        var radioService = new RadioBrowserService();
+        var radioVm = new RadioBrowserViewModel(radioService, this);
+        var dialog = new Jukebox.Views.RadioBrowserView(radioVm);
+
+        var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        if (owner != null)
+        {
+            bool wasAvailable = IsVisualizerAvailable;
+            if (wasAvailable)
+            {
+                IsVisualizerAvailable = false;
+            }
+            try
+            {
+                await dialog.ShowDialog(owner);
+            }
+            finally
+            {
+                if (wasAvailable)
+                {
+                    IsVisualizerAvailable = true;
+                }
+            }
         }
     }
     #endregion

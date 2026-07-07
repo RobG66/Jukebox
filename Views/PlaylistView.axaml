@@ -10,129 +10,282 @@
              x:Class="Jukebox.Views.PlaylistView"
              x:DataType="vm:JukeboxViewModel">
 
-
-
     <Design.DataContext>
         <vm:JukeboxViewModel/>
     </Design.DataContext>
 
     <Grid Margin="5">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
-            <Image Source="{Binding PlaylistLogoBitmap}" MaxHeight="120" HorizontalAlignment="Center" Margin="0,0,0,5"
-                   IsVisible="{Binding PlaylistLogoBitmap, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                   
-            <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
-                <Button Classes="transparentbutton" Width="30" Height="30"
-                        ToolTip.Tip="Add Files"
-                        Command="{Binding AddFilesCommand}">
-                    <TextBlock Text="➕" FontSize="16"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                </Button>
-                <Button Classes="transparentbutton" Width="30" Height="30"
-                        ToolTip.Tip="Add Folder"
-                        Command="{Binding AddFolderCommand}">
-                    <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
-                </Button>
-                <Button Classes="transparentbutton" Width="30" Height="30"
-                        ToolTip.Tip="Add Stream URL"
-                        Command="{Binding AddUrlCommand}">
-                    <TextBlock Text="🔗" FontSize="16"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                </Button>
-                <Button Classes="transparentbutton" Width="30" Height="30"
-                        ToolTip.Tip="Remove Selected"
-                        Command="{Binding PlaylistViewModel.RemoveSelectedCommand}"
-                        CommandParameter="{Binding #PlaylistDataGrid.SelectedItems}">
-                    <Image Source="avares://Jukebox/Assets/Buttons/remove.png" Width="20" Height="20"/>
-                </Button>
-                <Button Classes="transparentbutton" Width="30" Height="30"
-                        ToolTip.Tip="Clear Playlist"
-                        Command="{Binding PlaylistViewModel.ClearPlaylistCommand}">
-                    <Image Source="avares://Jukebox/Assets/Buttons/x.png" Width="16" Height="16"/>
-                </Button>
-            </StackPanel>
+        <TabControl Grid.Row="0">
+            <!-- Library Tab -->
+            <TabItem Header="📂 Library" FontSize="14" FontWeight="Medium">
+                <Grid Margin="0,10,0,0" RowDefinitions="Auto,*,Auto">
+                    <!-- Toolbar -->
+                    <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
+                        <Image Source="{Binding PlaylistLogoBitmap}" MaxHeight="120" HorizontalAlignment="Center" Margin="0,0,0,5"
+                               IsVisible="{Binding PlaylistLogoBitmap, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                               
+                        <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Add Files"
+                                    Command="{Binding AddFilesCommand}">
+                                <TextBlock Text="➕" FontSize="16"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Add Folder"
+                                    Command="{Binding AddFolderCommand}">
+                                <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Add Stream URL"
+                                    Command="{Binding AddUrlCommand}">
+                                <TextBlock Text="🔗" FontSize="16"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Remove Selected"
+                                    Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
+                                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
+                                <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="20" Height="20"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Clear Playlist"
+                                    Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/clean.png" Width="20" Height="20"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Save Playlist As"
+                                    Command="{Binding PlaylistViewModel.SaveLibraryPlaylistAsCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/save.png" Width="18" Height="18"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Delete Playlist"
+                                    Command="{Binding PlaylistViewModel.DeleteLibraryPlaylistCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/delete.png" Width="18" Height="18"/>
+                            </Button>
+                        </StackPanel>
 
-            <TextBox Text="{Binding PlaylistViewModel.SearchText}" PlaceholderText="Search Playlist..." Margin="5,5,5,0"/>
-        </StackPanel>
+                        <Grid ColumnDefinitions="*,*" Margin="5,5,5,0">
+                            <ComboBox Grid.Column="0"
+                                      ItemsSource="{Binding PlaylistViewModel.SavedLibraryPlaylists}"
+                                      SelectedItem="{Binding PlaylistViewModel.SelectedLibraryPlaylist}"
+                                      HorizontalAlignment="Stretch"
+                                      Height="28"
+                                      Margin="0,0,2,0"
+                                      ToolTip.Tip="Select Playlist"/>
+                            <TextBox Grid.Column="1"
+                                      Text="{Binding PlaylistViewModel.SearchLibraryText}"
+                                      PlaceholderText="Search Library..."
+                                      Height="28"
+                                      Margin="2,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
 
-        <!-- Playlist DataGrid -->
-        <DataGrid x:Name="PlaylistDataGrid" Grid.Row="1"
-                  ItemsSource="{Binding PlaylistViewModel.FilteredPlaylist}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  SelectionMode="Extended"
-                  HeadersVisibility="Column"
-                  CanUserReorderColumns="False"
-                  CanUserResizeColumns="True"
-                  CanUserSortColumns="True"
-                  GridLinesVisibility="Horizontal"
-                  RowHeight="32"
-                  DoubleTapped="PlaylistDataGrid_DoubleTapped">
-            <DataGrid.Columns>
-                <DataGridTemplateColumn Header="Title" x:DataType="models:JukeboxTrack" Width="8*" SortMemberPath="DisplayName">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate x:DataType="models:JukeboxTrack">
-                            <Grid ColumnDefinitions="16,*" VerticalAlignment="Center">
-                                <Image Grid.Column="0"
-                                       Source="avares://Jukebox/Assets/Icons/nowplaying.png"
-                                       Width="12" Height="12"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Left"
-                                       IsVisible="{Binding IsPlaying}"/>
-                                <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
-                                    <StackPanel Orientation="Horizontal">
-                                        <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
-                                                                   Text="{Binding DisplayName}"
-                                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Length"  x:DataType="models:JukeboxTrack" Binding="{Binding DisplayLength}" Width="SizeToHeader"/>
-                <DataGridTextColumn Header="Bitrate" x:DataType="models:JukeboxTrack" Binding="{Binding Bitrate}" Width="2*"/>
-            </DataGrid.Columns>
-        </DataGrid>
+                    <!-- Library DataGrid -->
+                    <DataGrid x:Name="LibraryDataGrid" Grid.Row="1"
+                              ItemsSource="{Binding PlaylistViewModel.FilteredLibraryPlaylist}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              SelectionMode="Extended"
+                              HeadersVisibility="Column"
+                              CanUserReorderColumns="False"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              GridLinesVisibility="Horizontal"
+                              RowHeight="32"
+                              DoubleTapped="PlaylistDataGrid_DoubleTapped">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu DataContext="{Binding $parent[UserControl].DataContext}" x:DataType="vm:JukeboxViewModel">
+                                <MenuItem Header="Remove Selected"
+                                          Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
+                                          CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
+                                    <MenuItem.Icon>
+                                        <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="14" Height="14"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Title" x:DataType="models:JukeboxTrack" Width="8*" SortMemberPath="DisplayName">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:JukeboxTrack">
+                                        <Grid ColumnDefinitions="16,*" VerticalAlignment="Center">
+                                            <Image Grid.Column="0"
+                                                   Source="avares://Jukebox/Assets/Icons/nowplaying.png"
+                                                   Width="12" Height="12"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Left"
+                                                   IsVisible="{Binding IsPlaying}"/>
+                                            <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
+                                                                               Text="{Binding DisplayName}"
+                                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Length" x:DataType="models:JukeboxTrack" Binding="{Binding DisplayLength}" Width="SizeToHeader"/>
+                            <DataGridTextColumn Header="Bitrate" x:DataType="models:JukeboxTrack" Binding="{Binding Bitrate}" Width="2*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Library Summary -->
+                    <TextBlock Grid.Row="2" Text="{Binding PlaylistViewModel.LibraryPlaylistSummary}"
+                               HorizontalAlignment="Center" Margin="5"
+                               Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+                </Grid>
+            </TabItem>
+
+            <!-- Radio Tab -->
+            <TabItem FontSize="14" FontWeight="Medium">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Image Source="avares://Jukebox/Assets/Icons/radio.png" Width="16" Height="16"/>
+                        <TextBlock Text="Radio" FontSize="14" FontWeight="Medium"/>
+                    </StackPanel>
+                </TabItem.Header>
+                <Grid Margin="0,10,0,0" RowDefinitions="Auto,*,Auto">
+                    <!-- Radio Toolbar -->
+                    <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
+                        <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Search Radio Directory"
+                                    Command="{Binding OpenRadioBrowserCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/world.png" Width="20" Height="20"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Remove Selected"
+                                    Command="{Binding PlaylistViewModel.RemoveRadioSelectedCommand}"
+                                    CommandParameter="{Binding #RadioDataGrid.SelectedItems}">
+                                <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="20" Height="20"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Clear Playlist"
+                                    Command="{Binding PlaylistViewModel.ClearRadioPlaylistCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/clean.png" Width="20" Height="20"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Save Playlist As"
+                                    Command="{Binding PlaylistViewModel.SaveRadioPlaylistAsCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/save.png" Width="18" Height="18"/>
+                            </Button>
+                            <Button Classes="transparentbutton" Width="30" Height="30"
+                                    ToolTip.Tip="Delete Playlist"
+                                    Command="{Binding PlaylistViewModel.DeleteRadioPlaylistCommand}">
+                                <Image Source="avares://Jukebox/Assets/Icons/delete.png" Width="18" Height="18"/>
+                            </Button>
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="*,*" Margin="5,5,5,0">
+                            <ComboBox Grid.Column="0"
+                                      ItemsSource="{Binding PlaylistViewModel.SavedRadioPlaylists}"
+                                      SelectedItem="{Binding PlaylistViewModel.SelectedRadioPlaylist}"
+                                      HorizontalAlignment="Stretch"
+                                      Height="28"
+                                      Margin="0,0,2,0"
+                                      ToolTip.Tip="Select Playlist"/>
+                            <TextBox Grid.Column="1"
+                                      Text="{Binding PlaylistViewModel.SearchRadioText}"
+                                      PlaceholderText="Search Radio..."
+                                      Height="28"
+                                      Margin="2,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Radio DataGrid -->
+                    <DataGrid x:Name="RadioDataGrid" Grid.Row="1"
+                              ItemsSource="{Binding PlaylistViewModel.FilteredRadioPlaylist}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              SelectionMode="Extended"
+                              HeadersVisibility="Column"
+                              CanUserReorderColumns="False"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              GridLinesVisibility="Horizontal"
+                              RowHeight="32"
+                              DoubleTapped="PlaylistDataGrid_DoubleTapped">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu DataContext="{Binding $parent[UserControl].DataContext}" x:DataType="vm:JukeboxViewModel">
+                                <MenuItem Header="Remove Selected"
+                                          Command="{Binding PlaylistViewModel.RemoveRadioSelectedCommand}"
+                                          CommandParameter="{Binding #RadioDataGrid.SelectedItems}">
+                                    <MenuItem.Icon>
+                                        <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="14" Height="14"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="7*" SortMemberPath="DisplayName">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:JukeboxTrack">
+                                        <Grid ColumnDefinitions="16,*" VerticalAlignment="Center">
+                                            <Image Grid.Column="0"
+                                                   Source="avares://Jukebox/Assets/Icons/nowplaying.png"
+                                                   Width="12" Height="12"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Left"
+                                                   IsVisible="{Binding IsPlaying}"/>
+                                            <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
+                                                                               Text="{Binding DisplayName}"
+                                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Genre" x:DataType="models:JukeboxTrack" Binding="{Binding Genre}" Width="5*"/>
+                            <DataGridTextColumn Header="Country" x:DataType="models:JukeboxTrack" Binding="{Binding Country}" Width="SizeToHeader"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Radio Summary -->
+                    <TextBlock Grid.Row="2" Text="{Binding PlaylistViewModel.RadioPlaylistSummary}"
+                               HorizontalAlignment="Center" Margin="5"
+                               Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+                </Grid>
+            </TabItem>
+        </TabControl>
 
         <!-- Bottom Controls & Summary -->
-        <Grid Grid.Row="2" Margin="5,5,5,5">
-            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+        <Grid Grid.Row="1" Margin="5,5,5,5">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                              ToolTip.Tip="Repeat Current Track"
-                              IsChecked="{Binding IsRepeatEnabled}">
+                               ToolTip.Tip="Repeat Current Track"
+                               IsChecked="{Binding IsRepeatEnabled}">
                     <PathIcon Data="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1.5v1.27l1.5-.96V15h1.5z" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                              ToolTip.Tip="Loop Playlist"
-                              IsChecked="{Binding IsLoopEnabled}">
+                               ToolTip.Tip="Loop Playlist"
+                               IsChecked="{Binding IsLoopEnabled}">
                     <PathIcon Data="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                              ToolTip.Tip="Random / Shuffle"
-                              IsChecked="{Binding IsRandomPlayback}">
+                               ToolTip.Tip="Random / Shuffle"
+                               IsChecked="{Binding IsRandomPlayback}">
                     <PathIcon Data="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                              ToolTip.Tip="Show Current Track (OSD)"
-                              IsChecked="{Binding IsShowPlayingEnabled}">
-                    <PathIcon Data="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" Width="16" Height="16"/>
-                </ToggleButton>
+                <Button Classes="transparentbutton" Width="24" Height="24"
+                        Command="{Binding CycleShowPlayingModeCommand}"
+                        ToolTip.Tip="{Binding ShowPlayingModeTooltip}">
+                    <PathIcon Data="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" 
+                              Width="16" Height="16"
+                              Foreground="{Binding ShowPlayingModeBrush}"/>
+                </Button>
             </StackPanel>
-            
-            <TextBlock Text="{Binding PlaylistViewModel.PlaylistSummary}"
-                       Foreground="{DynamicResource SubtleTextBrush}"
-                       FontSize="11"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"/>
         </Grid>
     </Grid>
-
 </UserControl>

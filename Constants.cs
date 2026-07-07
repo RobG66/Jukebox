@@ -59,4 +59,11 @@ public static class Constants
     // Maximum time to wait for playback disposal before giving up
     // during window close. Prevents indefinite hangs on misbehaving backends.
     public const int DisposeTimeoutMs = 3000;
+
+    // ── Stream connection ──
+    // Maximum time to wait for a URL stream (radio) to actually start
+    // producing audio after PlayAsync is called. If no PCM data / playback
+    // signal arrives within this window, the connection is treated as
+    // failed, playback is aborted, and the user is shown an error dialog.
+    public const int StreamConnectionTimeoutMs = 15000;
 }

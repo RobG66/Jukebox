@@ -131,7 +131,8 @@ public partial class App : Application
                     else if (arg == "-stayontop")
                     {
                         vm.StayOnTop = true;
-                        window.Topmost = true;
+                        // Window.Topmost is bound to StayOnTop in JukeboxView.axaml,
+                        // so setting the VM property alone is sufficient.
                     }
                     else if (arg == "-fullscreen")
                         vm.WindowState = Avalonia.Controls.WindowState.FullScreen;

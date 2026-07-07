@@ -9,6 +9,7 @@
     SizeToContent="WidthAndHeight"
     FontSize="{DynamicResource GlobalFontSize}"
     WindowStartupLocation="CenterOwner"
+    Background="{DynamicResource WindowBackground}"
     CanResize="False">
     
     <Window.Resources>

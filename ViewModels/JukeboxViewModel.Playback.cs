@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Jukebox.ViewModels;
@@ -29,6 +30,23 @@ public partial class JukeboxViewModel
     private readonly MpvPlaybackEngine _mpvEngine = new();
     private IMediaPlayerEngine? _activeEngine;
 
+    // Cancellation for in-flight URL-stream connection attempts.
+    //
+    // Each call to StartTrackAsync that targets a URL stream creates a new
+    // CTS and stores it here. The next StartTrackAsync invocation cancels
+    // the previous CTS first, which:
+    //   - Aborts the BassPlaybackEngine.OpenUrlStreamAsync HTTP send
+    //     (it awaits _httpClient.SendAsync with this token).
+    //   - Causes the previous StartTrackAsync's PlayAsync await to throw
+    //     OperationCanceledException, which its catch block recognizes as
+    //     "superseded by a newer call" and silently bails out — no error
+    //     dialog, no transport-button reset.
+    //
+    // This solves the "if one connection is waiting, nothing else can play
+    // until first times out" problem: clicking a new station while the old
+    // one is still connecting cancels the old connection immediately.
+    private CancellationTokenSource? _streamConnectCts;
+
     public event EventHandler<short[]>? PcmDataAvailable;
     #endregion
 
@@ -38,6 +56,8 @@ public partial class JukeboxViewModel
     [ObservableProperty] private bool _isBassAvailable;
     [ObservableProperty] private bool _isMpvAvailable;
     [ObservableProperty] private bool _isVisualizerVisible = true;
+    [ObservableProperty] private bool _isVisualizerEnabled = true;
+    [ObservableProperty] private bool _isCurrentTrackStream;
     [ObservableProperty] private string _currentTimeString = "0:00";
     [ObservableProperty] private string _totalTimeString = "0:00";
     [ObservableProperty] private double _playbackLength = 100;
@@ -101,6 +121,8 @@ public partial class JukeboxViewModel
         };
         _playbackTimer.Tick += PlaybackTimer_Tick;
 
+        await PlaylistViewModel.InitializeAsync();
+
         await Task.Run(() =>
         {
             _bassEngine.Initialize();
@@ -130,7 +152,7 @@ public partial class JukeboxViewModel
 
     private void PlaybackTimer_Tick(object? sender, EventArgs e)
     {
-        if (IsSeeking || _activeEngine == null) return;
+        if (IsSeeking || _activeEngine == null || IsCurrentTrackStream) return;
 
         _isTimerUpdating = true;
         try
@@ -198,6 +220,29 @@ public partial class JukeboxViewModel
         _playbackTimer?.Stop();
         _activeEngine?.Stop();
 
+        // Cancel any in-flight URL-stream connection attempt — covers the
+        // user pressing Stop while a stream is still connecting. The
+        // StartTrackAsync await will throw OperationCanceledException and
+        // bail out silently.
+        _streamConnectCts?.Cancel();
+        _streamConnectCts?.Dispose();
+        _streamConnectCts = null;
+
+        // Clear any external token we handed to the BASS engine so it
+        // doesn't leak into a subsequent local-file playback.
+        if (_activeEngine is BassPlaybackEngine bassForClear)
+        {
+            bassForClear.SetStreamCancellationToken(CancellationToken.None);
+        }
+
+        // Make sure the connecting overlay is cleared whenever playback is
+        // stopped — covers the user pressing Stop while a connection is in
+        // progress (the StartTrackAsync try/finally will also clear it, but
+        // this is a belt-and-suspenders guard against any future code path
+        // that bypasses that cleanup).
+        IsConnecting = false;
+        ConnectingMessage = "";
+
         CanPlay = PlaylistViewModel.Playlist.Count > 0;
         CanPause = false;
         CanStop = false;
@@ -239,11 +284,32 @@ public partial class JukeboxViewModel
     {
         if (CurrentTrack == null || string.IsNullOrEmpty(CurrentTrack.FilePath)) return;
 
+        // Cancel any in-flight URL-stream connection attempt from a previous
+        // StartTrackAsync call. This covers:
+        //   - User picks radio station B while station A is still connecting.
+        //   - User picks a local file while a radio station is still connecting.
+        // The cancelled previous call's PlayAsync await will throw
+        // OperationCanceledException, which its catch block recognizes and
+        // silently bails on (no error dialog, no transport reset).
+        //
+        // We do this BEFORE the engine.Stop() call below so the engine's
+        // HTTP send aborts at the same time as the engine's internal state
+        // is being torn down — no race between the two cleanups.
+        _streamConnectCts?.Cancel();
+        _streamConnectCts?.Dispose();
+        _streamConnectCts = null;
+        // Clear the BASS engine's external token so the engine doesn't
+        // observe a stale cancelled token on the next local-file PlayAsync.
+        // (If the new track is itself a URL stream, we'll set a fresh token
+        // further below.)
+        _bassEngine.SetStreamCancellationToken(CancellationToken.None);
+
         if (_activeEngine != null)
         {
             _activeEngine.Stop();
             _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
             _activeEngine.DurationChanged -= OnEngineDurationChanged;
+            _activeEngine.MetadataChanged -= OnEngineMetadataChanged;
             if (_activeEngine is BassPlaybackEngine oldBass)
             {
                 oldBass.PcmDataAvailable -= OnBassPcmDataAvailable;
@@ -257,8 +323,36 @@ public partial class JukeboxViewModel
         bool isUrl = CurrentTrack.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                      CurrentTrack.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-        bool isAudio = isUrl || Constants.AudioExtensions.Any(ext =>
+        // Determine which URLs should NOT go to BASS.
+        //
+        // .pls is a meta-playlist (Shoutcast/Icecast playlist format) — it's
+        // a small text file listing actual stream URLs, not a media stream.
+        // BASS doesn't parse .pls directly, so these are routed to MPV which
+        // resolves them via ffmpeg.
+        //
+        // .ashx is an ASP.NET handler used by some stations as a redirect
+        // endpoint — also routed to MPV.
+        //
+        // All other URL streams (including StreamTheWorld/Triton) are routed
+        // to BASS. BASS uses our HttpClient-based streaming (see
+        // BassPlaybackEngine.OpenUrlStreamAsync) which handles Connection:
+        // close responses correctly — BASS's built-in HTTP client stops
+        // reading after ~32KB when it sees Connection: close, but HttpClient
+        // keeps reading until the socket actually closes. This means
+        // visualizations and EQ work for all radio stations, including
+        // StreamTheWorld.
+        bool needsMpv = isUrl && (
+            CurrentTrack.FilePath.Contains(".pls", StringComparison.OrdinalIgnoreCase) ||
+            CurrentTrack.FilePath.Contains(".ashx", StringComparison.OrdinalIgnoreCase)
+        );
+
+        bool isAudioExtension = Constants.AudioExtensions.Any(ext =>
             CurrentTrack.FilePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+        // Route URL streams to BASS (isAudio = true) unless they need MPV.
+        // BASS natively handles MP3, AAC, Opus, Shoutcast, and (via basshls)
+        // HLS streams — all with visualizations and EQ.
+        bool isAudio = isUrl ? !needsMpv : isAudioExtension;
 
         IsVisualizerVisible = isAudio;
 
@@ -278,10 +372,212 @@ public partial class JukeboxViewModel
             _activeEngine = _mpvEngine;
         _activeEngine.PlaybackEnded += OnEnginePlaybackEnded;
         _activeEngine.DurationChanged += OnEngineDurationChanged;
+        _activeEngine.MetadataChanged += OnEngineMetadataChanged;
+
+        IsCurrentTrackStream = isUrl;
+        if (isUrl)
+        {
+            CurrentTimeString = "—";
+            TotalTimeString = "—";
+            PlaybackPosition = 0;
+            PlaybackLength = 0;
+        }
 
         _activeEngine.SetVolume(Volume);
 
-        await _activeEngine.PlayAsync(CurrentTrack);
+        // ── URL stream connection lifecycle ──
+        //
+        // For URL streams (radio), PlayAsync only confirms the HTTP
+        // connection was opened and BASS accepted the stream handle —
+        // actual audio may not flow for another second or two while
+        // BASS buffers and detects the codec. We show a "Connecting..."
+        // overlay and race PlayAsync + the engine's PlaybackStarted
+        // event against a 15-second timeout (Constants.StreamConnectionTimeoutMs).
+        //
+        // Failure modes covered:
+        //   - SSL/TLS errors (e.g. expired server cert) — PlayAsync throws.
+        //   - DNS / connect / HTTP 4xx/5xx — PlayAsync throws.
+        //   - Server accepts the connection but never sends audio bytes
+        //     — PlaybackStarted never fires; the 15s timeout aborts.
+        //   - User starts a different track while this connection is still
+        //     opening — the new StartTrackAsync call cancels our
+        //     _streamConnectCts, PlayAsync throws OperationCanceledException,
+        //     and we bail out silently without showing an error dialog.
+        //
+        // We deliberately do NOT fall back to MPV for failed radio
+        // streams — the user explicitly asked for this behavior. MPV is
+        // only used for URL streams when the URL itself is .pls/.ashx
+        // (those need MPV's ffmpeg-based resolver).
+        //
+        // Capture the local token at entry; if a newer StartTrackAsync
+        // call swaps _streamConnectCts out from under us, our local
+        // reference still points to the (now-cancelled) old CTS so the
+        // cancellation check below fires correctly.
+        CancellationToken? connectToken = null;
+        if (isUrl)
+        {
+            // Create a fresh CTS for this connection attempt. The previous
+            // attempt's CTS was already cancelled at the top of StartTrackAsync,
+            // so we just need a new one here.
+            _streamConnectCts = new CancellationTokenSource();
+            connectToken = _streamConnectCts.Token;
+
+            // Hand the token to the BASS engine so OpenUrlStreamAsync can
+            // link it into the HttpClient.SendAsync call. Only BASS uses it
+            // (MPV/pls/.ashx paths don't go through this code path).
+            if (_activeEngine is BassPlaybackEngine bassForToken)
+            {
+                bassForToken.SetStreamCancellationToken(connectToken.Value);
+            }
+
+            ConnectingMessage = $"Connecting to {ExtractStreamHost(CurrentTrack.FilePath)}...";
+            IsConnecting = true;
+        }
+
+        // One-shot TCS set when the engine raises PlaybackStarted (first
+        // PCM buffer for BASS/VGM, first positive time-pos for MPV).
+        var playbackStartedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler startedHandler = (_, _) => playbackStartedTcs.TrySetResult(true);
+        _activeEngine.PlaybackStarted += startedHandler;
+
+        Exception? playError = null;
+        bool timedOut = false;
+        bool cancelled = false;
+        try
+        {
+            // PlayAsync itself may throw (HTTP/SSL failure happens inside
+            // BassPlaybackEngine.OpenUrlStreamAsync).
+            await _activeEngine.PlayAsync(CurrentTrack);
+
+            // If our connection token was cancelled while PlayAsync was
+            // running (a newer StartTrackAsync superseded us), bail out
+            // silently. Don't even reach the timeout wait.
+            if (connectToken is { } t && t.IsCancellationRequested)
+            {
+                cancelled = true;
+                Debug.WriteLine("[Playback] Connection superseded by a newer StartTrackAsync call (post-PlayAsync).");
+            }
+            else if (isUrl)
+            {
+                // PlayAsync returned without throwing — now wait for
+                // PlaybackStarted, but cap the wait at 15 seconds. We also
+                // race against connectToken so a superseding call unblocks
+                // us immediately instead of waiting the full 15s.
+                Task timeoutTask = Task.Delay(Constants.StreamConnectionTimeoutMs);
+                Task cancelTask = connectToken is { } ct2
+                    ? Task.Delay(Timeout.Infinite, ct2)
+                    : Task.FromResult(false);
+                var winner = await Task.WhenAny(
+                    playbackStartedTcs.Task,
+                    timeoutTask,
+                    cancelTask);
+
+                if (winner == playbackStartedTcs.Task)
+                {
+                    // Success — playback actually started.
+                }
+                else if (winner == cancelTask && connectToken!.Value.IsCancellationRequested)
+                {
+                    cancelled = true;
+                    Debug.WriteLine("[Playback] Connection superseded by a newer StartTrackAsync call (during PlaybackStarted wait).");
+                }
+                else
+                {
+                    timedOut = true;
+                    Debug.WriteLine($"[Playback] Stream connection timed out after {Constants.StreamConnectionTimeoutMs}ms with no audio.");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Our connectToken was cancelled — a newer StartTrackAsync call
+            // superseded us. Bail out silently; the new call is responsible
+            // for all subsequent UI state.
+            cancelled = true;
+            Debug.WriteLine("[Playback] Connection cancelled (OperationCanceledException) — superseded by a newer StartTrackAsync call.");
+        }
+        catch (Exception ex)
+        {
+            playError = ex;
+            Debug.WriteLine($"[Playback] PlayAsync threw: {ex.Message}");
+        }
+        finally
+        {
+            _activeEngine.PlaybackStarted -= startedHandler;
+        }
+
+        // Clean up the connecting overlay regardless of outcome — it must
+        // never get stuck on screen. (If we were superseded, the new call
+        // has already set IsConnecting=true with its own message; clearing
+        // here is harmless because the new call's set comes after.)
+        if (!cancelled)
+        {
+            IsConnecting = false;
+            ConnectingMessage = "";
+        }
+
+        // If we were cancelled (superseded), bail out silently. Do NOT show
+        // an error dialog, do NOT reset transport buttons — the new
+        // StartTrackAsync call owns all of that now.
+        if (cancelled)
+        {
+            // Detach our event handlers from this engine since we're done
+            // with this attempt. The new call will have attached its own
+            // handlers (possibly to a different engine entirely).
+            _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
+            _activeEngine.DurationChanged -= OnEngineDurationChanged;
+            _activeEngine.MetadataChanged -= OnEngineMetadataChanged;
+            if (_activeEngine is BassPlaybackEngine cancelledBass)
+            {
+                cancelledBass.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
+            else if (_activeEngine is VgmPlaybackEngine cancelledVgm)
+            {
+                cancelledVgm.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
+            return;
+        }
+
+        if (playError is not null || timedOut)
+        {
+            // Detach the engine event handlers BEFORE calling Stop(). The
+            // BASS End sync fires when StreamFree runs (which Stop calls
+            // internally), and if our PlaybackEnded handler is still
+            // attached it would dispatch to the UI thread and advance to
+            // the next track — wrong behavior after a failed connection.
+            _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
+            _activeEngine.DurationChanged -= OnEngineDurationChanged;
+            _activeEngine.MetadataChanged -= OnEngineMetadataChanged;
+            if (_activeEngine is BassPlaybackEngine failedBass)
+            {
+                failedBass.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
+            else if (_activeEngine is VgmPlaybackEngine failedVgm)
+            {
+                failedVgm.PcmDataAvailable -= OnBassPcmDataAvailable;
+            }
+
+            // Abort any partial playback state and surface the failure
+            // to the user via a single-button (OK) error dialog.
+            try { _activeEngine.Stop(); } catch { /* swallow — best-effort cleanup */ }
+
+            string title = timedOut ? "Connection Unsuccessful" : "Playback Error";
+            string reason = timedOut
+                ? $"Timed out after {Constants.StreamConnectionTimeoutMs / 1000} seconds with no audio from the stream."
+                : UnwrapRootErrorMessage(playError);
+
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                title,
+                $"Could not play '{CurrentTrack.DisplayName}':\n{CurrentTrack.FilePath}\n\nReason: {reason}");
+
+            // Reset the transport buttons — nothing is playing.
+            CanPlay = PlaylistViewModel.Playlist.Count > 0;
+            CanPause = false;
+            CanStop = false;
+            return; // do NOT fall through to EQ init / SetPlayingState
+        }
+
+        // Success — fall through to EQ init and SetPlayingState below.
 
         // InitializeEqBands must be called AFTER PlayAsync.
         //
@@ -336,10 +632,95 @@ public partial class JukeboxViewModel
         _activeEngine?.Seek(positionMs);
     }
 
+    /// <summary>
+    /// Extracts a short "host:port" string from a URL for display in the
+    /// "Connecting to ..." overlay. Falls back to the raw URL if parsing
+    /// fails — never throws.
+    /// </summary>
+    private static string ExtractStreamHost(string url)
+    {
+        try
+        {
+            // Uri tries to parse "scheme://host:port/path?query". We only
+            // want the authority (host:port) component — the full path is
+            // too long/noisy for a transient overlay message.
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Authority))
+            {
+                return uri.Authority; // e.g. "stream.radiox.sk:8443"
+            }
+        }
+        catch
+        {
+            // Best-effort — fall through to the raw URL.
+        }
+        return url;
+    }
+
+    /// <summary>
+    /// Extracts the actual root cause message from a (possibly nested)
+    /// playback exception, stripping Jukebox-internal wrapper text.
+    /// </summary>
+    /// <remarks>
+    /// The BASS engine wraps errors as plain <c>InvalidOperationException</c>
+    /// instances (no <c>InnerException</c> set), with each layer appending:
+    ///   "Could not open ... stream:\n&lt;url&gt;\n\nReason: &lt;inner.Message&gt;"
+    /// The outermost exception's <c>Message</c> thus ends up reading:
+    /// <code>
+    /// Could not open or resolve audio stream:
+    /// https://stream.radiox.sk:8443/mood.mp3
+    ///
+    /// Reason: Could not open radio stream:
+    /// https://stream.radiox.sk:8443/mood.mp3
+    ///
+    /// Reason: The SSL connection could not be established, see inner exception.
+    /// </code>
+    /// Without unwrapping, the user sees this triple-stacked cascade in the
+    /// error dialog. This helper finds the LAST "Reason:" delimiter in the
+    /// message and returns what follows, which is the actual root cause
+    /// (e.g. the SSL message). If there's no "Reason:" delimiter, the
+    /// original message is returned unchanged.
+    /// </remarks>
+    private static string UnwrapRootErrorMessage(Exception? ex)
+    {
+        if (ex is null) return "Unknown error.";
+
+        // Walk to the innermost exception first — some throw sites may set
+        // InnerException properly, in which case we want the leaf.
+        var current = ex;
+        while (current.InnerException is not null)
+        {
+            current = current.InnerException;
+        }
+
+        var msg = current.Message?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(msg)) return "Unknown error.";
+
+        // Find the LAST "Reason:" delimiter — everything after it is the
+        // actual root cause text. LastIndexOf is correct here because the
+        // cascade is left-to-right, outer-to-inner, so the last "Reason:"
+        // is immediately followed by the leaf cause.
+        var reasonIdx = msg.LastIndexOf("Reason:", StringComparison.OrdinalIgnoreCase);
+        if (reasonIdx >= 0 && reasonIdx + "Reason:".Length < msg.Length)
+        {
+            var peeled = msg.Substring(reasonIdx + "Reason:".Length).Trim();
+            if (!string.IsNullOrEmpty(peeled)) msg = peeled;
+        }
+
+        return msg;
+    }
+
     private void UpdateTrackDuration(double durationMs)
     {
-        PlaybackLength = durationMs;
-        TotalTimeString = TimeSpan.FromMilliseconds(durationMs).ToString(@"m\:ss");
+        if (IsCurrentTrackStream)
+        {
+            PlaybackLength = 0;
+            TotalTimeString = "—";
+        }
+        else
+        {
+            PlaybackLength = durationMs;
+            TotalTimeString = TimeSpan.FromMilliseconds(durationMs).ToString(@"m\:ss");
+        }
     }
 
     private void SetPlayingState()
@@ -398,16 +779,28 @@ public partial class JukeboxViewModel
 
         value.PropertyChanged += CurrentTrack_PropertyChanged;
 
-        if (IsShowPlayingEnabled)
+        if (ShowPlayingMode != ShowPlayingMode.Off)
         {
-            _showPlayingService.ShowAsync(value.DisplayName, ShowPlayingTimeout)
+            bool always = (ShowPlayingMode == ShowPlayingMode.Always);
+            _showPlayingService.ShowAsync(value.DisplayName, ShowPlayingTimeout, always)
                 .SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
 
         if (!string.IsNullOrEmpty(value.FilePath))
         {
-            PlaybackLength = value.Length.TotalMilliseconds;
-            TotalTimeString = value.DisplayLength;
+            bool isStream = value.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                            value.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+            if (isStream)
+            {
+                PlaybackLength = 0;
+                TotalTimeString = "—";
+            }
+            else
+            {
+                PlaybackLength = value.Length.TotalMilliseconds;
+                TotalTimeString = value.DisplayLength;
+            }
         }
     }
 
@@ -415,8 +808,29 @@ public partial class JukeboxViewModel
     {
         if (e.PropertyName == nameof(JukeboxTrack.Length) && CurrentTrack != null)
         {
-            PlaybackLength = CurrentTrack.Length.TotalMilliseconds;
-            TotalTimeString = CurrentTrack.DisplayLength;
+            bool isStream = CurrentTrack.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                            CurrentTrack.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+            if (isStream)
+            {
+                PlaybackLength = 0;
+                TotalTimeString = "—";
+            }
+            else
+            {
+                PlaybackLength = CurrentTrack.Length.TotalMilliseconds;
+                TotalTimeString = CurrentTrack.DisplayLength;
+            }
+        }
+    }
+
+    private void OnEngineMetadataChanged(object? sender, string metadata)
+    {
+        if (ShowPlayingMode != ShowPlayingMode.Off)
+        {
+            bool always = (ShowPlayingMode == ShowPlayingMode.Always);
+            _showPlayingService.ShowAsync(metadata, ShowPlayingTimeout, always)
+                .SafeFireAndForget(nameof(_showPlayingService.ShowAsync));
         }
     }
     #endregion
@@ -545,10 +959,17 @@ public partial class JukeboxViewModel
             // which is sufficient.)
             _playbackTimer?.Stop();
 
-             if (_activeEngine != null)
+            // Cancel any in-flight URL-stream connection attempt so the
+            // engine's HTTP send unblocks immediately during shutdown.
+            _streamConnectCts?.Cancel();
+            _streamConnectCts?.Dispose();
+            _streamConnectCts = null;
+
+            if (_activeEngine != null)
             {
                 _activeEngine.PlaybackEnded -= OnEnginePlaybackEnded;
                 _activeEngine.DurationChanged -= OnEngineDurationChanged;
+                _activeEngine.MetadataChanged -= OnEngineMetadataChanged;
                 if (_activeEngine is BassPlaybackEngine bass)
                 {
                     bass.PcmDataAvailable -= OnBassPcmDataAvailable;

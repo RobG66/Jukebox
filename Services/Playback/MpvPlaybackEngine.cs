@@ -11,6 +11,12 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     #region Fields & Constants
     private MpvContext? _mpv;
     private double _volume = 100;
+
+    // One-shot guard for PlaybackStarted — reset in Stop and at the start
+    // of PlayAsync, set to true the first time OnMpvPropertyChanged sees
+    // a positive time-pos. Volatile because the MPV event thread writes
+    // it while Stop/PlayAsync on the UI thread read/reset it.
+    private volatile bool _playbackStartedFired;
     #endregion
 
     #region Public Properties
@@ -20,7 +26,11 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
 
     #region Public Events
     public event EventHandler? PlaybackEnded;
+    public event EventHandler? PlaybackStarted;
     public event EventHandler<double>? DurationChanged;
+#pragma warning disable 0067
+    public event EventHandler<string>? MetadataChanged;
+#pragma warning restore 0067
     #endregion
 
     #region Constructor
@@ -66,13 +76,15 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     {
         if (!IsAvailable || _mpv == null)
         {
-            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
-                "Video Error",
-                "Video playback is unavailable. MPV (libmpv) failed to initialize. " +
+            throw new InvalidOperationException("Video playback is unavailable. MPV (libmpv) failed to initialize. " +
                 "Make sure libmpv-2.dll (Windows) or libmpv.so.2 (Linux) is in the " +
                 "lib/ folder next to Jukebox.exe.");
-            return;
         }
+
+        // Reset the one-shot PlaybackStarted guard before loading a new file
+        // so the next positive time-pos report is treated as the start of
+        // this track (not a leftover from the previous one).
+        _playbackStartedFired = false;
 
         Stop();
 
@@ -90,6 +102,9 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
 
     public void Stop()
     {
+        // Reset the one-shot PlaybackStarted guard so the next PlayAsync can
+        // re-fire it when MPV reports a fresh positive time-pos.
+        _playbackStartedFired = false;
         _mpv?.Stop();
     }
 
@@ -122,6 +137,18 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
         if (name == "duration" && value is double dur)
         {
             DurationChanged?.Invoke(this, dur * 1000.0);
+        }
+        else if (name == "time-pos" && value is double pos && pos > 0)
+        {
+            // First positive time-pos => MPV is actively decoding & playing
+            // back this file. One-shot per PlayAsync via _playbackStartedFired.
+            // Raised on the MPV event thread — handlers must marshal to UI
+            // thread if they touch UI. JukeboxViewModel's handler does so.
+            if (!_playbackStartedFired)
+            {
+                _playbackStartedFired = true;
+                PlaybackStarted?.Invoke(this, EventArgs.Empty);
+            }
         }
     }
 

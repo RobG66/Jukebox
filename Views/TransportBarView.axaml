@@ -22,7 +22,7 @@
             <!-- Progress Bar Row -->
             <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="10,5,10,0">
                 <TextBlock Grid.Column="0" Text="{Binding CurrentTimeString}" FontSize="{DynamicResource GlobalSmallFontSize}" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <Slider x:Name="PlaybackSlider" Grid.Column="1" Minimum="0" Maximum="{Binding PlaybackLength}" Value="{Binding PlaybackPosition}" VerticalAlignment="Center" ToolTip.Tip="Seek"/>
+                <Slider x:Name="PlaybackSlider" Grid.Column="1" Minimum="0" Maximum="{Binding PlaybackLength}" Value="{Binding PlaybackPosition}" VerticalAlignment="Center" ToolTip.Tip="Seek" IsEnabled="{Binding !IsCurrentTrackStream}"/>
                 <TextBlock Grid.Column="2" Text="{Binding TotalTimeString}" FontSize="{DynamicResource GlobalSmallFontSize}" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="10,0,0,0"/>
             </Grid>
 
@@ -30,11 +30,11 @@
             <Grid Grid.Row="1" ColumnDefinitions="Auto, *, Auto, *, Auto">
 
                 <!-- Left Info (Panel Toggles) -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="10,0,10,0">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="3" Margin="6,0,10,0">
                     <!-- Playlist Button -->
                     <Button Command="{Binding TogglePlaylistCommand}"
                                   Classes="transparentbutton"
-                                  Width="40" Height="40"
+                                  Width="28" Height="28"
                                   ToolTip.Tip="Playlist">
                         <Image Source="avares://Jukebox/Assets/Buttons/menu.png" Width="20" Height="20"/>
                     </Button>
@@ -50,7 +50,7 @@
                     -->
                     <Button Command="{Binding TogglePickerCommand}"
                                   Classes="transparentbutton"
-                                  Width="40" Height="40"
+                                  Width="28" Height="28"
                                   IsVisible="{Binding IsVisualizerAvailable}"
                                   ToolTip.Tip="Visualizations">
                         <Image Source="avares://Jukebox/Assets/Icons/visualizer.png" Width="20" Height="20"/>
@@ -59,7 +59,7 @@
                     <!-- EQ Button -->
                     <Button Command="{Binding ToggleEqCommand}"
                                   Classes="transparentbutton"
-                                  Width="40" Height="40"
+                                  Width="28" Height="28"
                                   ToolTip.Tip="Equalizer">
                         <TextBlock Text="🎚️" FontSize="{DynamicResource GlobalHeaderFontSize}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     </Button>
@@ -118,29 +118,43 @@
                 </StackPanel>
 
                 <!-- Right side buttons -->
-                <!-- Right side buttons -->
-                <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <!-- Tighter Spacing="3" matches the left group; outer right
+                     margin keeps the volume slider clear of the window edge.
+                     Individual button margins were removed in favor of the
+                     StackPanel Spacing so all gaps are uniform. -->
+                <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="3" Margin="0,0,10,0">
+                    <!-- Auto-Hide ToggleButton -->
                     <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                                  Margin="0,0,10,0"
                                   VerticalAlignment="Center"
                                   ToolTip.Tip="Toggle Auto-Hide"
                                   IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}">
                         <Image Source="avares://Jukebox/Assets/Icons/visible.png" Width="18" Height="18"/>
                     </ToggleButton>
 
+                    <!-- Always-On-Top ToggleButton (beside Fullscreen) -->
+                    <!-- Two-way bound to StayOnTop; JukeboxView.axaml binds
+                         Window.Topmost to the same VM property, so flipping
+                         this toggle immediately raises/lowers the window. -->
+                    <ToggleButton Classes="transparentbutton" Width="24" Height="24"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="Toggle Always On Top"
+                                  IsChecked="{Binding StayOnTop, Mode=TwoWay}">
+                        <Image Source="avares://Jukebox/Assets/Icons/alwaysontop.png" Width="18" Height="18"/>
+                    </ToggleButton>
+
                     <!-- Fullscreen ToggleButton -->
                     <ToggleButton Classes="transparentbutton" Width="24" Height="24"
-                                  Margin="0,0,15,0"
                                   VerticalAlignment="Center"
                                   ToolTip.Tip="Toggle Fullscreen"
                                   IsChecked="{Binding IsFullScreen, Mode=TwoWay}">
                         <Image Source="avares://Jukebox/Assets/Icons/fullscreen.png" Width="18" Height="18"/>
                     </ToggleButton>
 
-                    <!-- Volume Slider -->
+                    <!-- Volume Slider (small left margin keeps it visually
+                         separated from the toggle cluster). -->
                     <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume}"
                             Width="80" VerticalAlignment="Center"
-                            Margin="0,0,10,0"
+                            Margin="8,0,0,0"
                             ToolTip.Tip="Volume" />
                 </StackPanel>
             </Grid>

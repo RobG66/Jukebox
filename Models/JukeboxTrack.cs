@@ -18,6 +18,8 @@ public partial class JukeboxTrack : ObservableObject
 
     [ObservableProperty] private bool _isSelected;
     [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty] private string _genre = "—";
+    [ObservableProperty] private string _country = "—";
 
     // Internal flag — not observable, the DataGrid never binds to it
     public bool IsTagged { get; set; }

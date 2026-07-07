@@ -36,7 +36,7 @@ public interface IPathProvider
     /// <summary>Directory containing ProjectM preset .milk files.</summary>
     string ProjectMPresetsDirectory { get; }
 
-    /// <summary>The "favorites" subfolder inside the presets directory.</summary>
+    /// <summary>The "Favorites" subfolder inside the presets directory.</summary>
     string ProjectMFavoritesDirectory { get; }
 
     /// <summary>Directory that holds a copy of the currently-active visualizer preset (and its textures).

@@ -265,6 +265,25 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         else _randomizerTimer.Stop();
     }
 
+    /// <summary>
+    /// Suspends the randomizer timer without changing the
+    /// <see cref="IsVisualizerRandomizerEnabled"/> toggle state. Used by
+    /// JukeboxViewModel when the visualizer picker panel opens — pauses
+    /// preset advancement so the user can browse/add the current preset
+    /// without it changing out from under them. Pair with
+    /// <see cref="ResumeTimer"/> on panel close.
+    /// </summary>
+    public void SuspendTimer() => _randomizerTimer.Stop();
+
+    /// <summary>
+    /// Resumes the randomizer timer if (and only if) the user's toggle
+    /// is still on. Pair with <see cref="SuspendTimer"/>.
+    /// </summary>
+    public void ResumeTimer()
+    {
+        if (IsVisualizerRandomizerEnabled) _randomizerTimer.Start();
+    }
+
     partial void OnVisualizerRandomizerIntervalSecondsChanged(int value)
     {
         _randomizerTimer.Interval = TimeSpan.FromSeconds(value);
@@ -480,6 +499,132 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         }
     }
     private bool CanRenameVisualizer() => SelectedNode is VisualizerFileViewModel;
+
+    /// <summary>
+    /// Picks a random visualizer preset and applies it immediately, ignoring
+    /// the current one (so each click yields a different preset). Functions
+    /// like a one-shot "surprise me" button - distinct from the auto-advancing
+    /// randomizer toggle, which fires on a timer.
+    /// </summary>
+    /// <remarks>
+    /// Always enabled (no CanExecute gate). If no presets are loaded yet,
+    /// or only one preset exists and it is already selected, the handler
+    /// silently bails out - the click is a no-op rather than a disabled
+    /// state, so the button is always visually clickable.
+    /// </remarks>
+    [RelayCommand]
+    private void RandomPickPreset()
+    {
+        lock (_allVisualizerPaths)
+        {
+            int count = _allVisualizerPaths.Count;
+            if (count == 0) return;
+
+            // With only one preset there is nothing different to pick - bail.
+            if (count == 1 && _allVisualizerPaths[0] == SelectedVisualizerPath) return;
+
+            // Pick a random index that does NOT match the current preset.
+            // With count == 1 and a different SelectedVisualizerPath (e.g.
+            // current preset was deleted), just take index 0.
+            string current = SelectedVisualizerPath ?? string.Empty;
+            int index;
+            int attempts = 0;
+            do
+            {
+                index = _random.Next(count);
+                attempts++;
+                // Bail-out guard: in pathological cases (count == 1) the
+                // loop would otherwise spin forever.
+                if (attempts > 16) break;
+            } while (_allVisualizerPaths[index] == current && count > 1);
+
+            SelectedVisualizerPath = _allVisualizerPaths[index];
+        }
+    }
+
+    /// <summary>
+    /// Adds the currently-playing visualizer preset (SelectedVisualizerPath)
+    /// to the Favorites folder. Distinct from the tree-context-menu
+    /// <see cref="AddToFavorites"/> command, which operates on the tree
+    /// selection (SelectedNode) - this one lets the user favorite whatever
+    /// is currently rendering without first finding it in the tree.
+    /// </summary>
+    /// <remarks>
+    /// Always enabled (no CanExecute gate). Silently bails if:
+    ///   - No preset is currently selected (SelectedVisualizerPath is null/empty).
+    ///   - The current preset is already in the Favorites folder (no duplicates).
+    ///   - The current preset IS itself a favorite (its path is inside the
+    ///     Favorites folder).
+    /// The "no duplicates" check uses the destination filename - if a file
+    /// with the same name already exists in Favorites, the click is a no-op.
+    /// This matches the user expectation: "I clicked heart, nothing happened,
+    /// so it must already be saved." The Favorites tree node updates
+    /// immediately via <see cref="UpdateTreeForAddedFavorite"/> so the user
+    /// sees the new entry appear.
+    /// </remarks>
+    [RelayCommand]
+    private async Task AddCurrentToFavoritesAsync()
+    {
+        string? currentPath = SelectedVisualizerPath;
+        if (string.IsNullOrEmpty(currentPath)) return;
+
+        var favFolder = _pathProvider.ProjectMFavoritesDirectory;
+        var destPath = Path.Combine(favFolder, Path.GetFileName(currentPath));
+
+        // Already a favorite: the current preset lives inside the Favorites
+        // folder. Silently bail.
+        if (currentPath.Equals(destPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        // A favorite with the same filename already exists. Silently bail
+        // - no overwrite prompt, no duplicate. This is the "make sure any
+        // favorite can only be added once" requirement.
+        if (File.Exists(destPath)) return;
+
+        try
+        {
+            if (!Directory.Exists(favFolder))
+            {
+                Directory.CreateDirectory(favFolder);
+            }
+
+            // Copy the preset file. overwrite: false - we already checked
+            // above that the file does not exist, but passing false makes
+            // the no-duplicates guarantee explicit at the File.Copy level
+            // too (throws IOException if it somehow appears between the
+            // check and the copy, which we catch below).
+            File.Copy(currentPath, destPath, false);
+
+            // Copy textures referenced by the preset - same pattern as
+            // AddToFavorites. Uses the cached static Regex.
+            string sourceDir = Path.GetDirectoryName(currentPath) ?? "";
+            string content = await File.ReadAllTextAsync(currentPath);
+
+            foreach (Match match in TextureFileRegex.Matches(content))
+            {
+                string textureName = match.Value;
+                string sourceTex = Path.Combine(sourceDir, textureName);
+                if (File.Exists(sourceTex))
+                {
+                    string destTex = Path.Combine(favFolder, textureName);
+                    // Textures use overwrite: true - if the same texture
+                    // name is referenced by multiple Favorites, the latest
+                    // copy wins. Textures are typically interchangeable
+                    // (image files), and we do not want a stale texture
+                    // from an older favorite to break a newer one.
+                    File.Copy(sourceTex, destTex, true);
+                }
+            }
+
+            UpdateTreeForAddedFavorite(destPath);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Error] AddCurrentToFavoritesAsync failed: {ex.Message}");
+            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+                "Add to Favorites Failed",
+                ex.Message);
+        }
+    }
     #endregion
 
     #region Dispose

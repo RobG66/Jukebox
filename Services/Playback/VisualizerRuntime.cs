@@ -167,12 +167,25 @@ public sealed class VisualizerRuntime : IVisualizerRuntime
                 var currentPresetDir = _pathProvider.CurrentPresetDirectory;
                 Directory.CreateDirectory(currentPresetDir);
 
-                // Clean current_preset/ directory — remove stale files from
-                // previous preset loads (defensive: handles the case where
-                // a previous load crashed mid-write and left extra files).
-                foreach (var file in Directory.GetFiles(currentPresetDir))
+                // Check if we are loading a preset that is already in current_preset/
+                bool isFromCurrentPresetDir = false;
+                try
                 {
-                    try { File.Delete(file); } catch { }
+                    var fullPresetPath = Path.GetFullPath(presetPath);
+                    var fullCurrentPresetDir = Path.GetFullPath(currentPresetDir);
+                    isFromCurrentPresetDir = fullPresetPath.StartsWith(fullCurrentPresetDir, StringComparison.OrdinalIgnoreCase);
+                }
+                catch { }
+
+                if (!isFromCurrentPresetDir)
+                {
+                    // Clean current_preset/ directory — remove stale files from
+                    // previous preset loads (defensive: handles the case where
+                    // a previous load crashed mid-write and left extra files).
+                    foreach (var file in Directory.GetFiles(currentPresetDir))
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
                 }
 
                 // Read the preset file and normalize line endings to Unix

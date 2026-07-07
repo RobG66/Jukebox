@@ -70,7 +70,7 @@ public sealed class PathProvider : IPathProvider
         Path.Combine(ProjectMRoot, "presets");
 
     public string ProjectMFavoritesDirectory =>
-        Path.Combine(ProjectMPresetsDirectory, "favorites");
+        Path.Combine(ProjectMPresetsDirectory, "Favorites");
 
     public string CurrentPresetDirectory =>
         Path.Combine(ProjectMRoot, "current_preset");

@@ -35,8 +35,8 @@ public partial class PlaylistView : UserControl
             }
         };
 
-        PlaylistDataGrid.LoadingRow += OnLoadingRow;
-        PlaylistDataGrid.UnloadingRow += OnUnloadingRow;
+        LibraryDataGrid.LoadingRow += OnLoadingRow;
+        LibraryDataGrid.UnloadingRow += OnUnloadingRow;
     }
 
     private void OnLoadingRow(object? sender, DataGridRowEventArgs e)

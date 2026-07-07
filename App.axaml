@@ -92,6 +92,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Jukebox/Styles/ThemeResources.axaml"/>
                 <ResourceInclude Source="avares://Jukebox/Styles/JukeboxThemeResources.axaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

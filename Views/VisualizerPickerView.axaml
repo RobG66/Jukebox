@@ -25,17 +25,73 @@
 
         <!-- Header + Randomizer -->
         <StackPanel Grid.Row="0" Margin="10,0,10,10" Spacing="5">
-            <TextBlock Text="🎇 Visualizations"
-                       Foreground="{DynamicResource PanelTextBrush}" FontSize="20" FontWeight="Bold"/>
-            <TextBlock Text="Double click to apply selected visualization"
-                       Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="5">
+                    <TextBlock Text="🎇 Visualizations"
+                               Foreground="{DynamicResource PanelTextBrush}" FontSize="20" FontWeight="Bold"/>
+                    <TextBlock Text="Double click to apply selected visualization"
+                               Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
+                </StackPanel>
+                <ToggleButton Grid.Column="1"
+                              IsChecked="{Binding IsVisualizerEnabled}"
+                              VerticalAlignment="Center"
+                              Width="60"
+                              Height="28"
+                              CornerRadius="14"
+                              HorizontalContentAlignment="Center"
+                              VerticalContentAlignment="Center"
+                              FontWeight="Bold"
+                              FontSize="12">
+                    <ToggleButton.Styles>
+                        <Style Selector="ToggleButton">
+                            <Setter Property="Content" Value="OFF"/>
+                            <Setter Property="Background" Value="#B71C1C"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Style>
+                        <Style Selector="ToggleButton:checked">
+                            <Setter Property="Content" Value="ON"/>
+                            <Setter Property="Background" Value="#1B5E20"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Style>
+                    </ToggleButton.Styles>
+                </ToggleButton>
+            </Grid>
 
-            <Border Background="{DynamicResource PickerBorderBackground}" CornerRadius="4" Padding="10" Margin="0,5,0,0">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <ToggleSwitch IsChecked="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}"
-                                  OnContent="Random" OffContent="Random"
-                                  FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <StackPanel Orientation="Horizontal" Spacing="10"
+            <Border Background="{DynamicResource PickerBorderBackground}" CornerRadius="4" Padding="10" Margin="0,5,0,0"
+                    IsEnabled="{Binding IsVisualizerEnabled}">
+                <!-- 3-column Grid: [random-toggle | speed-slider | action-buttons].
+                     The action buttons (randompick + heart) are pinned to
+                     the right edge via Grid.Column="2" + HorizontalAlignment="Right".
+                     Previously this was a single horizontal StackPanel,
+                     which left the right-side buttons floating wherever the
+                     slider ended — now they are always flush right. -->
+                <Grid ColumnDefinitions="Auto,*,Auto">
+
+                    <!-- Column 0: Randomizer toggle button (replaces the
+                         old ToggleSwitch + "Random" text). Uses the
+                         transparentbutton style, which renders the checked/
+                         unchecked state via opacity (0.4 off, 1.0 on) —
+                         same pattern as the Always-On-Top / Fullscreen /
+                         Auto-Hide toggles in the transport bar. -->
+                    <ToggleButton Grid.Column="0"
+                                  Classes="transparentbutton"
+                                  IsChecked="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}"
+                                  ToolTip.Tip="Toggle random visualizer"
+                                  Width="30" Height="30"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,10,0">
+                        <Image Source="avares://Jukebox/Assets/Icons/randomvisualizer.png"
+                               Width="20" Height="20"
+                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </ToggleButton>
+
+                    <!-- Column 1: Speed slider + label. Disabled when the
+                         randomizer toggle is off. Stretches to fill the
+                         space between the toggle and the action buttons. -->
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="10"
+                                VerticalAlignment="Center"
                                 IsEnabled="{Binding VisualizerViewModel.IsVisualizerRandomizerEnabled}">
                         <TextBlock Text="Speed:" VerticalAlignment="Center"
                                    Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
@@ -48,15 +104,62 @@
                                    VerticalAlignment="Center" Foreground="{DynamicResource PanelTextBrush}"
                                    FontSize="12" Width="30"/>
                     </StackPanel>
-                </StackPanel>
+
+                    <!-- Column 2: Action buttons, pinned to the right edge.
+                         HorizontalAlignment="Right" + the Grid column being
+                         Auto-width means the StackPanel hugs the right side. -->
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Right">
+
+                        <!-- One-shot random preset picker. Distinct from
+                             the toggle button (which drives the auto-
+                             advancing randomizer on a timer): this button
+                             picks and applies a different preset immediately
+                             on each click. Stays enabled even when the
+                             randomizer toggle is off. -->
+                        <Button Classes="transparentbutton"
+                                Command="{Binding VisualizerViewModel.RandomPickPresetCommand}"
+                                ToolTip.Tip="Pick a random preset now"
+                                Width="30" Height="30"
+                                VerticalAlignment="Center">
+                            <Image Source="avares://Jukebox/Assets/Icons/randompick.png"
+                                   Width="20" Height="20"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+
+                        <!-- Add the currently-playing preset to Favorites.
+                             Distinct from the tree-context-menu "Add to
+                             Favorites" entry, which operates on the tree
+                             selection - this button favorites whatever
+                             preset is currently rendering, so the user can
+                             open the panel after seeing a cool preset show
+                             up via the randomizer and save it immediately
+                             without hunting for it in the tree. Silently
+                             no-ops if the preset is already in Favorites
+                             (no duplicates). Stays always enabled. -->
+                        <Button Classes="transparentbutton"
+                                Command="{Binding VisualizerViewModel.AddCurrentToFavoritesCommand}"
+                                ToolTip.Tip="Add current preset to Favorites"
+                                Width="30" Height="30"
+                                VerticalAlignment="Center">
+                            <Image Source="avares://Jukebox/Assets/Icons/heart.png"
+                                   Width="20" Height="20"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
             </Border>
         </StackPanel>
 
         <!-- Visualizer Tree -->
         <TreeDataGrid x:Name="VisualizerTreeDataGrid" Grid.Row="1"
-                      Source="{Binding VisualizerViewModel.VisualizerSource}"
-                      FontSize="12"
-                      DoubleTapped="VisualizerTreeDataGrid_DoubleTapped">
+                       Source="{Binding VisualizerViewModel.VisualizerSource}"
+                       FontSize="12"
+                       DoubleTapped="VisualizerTreeDataGrid_DoubleTapped"
+                       IsEnabled="{Binding IsVisualizerEnabled}">
             <TreeDataGrid.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Add to Favorites"
