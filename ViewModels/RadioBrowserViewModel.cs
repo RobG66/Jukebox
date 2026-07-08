@@ -181,7 +181,10 @@ public partial class RadioBrowserViewModel : ViewModelBase
     private async Task PlaySelectedAsync()
     {
         if (SelectedStation == null) return;
-        var track = await _jukeboxViewModel.PlaylistViewModel.AddRadioStationTrackAsync(
+        // Play Now uses a transient preview slot — the station appears in the
+        // Radio playlist tab for easy resuming or promotion, but is not added
+        // as a permanent entry and is not persisted to disk.
+        var track = await _jukeboxViewModel.PlaylistViewModel.SetTransientRadioStationAsync(
             SelectedStation.Name, SelectedStation.UrlResolved, SelectedStation.Codec, SelectedStation.Bitrate, SelectedStation.Tags, SelectedStation.CountryCode);
         if (_jukeboxViewModel.PlayTrackCommand.CanExecute(track))
         {

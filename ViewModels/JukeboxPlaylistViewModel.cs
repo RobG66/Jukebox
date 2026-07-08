@@ -86,6 +86,9 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     #region Public Methods
     public event EventHandler? PlaylistCleared;
 
+    // Raised when the currently-playing track is removed from either playlist.
+    public event EventHandler? PlayingTrackRemoved;
+
     public void NotifyVisibleRange(int firstIndex, int lastIndex)
     {
         _pendingFirst = firstIndex;
@@ -179,7 +182,21 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     public async Task<JukeboxTrack> AddRadioStationTrackAsync(string name, string url, string? codec = null, int? bitrate = null, string? genre = null, string? country = null)
     {
         var existing = Playlist.FirstOrDefault(t => t.FilePath.Equals(url, StringComparison.OrdinalIgnoreCase));
-        if (existing != null) return existing;
+        if (existing != null)
+        {
+            // If the existing entry is still a transient browser preview slot, promote
+            // it to a permanent entry rather than silently returning it unchanged. This
+            // covers the case where "Add to Playlist" is clicked in the radio browser
+            // while the same station is already playing as the transient preview slot.
+            if (existing.IsTransient)
+            {
+                existing.IsTransient = false;
+                HasMultipleTracks = Playlist.Count > 1;
+                UpdatePlaylistSummary();
+                await AutoSaveCurrentPlaylistAsync();
+            }
+            return existing;
+        }
 
         InvalidatePlaylist();
 
@@ -220,6 +237,84 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         await AutoSaveCurrentPlaylistAsync();
 
         return track;
+    }
+
+    // Inserts (or replaces) the single transient "Now Playing" browser preview
+    // slot at the head of the radio section. The slot is visually distinct in
+    // the Radio playlist tab but is never persisted to disk and is replaced the
+    // next time the user plays a station from the radio browser.
+    public async Task<JukeboxTrack> SetTransientRadioStationAsync(
+        string name, string url, string? codec = null, int? bitrate = null, string? genre = null, string? country = null)
+    {
+        // Remove any existing transient slot first.
+        var existingTransient = Playlist.FirstOrDefault(t => t.IsTransient);
+        if (existingTransient != null)
+        {
+            Playlist.Remove(existingTransient);
+        }
+
+        string bitrateString = "—";
+        if (!string.IsNullOrEmpty(codec))
+        {
+            bitrateString = (bitrate.HasValue && bitrate.Value > 0)
+                ? $"{codec} ({bitrate.Value} kbps)"
+                : codec;
+        }
+        else if (bitrate.HasValue && bitrate.Value > 0)
+        {
+            bitrateString = $"{bitrate.Value} kbps";
+        }
+        else if (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+        {
+            bitrateString = "HLS";
+        }
+        else if (url.Contains(".m3u", StringComparison.OrdinalIgnoreCase))
+        {
+            bitrateString = "M3U";
+        }
+
+        var track = new JukeboxTrack
+        {
+            DisplayName = name,
+            FilePath = url,
+            Bitrate = bitrateString,
+            Genre = string.IsNullOrWhiteSpace(genre) ? "—" : genre,
+            Country = string.IsNullOrWhiteSpace(country) ? "—" : country.ToUpperInvariant().Trim(),
+            IsTagged = true,
+            IsTransient = true
+        };
+
+        // Insert the transient slot at the beginning of the radio section
+        // (i.e. before the first existing URL track, or at the end if none).
+        int insertIndex = Playlist.Count;
+        for (int i = 0; i < Playlist.Count; i++)
+        {
+            if (IsUrlTrack(Playlist[i]))
+            {
+                insertIndex = i;
+                break;
+            }
+        }
+        Playlist.Insert(insertIndex, track);
+
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        // Transient tracks are intentionally NOT auto-saved to disk.
+        return track;
+    }
+
+    // Removes the transient browser preview slot if one exists.
+    // Called by the playback VM whenever the user plays a permanent playlist entry.
+    public void RemoveTransientSlot()
+    {
+        var transient = Playlist.FirstOrDefault(t => t.IsTransient);
+        if (transient != null)
+        {
+            Playlist.Remove(transient);
+            HasMultipleTracks = Playlist.Count > 1;
+            UpdatePlaylistSummary();
+        }
     }
 
     public async Task InitializeAsync()
@@ -298,6 +393,23 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     #endregion
 
     #region Commands
+    // Promotes the transient browser preview slot to a permanent playlist entry.
+    // Clears the IsTransient flag in-place so the row stays at its current
+    // position in the list, then auto-saves the radio playlist to disk so the
+    // station is persisted for the next session.
+    [RelayCommand]
+    private async Task PromoteTransientToPlaylistAsync()
+    {
+        var transient = Playlist.FirstOrDefault(t => t.IsTransient);
+        if (transient == null) return;
+
+        transient.IsTransient = false;
+        HasMultipleTracks = Playlist.Count > 1;
+        UpdatePlaylistSummary();
+
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
     [RelayCommand]
     private async Task SaveLibraryPlaylistAsAsync()
     {
@@ -473,11 +585,18 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     {
         if (selectedItems == null) return;
         InvalidatePlaylist();
+        bool removedPlayingTrack = false;
         foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+        {
+            if (item.IsPlaying) removedPlayingTrack = true;
             Playlist.Remove(item);
+        }
 
         HasMultipleTracks = Playlist.Count > 1;
         UpdatePlaylistSummary();
+
+        if (removedPlayingTrack)
+            PlayingTrackRemoved?.Invoke(this, EventArgs.Empty);
 
         int sv = ++_scrollVersion;
         TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
@@ -490,11 +609,18 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     {
         if (selectedItems == null) return;
         InvalidatePlaylist();
+        bool removedPlayingTrack = false;
         foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+        {
+            if (item.IsPlaying) removedPlayingTrack = true;
             Playlist.Remove(item);
+        }
 
         HasMultipleTracks = Playlist.Count > 1;
         UpdatePlaylistSummary();
+
+        if (removedPlayingTrack)
+            PlayingTrackRemoved?.Invoke(this, EventArgs.Empty);
 
         int sv = ++_scrollVersion;
         TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
@@ -740,7 +866,8 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             LibraryPlaylistSummary = $"{libTracks.Count} Track{(libTracks.Count != 1 ? "s" : "")}";
         }
 
-        var radTracks = Playlist.Where(t => IsUrlTrack(t)).ToList();
+        // Transient preview slots are excluded from the station count summary.
+        var radTracks = Playlist.Where(t => IsUrlTrack(t) && !t.IsTransient).ToList();
         double radSeconds = radTracks.Sum(t => t.Length.TotalSeconds);
         if (radSeconds > 0)
         {
@@ -835,7 +962,8 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             }
 
             var filePath = Path.Combine(folder, $"{name}.json");
-            var filteredTracks = Playlist.Where(t => IsUrlTrack(t) == isRadio).ToList();
+            // Transient tracks (browser preview slots) are never persisted to disk.
+            var filteredTracks = Playlist.Where(t => IsUrlTrack(t) == isRadio && !t.IsTransient).ToList();
 
             var dto = new SavedPlaylistDto
             {

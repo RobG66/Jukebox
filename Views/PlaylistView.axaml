@@ -10,6 +10,10 @@
              x:Class="Jukebox.Views.PlaylistView"
              x:DataType="vm:JukeboxViewModel">
 
+    <UserControl.Resources>
+        <conv:BoolToFontStyleConverter x:Key="BoolToFontStyleConverter"/>
+    </UserControl.Resources>
+
     <Design.DataContext>
         <vm:JukeboxViewModel/>
     </Design.DataContext>
@@ -99,17 +103,7 @@
                               GridLinesVisibility="Horizontal"
                               RowHeight="32"
                               DoubleTapped="PlaylistDataGrid_DoubleTapped">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu DataContext="{Binding $parent[UserControl].DataContext}" x:DataType="vm:JukeboxViewModel">
-                                <MenuItem Header="Remove Selected"
-                                          Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
-                                          CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
-                                    <MenuItem.Icon>
-                                        <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="14" Height="14"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
+
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="Title" x:DataType="models:JukeboxTrack" Width="8*" SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -214,17 +208,7 @@
                               GridLinesVisibility="Horizontal"
                               RowHeight="32"
                               DoubleTapped="PlaylistDataGrid_DoubleTapped">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu DataContext="{Binding $parent[UserControl].DataContext}" x:DataType="vm:JukeboxViewModel">
-                                <MenuItem Header="Remove Selected"
-                                          Command="{Binding PlaylistViewModel.RemoveRadioSelectedCommand}"
-                                          CommandParameter="{Binding #RadioDataGrid.SelectedItems}">
-                                    <MenuItem.Icon>
-                                        <Image Source="avares://Jukebox/Assets/Icons/remove.png" Width="14" Height="14"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
+
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="7*" SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -238,8 +222,20 @@
                                                    IsVisible="{Binding IsPlaying}"/>
                                             <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
                                                 <StackPanel Orientation="Horizontal">
+                                                    <!--
+                                                      📻 prefix shown only for the transient browser preview slot.
+                                                      IsTransient is a plain bool (not [ObservableProperty]) so
+                                                      the binding uses non-compiled path syntax; the row is always
+                                                      re-rendered when inserted/removed so dynamic updates are not needed.
+                                                    -->
+                                                    <TextBlock Text="📻 "
+                                                               VerticalAlignment="Center"
+                                                               IsVisible="{Binding IsTransient}"
+                                                               Opacity="0.75"
+                                                               FontSize="11"/>
                                                     <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
                                                                                Text="{Binding DisplayName}"
+                                                                               FontStyle="{Binding IsTransient, Converter={StaticResource BoolToFontStyleConverter}}"
                                                                                VerticalAlignment="Center"/>
                                                 </StackPanel>
                                             </Border>
@@ -247,7 +243,32 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Genre" x:DataType="models:JukeboxTrack" Binding="{Binding Genre}" Width="5*"/>
+                            <DataGridTemplateColumn Header="Genre" x:DataType="models:JukeboxTrack" Width="5*" SortMemberPath="Genre">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:JukeboxTrack">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
+                                            <!--
+                                              "Add to Playlist" pill button shown only on the transient slot.
+                                              Command is bound via relative source to the parent UserControl's
+                                              DataContext (JukeboxViewModel) → PlaylistViewModel.
+                                              The button promotes the transient entry to a permanent one.
+                                            -->
+                                            <Button Classes="pill"
+                                                    Content="＋ Add to Playlist"
+                                                    IsVisible="{Binding IsTransient}"
+                                                    Background="{DynamicResource SystemAccentBrush}"
+                                                    BorderBrush="{DynamicResource SystemAccentBrush}"
+                                                    Foreground="White"
+                                                    FontSize="9"
+                                                    ToolTip.Tip="Add this station to the playlist permanently"
+                                                    Command="{Binding $parent[UserControl].((vm:JukeboxViewModel)DataContext).PlaylistViewModel.PromoteTransientToPlaylistCommand}"/>
+                                            <TextBlock Text="{Binding Genre}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Country" x:DataType="models:JukeboxTrack" Binding="{Binding Country}" Width="SizeToHeader"/>
                         </DataGrid.Columns>
                     </DataGrid>

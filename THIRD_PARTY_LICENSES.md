@@ -80,6 +80,13 @@ of required files per platform and where to download each one.
   Used by `libprojectM.dll` on Windows. Bundled with the libprojectM
   release artifact produced by the Jukebox-Visualizations CI workflow.
 
+### libvgm (VGM Player Core & Shim) — `vgm-player_Win64.dll` / `libvgm-player.so`
+
+* **Website:** https://github.com/ValleyBell/libvgm
+* **License:** Various open source licenses per sound core (GPL, LGPL, BSD-style, MAME License).
+* **Source availability:** Open source.
+* **Redistribution:** Allowed. Since it bundles various sound emulation cores, refer to the upstream repository for individual emulation core license compatibility. The flat C API shim (`vgm-player`) is open source.
+
 ---
 
 ## NuGet packages (managed assemblies)
@@ -137,6 +144,16 @@ via `<ProjectReference>`. They are not NuGet packages.
 
 * **Source:** https://github.com/RobG66/Avalonia.Controls.TreeDataGrid
 * **License:** MIT License (inherited from upstream Avalonia).
+
+---
+
+## Web Services & APIs
+
+### Radio-Browser API (`api.radio-browser.info`)
+
+* **Website:** https://www.radio-browser.info/
+* **License:** Community-driven public API. Free to use.
+* **Redistribution/Usage:** Provided as a community directory. No commercial restriction on data, but users must respect server rate limits (typically managed by caching endpoints locally or using regional base endpoints).
 
 ---
 

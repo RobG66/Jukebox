@@ -59,10 +59,29 @@ hidden — audio playback is unaffected.
 
 ---
 
+## Optional libraries (VGM Emulation — drop in to play .vgm / .vgz / .vgx game music)
+
+To play retro video game music (.vgm, .vgz, .vgx), compile Valley Bell's `libvgm` with the flat C API shim (`vgm-player`) and drop the resulting libraries into the `lib/` directory.
+
+### Windows
+| File | Source | License |
+|------|--------|---------|
+| `vgm-player_Win64.dll` | Build flat C shim from https://github.com/ValleyBell/libvgm | Various open source (GPL/LGPL/BSD/MAME) |
+| `vgm-emu_Win64.dll` | Built alongside `vgm-player` | Various open source |
+| `vgm-utils_Win64.dll` | Built alongside `vgm-player` | Various open source |
+
+### Linux
+| File | Source | License |
+|------|--------|---------|
+| `libvgm-player.so` | Build flat C shim from https://github.com/ValleyBell/libvgm | Various open source |
+| `libvgm-emu.so` | Built alongside `vgm-player` | Various open source |
+| `libvgm-utils.so` | Built alongside `vgm-player` | Various open source |
+
+---
+
 ## What the final layout looks like
 
-After populating `lib/` and dropping in the `ProjectM/` folder, your
-Jukebox build output directory should look like:
+After populating `lib/` and dropping in the `ProjectM/` folder, your Jukebox build output directory should look like:
 
 ```
 <appdir>/
@@ -72,6 +91,12 @@ Jukebox build output directory should look like:
 │   ├── libbass.so                     (Linux   — BASS audio)
 │   ├── libmpv-2.dll                   (Windows — libmpv video)
 │   ├── libmpv.so.2                    (Linux   — libmpv video)
+│   ├── vgm-player_Win64.dll           (Windows — libvgm player shim, optional)
+│   ├── vgm-emu_Win64.dll              (Windows — libvgm emulation, optional)
+│   ├── vgm-utils_Win64.dll            (Windows — libvgm utilities, optional)
+│   ├── libvgm-player.so               (Linux   — libvgm player shim, optional)
+│   ├── libvgm-emu.so                  (Linux   — libvgm emulation, optional)
+│   ├── libvgm-utils.so                (Linux   — libvgm utilities, optional)
 │   ├── JukeboxVisualizations.dll      (managed wrapper, optional)
 │   ├── JukeboxVisualizations.deps.json
 │   ├── libprojectM.dll                (Windows — ProjectM, optional)

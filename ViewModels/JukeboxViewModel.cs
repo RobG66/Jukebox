@@ -225,6 +225,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
         Volume = InitialVolume;
         PlaylistViewModel.PlaylistCleared += OnPlaylistCleared;
+        PlaylistViewModel.PlayingTrackRemoved += OnPlayingTrackRemoved;
         // Use named method so we can unsubscribe in Dispose.
         PlaylistViewModel.Playlist.CollectionChanged += OnPlaylistCollectionChanged;
         VgmEngine = new VgmPlaybackEngine();
@@ -252,6 +253,11 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         Stop();
         CurrentTrack = new JukeboxTrack { DisplayName = "GUI Design Mode - No Track Loaded" };
         CanPlay = false;
+    }
+
+    private void OnPlayingTrackRemoved(object? sender, EventArgs e)
+    {
+        Stop();
     }
 
     partial void OnIsPlaylistVisibleChanged(bool value)
@@ -482,22 +488,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
         if (owner != null)
         {
-            bool wasAvailable = IsVisualizerAvailable;
-            if (wasAvailable)
-            {
-                IsVisualizerAvailable = false;
-            }
-            try
-            {
-                await dialog.ShowDialog(owner);
-            }
-            finally
-            {
-                if (wasAvailable)
-                {
-                    IsVisualizerAvailable = true;
-                }
-            }
+            await dialog.ShowDialog(owner);
         }
     }
     #endregion
@@ -509,6 +500,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
 
         PlaylistViewModel.Playlist.CollectionChanged -= OnPlaylistCollectionChanged;
         PlaylistViewModel.PlaylistCleared -= OnPlaylistCleared;
+        PlaylistViewModel.PlayingTrackRemoved -= OnPlayingTrackRemoved;
         _showPlayingService.Changed -= OnShowPlayingChanged;
 
         lock (_osdLock)

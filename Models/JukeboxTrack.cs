@@ -23,4 +23,10 @@ public partial class JukeboxTrack : ObservableObject
 
     // Internal flag — not observable, the DataGrid never binds to it
     public bool IsTagged { get; set; }
+
+    // When true, this entry is a transient browser preview slot. It is shown in
+    // the Radio playlist tab with a distinct visual style but is never persisted
+    // to disk and is replaced the next time the user plays a station from the
+    // radio browser.
+    public bool IsTransient { get; set; }
 }

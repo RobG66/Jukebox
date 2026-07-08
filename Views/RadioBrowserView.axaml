@@ -171,7 +171,7 @@
                           regardless — acceptable trade-off for getting the
                           truncated-text reveal.
                         -->
-                        <DataGridTemplateColumn Header="Station Name" Width="*">
+                        <DataGridTemplateColumn Header="Station Name" Width="*" SortMemberPath="Name">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding Name}"
@@ -181,7 +181,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Genre / Tags" Width="190">
+                        <DataGridTemplateColumn Header="Genre / Tags" Width="190" SortMemberPath="Tags">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding Tags}"
@@ -191,7 +191,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Country" Width="100">
+                        <DataGridTemplateColumn Header="Country" Width="100" SortMemberPath="Country">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding Country}"
@@ -201,7 +201,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="State" Width="100">
+                        <DataGridTemplateColumn Header="State" Width="100" SortMemberPath="State">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding State}"
@@ -211,7 +211,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Language" Width="SizeToHeader">
+                        <DataGridTemplateColumn Header="Language" Width="SizeToHeader" SortMemberPath="LanguageCodes">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding LanguageCodes}"
@@ -221,7 +221,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Bitrate" Width="80">
+                        <DataGridTemplateColumn Header="Bitrate" Width="80" SortMemberPath="Bitrate">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
                                     <TextBlock Text="{Binding Bitrate, StringFormat={}{0} kbps}"

@@ -71,36 +71,31 @@
             -->
             <ContentControl x:Name="MediaHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
 
-            <Border x:Name="OsdAnchor" HorizontalAlignment="Left" VerticalAlignment="Top" Width="1" Height="1" Background="Transparent" IsHitTestVisible="False">
-                <Border.Margin>
+            <!-- OSD Current Title — rendered in-layout (no Popup) so it stays within the window -->
+            <TextBlock Text="{Binding ShowPlayingText}"
+                       Opacity="{Binding ShowPlayingOpacity}"
+                       IsVisible="{Binding IsShowPlayingVisible}"
+                       IsHitTestVisible="False"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Foreground="White"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.Margin>
                     <MultiBinding Converter="{StaticResource OsdMarginConverter}">
                         <Binding Path="IsPlaylistVisible"/>
                         <Binding Path="IsPickerVisible"/>
                     </MultiBinding>
-                </Border.Margin>
-            </Border>
-
-            <!-- OSD Current Title -->
-            <Popup IsOpen="{Binding IsShowPlayingVisible}"
-                   PlacementTarget="{Binding #OsdAnchor}"
-                   Placement="Right"
-                   IsHitTestVisible="False"
-                   WindowManagerAddShadowHint="False">
-                <TextBlock Text="{Binding ShowPlayingText}"
-                           Opacity="{Binding ShowPlayingOpacity}"
-                           Foreground="White"
-                           FontSize="24"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis">
-                    <TextBlock.MaxWidth>
-                        <MultiBinding Converter="{StaticResource OsdMaxWidthConverter}">
-                            <Binding Path="IsPlaylistVisible"/>
-                            <Binding Path="IsPickerVisible"/>
-                            <Binding Path="#ContentGrid.Bounds.Width"/>
-                        </MultiBinding>
-                    </TextBlock.MaxWidth>
-                </TextBlock>
-            </Popup>
+                </TextBlock.Margin>
+                <TextBlock.MaxWidth>
+                    <MultiBinding Converter="{StaticResource OsdMaxWidthConverter}">
+                        <Binding Path="IsPlaylistVisible"/>
+                        <Binding Path="IsPickerVisible"/>
+                        <Binding Path="#ContentGrid.Bounds.Width"/>
+                    </MultiBinding>
+                </TextBlock.MaxWidth>
+            </TextBlock>
 
             <!-- EQ slide-up overlay -->
             <Border Background="{DynamicResource EqOverlayBackground}"

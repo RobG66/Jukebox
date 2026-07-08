@@ -119,7 +119,25 @@ The native `libprojectM.dll` / `libprojectM.so.4` is loaded by `JukeboxVisualiza
 
 ---
 
-## 4. Avalonia Controls Project Forks
+## 4. libvgm (VGM Emulation)
+
+The application uses Valley Bell's `libvgm` to emulate and play VGM, VGZ, and VGX files. The unmanaged native shim files must be dropped into the `lib/` folder.
+
+### Windows setup:
+1. Compile Valley Bell's `libvgm` with the flat C API shim wrapper (`vgm-player`).
+2. Copy `vgm-player_Win64.dll`, `vgm-emu_Win64.dll`, and `vgm-utils_Win64.dll` to the `lib/` folder.
+
+### Linux setup:
+1. Compile Valley Bell's `libvgm` flat C API shim on Linux.
+2. Copy `libvgm-player.so`, `libvgm-emu.so`, and `libvgm-utils.so` to the `lib/` folder.
+
+### How it loads
+
+`Native/VgmNative.cs::EnsureLoaded()` calls `NativeLibrary.Load()` on the candidate filenames (`vgm-player.dll`, `vgm-player_Win64.dll` on Windows; `libvgm-player.so` on Linux). Once the shim library is loaded, the player loops by rendering 16-bit PCM and feeding it to a BASS push stream for playback and visualization.
+
+---
+
+## 5. Avalonia Controls Project Forks
 
 The Jukebox solution references custom, local forks of the Avalonia DataGrid and TreeDataGrid repositories. These must exist as folders adjacent to the main `Jukebox` project directory:
 
@@ -134,6 +152,8 @@ The solution will fail to build if these custom fork projects are missing. Ensur
 
 * **BASS (Un4seen Developments):** [https://www.un4seen.com/](https://www.un4seen.com/)
 * **libmpv Builds (Windows):** [https://sourceforge.net/projects/mpv-player-windows/files/libmpv/](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/)
+* **libvgm (Valley Bell):** [https://github.com/ValleyBell/libvgm](https://github.com/ValleyBell/libvgm)
 * **Jukebox-Visualizations Repository:** [https://github.com/RobG66/Jukebox-Visualizations](https://github.com/RobG66/Jukebox-Visualizations)
 * **Avalonia Controls DataGrid Fork:** [https://github.com/RobG66/Avalonia.Controls.DataGrid](https://github.com/RobG66/Avalonia.Controls.DataGrid)
 * **Avalonia Controls TreeDataGrid Fork:** [https://github.com/RobG66/Avalonia.Controls.TreeDataGrid](https://github.com/RobG66/Avalonia.Controls.TreeDataGrid)
+

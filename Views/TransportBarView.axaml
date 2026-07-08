@@ -126,7 +126,7 @@
                     <!-- Auto-Hide ToggleButton -->
                     <ToggleButton Classes="transparentbutton" Width="24" Height="24"
                                   VerticalAlignment="Center"
-                                  ToolTip.Tip="Toggle Auto-Hide"
+                                  ToolTip.Tip="Auto-Hide Control Bar"
                                   IsChecked="{Binding IsAutoHideEnabled, Mode=TwoWay}">
                         <Image Source="avares://Jukebox/Assets/Icons/visible.png" Width="18" Height="18"/>
                     </ToggleButton>
@@ -137,7 +137,7 @@
                          this toggle immediately raises/lowers the window. -->
                     <ToggleButton Classes="transparentbutton" Width="24" Height="24"
                                   VerticalAlignment="Center"
-                                  ToolTip.Tip="Toggle Always On Top"
+                                  ToolTip.Tip="Always On Top"
                                   IsChecked="{Binding StayOnTop, Mode=TwoWay}">
                         <Image Source="avares://Jukebox/Assets/Icons/alwaysontop.png" Width="18" Height="18"/>
                     </ToggleButton>
@@ -145,7 +145,7 @@
                     <!-- Fullscreen ToggleButton -->
                     <ToggleButton Classes="transparentbutton" Width="24" Height="24"
                                   VerticalAlignment="Center"
-                                  ToolTip.Tip="Toggle Fullscreen"
+                                  ToolTip.Tip="Fullscreen"
                                   IsChecked="{Binding IsFullScreen, Mode=TwoWay}">
                         <Image Source="avares://Jukebox/Assets/Icons/fullscreen.png" Width="18" Height="18"/>
                     </ToggleButton>

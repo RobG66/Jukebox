@@ -200,6 +200,15 @@ public partial class JukeboxViewModel
     [RelayCommand]
     private async Task PlayTrackAsync(JukeboxTrack track)
     {
+        // If the user is playing a permanent (non-transient) entry, remove the
+        // transient browser preview slot — it has been superseded by an intentional
+        // playlist choice. If the user plays the transient slot itself, leave it
+        // in place so the row stays visible while the station is streaming.
+        if (!track.IsTransient)
+        {
+            PlaylistViewModel.RemoveTransientSlot();
+        }
+
         CurrentTrack = track;
         await StartTrackAsync();
     }
