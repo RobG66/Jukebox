@@ -41,7 +41,7 @@ The `ProjectM/` folder contains ONLY preset data. The native `libprojectM` binar
 
 ---
 
-## 1. ManagedBass (Audio)
+## 1. BASS Audio Library (Audio)
 
 The application uses BASS for audio playback and DSP analysis. The native `bass.dll` (Windows) or `libbass.so` (Linux) goes in the `lib/` folder.
 
@@ -56,7 +56,7 @@ The application uses BASS for audio playback and DSP analysis. The native `bass.
 
 ### How it loads
 
-`JukeboxViewModel.PlaybackBASS.cs::PreloadBassNative()` calls `NativeLibrary.Load("<appdir>/lib/bass.dll")` (or `libbass.so` on Linux) BEFORE `Bass.Init()`. Once loaded into the process, ManagedBass's internal P/Invoke `LoadLibrary("bass.dll")` finds the already-cached handle, no matter what directory the OS would otherwise search. If the file is missing from `lib/`, falls back to the OS default search path.
+`JukeboxViewModel.PlaybackBASS.cs::PreloadBassNative()` calls `NativeLibrary.Load("<appdir>/lib/bass.dll")` (or `libbass.so` on Linux) BEFORE `Bass.Init()`. Once loaded into the process, the BASS C# wrapper's internal P/Invoke `LoadLibrary("bass.dll")` finds the already-cached handle, no matter what directory the OS would otherwise search. If the file is missing from `lib/`, falls back to the OS default search path.
 
 ---
 

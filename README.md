@@ -16,11 +16,10 @@ For setup and installation instructions for all dependencies, see [DEPENDENCIES.
 ## Features
 
 - **Audio Playback**: Plays standard audio files (MP3, FLAC, WAV, OGG, M4A, WMA) using ManagedBass.
-- **VGM Emulation**: Emulates and plays VGM, VGZ, and VGX video game music files using Valley Bell's native `libvgm` player core.
+- **VGM Emulation**: Emulates and plays VGM, VGZ, and VGX video game music files using a native `libvgm` player core.
 - **ZIP Playback**: Supports playing audio files directly from compressed `.zip` archives.
 - **Video Playback**: Plays video files (MP4, MKV, AVI, WEBM) using a custom libmpv wrapper rendering directly to an OpenGL context.
 - **Online Radio Browser**: Query, filter, and search thousands of global online radio stations powered by the community-driven Radio-Browser API.
-- **Transient Previews**: Listening to radio browser stations creates a transient "Now Playing" slot in your Radio playlist tab rather than permanently cluttering it. Includes an inline **＋ Add to Playlist** pill button to promote the station permanently.
 - **Audio Equalizer**: 10-band peaking equalizer for custom sound tuning (via BASS_FX PeakEQ) with saved presets.
 - **Visualizations**: Optional music visualizations via projectM (loaded dynamically via reflection) with a picker containing 10,000+ milkdrop presets, favorites, and a customizable randomizer.
 
@@ -211,3 +210,4 @@ This project makes use of the following libraries, APIs, and engines:
 - [projectM](https://github.com/projectM-visualizer/projectm) — OpenGL music visualization engine.
 - [Radio Browser API](https://www.radio-browser.info/) — Community-driven global online radio directory service.
 - [TagLib#](https://github.com/mono/taglib-sharp) — Metadata scanning library.
+
