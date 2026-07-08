@@ -185,7 +185,11 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
         var mpv = _mpv;
         _mpv = null;
 
-        if (mpv != null)
+        // Only dispose the MpvContext if Initialize() fully succeeded (IsAvailable == true).
+        // If libmpv was not found, MpvNative's static constructor failed permanently —
+        // any further call into it re-throws TypeInitializationException. Skipping Dispose
+        // is safe: if IsAvailable is false, no native mpv handle was ever created.
+        if (mpv != null && IsAvailable)
         {
             mpv.PropertyChanged -= OnMpvPropertyChanged;
             mpv.EndReached -= OnMpvEndReached;

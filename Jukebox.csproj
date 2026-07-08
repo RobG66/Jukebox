@@ -49,7 +49,6 @@
          P/Invoke wrapper (Mpv/MpvNative.cs + Mpv/MpvContext.cs) — no third-
          party MPV .NET package needed. The native libmpv binary is loaded
          from the lib/ folder at runtime; see MpvNative.cs. -->
-    <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
 
     <PackageReference Include="AngleSharp" Version="1.4.0" />

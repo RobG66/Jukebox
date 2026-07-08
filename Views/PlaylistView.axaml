@@ -210,32 +210,23 @@
                               DoubleTapped="PlaylistDataGrid_DoubleTapped">
 
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="7*" SortMemberPath="DisplayName">
+                            <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="5*" SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate x:DataType="models:JukeboxTrack">
-                                        <Grid ColumnDefinitions="16,*" VerticalAlignment="Center">
+                                        <Grid ColumnDefinitions="12,*" VerticalAlignment="Center">
                                             <Image Grid.Column="0"
                                                    Source="avares://Jukebox/Assets/Icons/nowplaying.png"
                                                    Width="12" Height="12"
                                                    VerticalAlignment="Center"
                                                    HorizontalAlignment="Left"
                                                    IsVisible="{Binding IsPlaying}"/>
-                                            <Border Grid.Column="1" ClipToBounds="True" Margin="4,0,0,0">
+                                            <Border Grid.Column="1" ClipToBounds="True" Margin="3,0,6,0">
                                                 <StackPanel Orientation="Horizontal">
-                                                    <!--
-                                                      📻 prefix shown only for the transient browser preview slot.
-                                                      IsTransient is a plain bool (not [ObservableProperty]) so
-                                                      the binding uses non-compiled path syntax; the row is always
-                                                      re-rendered when inserted/removed so dynamic updates are not needed.
-                                                    -->
-                                                    <TextBlock Text="📻 "
-                                                               VerticalAlignment="Center"
-                                                               IsVisible="{Binding IsTransient}"
-                                                               Opacity="0.75"
-                                                               FontSize="11"/>
                                                     <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
                                                                                Text="{Binding DisplayName}"
                                                                                FontStyle="{Binding IsTransient, Converter={StaticResource BoolToFontStyleConverter}}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip.Tip="{Binding DisplayName}"
                                                                                VerticalAlignment="Center"/>
                                                 </StackPanel>
                                             </Border>
@@ -243,29 +234,34 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="Genre" x:DataType="models:JukeboxTrack" Width="5*" SortMemberPath="Genre">
+                            <DataGridTemplateColumn Header="Genre" x:DataType="models:JukeboxTrack" Width="7*" SortMemberPath="Genre">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate x:DataType="models:JukeboxTrack">
-                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
+                                        <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
                                             <!--
                                               "Add to Playlist" pill button shown only on the transient slot.
                                               Command is bound via relative source to the parent UserControl's
                                               DataContext (JukeboxViewModel) → PlaylistViewModel.
                                               The button promotes the transient entry to a permanent one.
                                             -->
-                                            <Button Classes="pill"
+                                            <Button Grid.Column="0"
+                                                    Classes="pill"
                                                     Content="＋ Add to Playlist"
                                                     IsVisible="{Binding IsTransient}"
                                                     Background="{DynamicResource SystemAccentBrush}"
                                                     BorderBrush="{DynamicResource SystemAccentBrush}"
                                                     Foreground="White"
                                                     FontSize="9"
+                                                    Margin="0,0,4,0"
                                                     ToolTip.Tip="Add this station to the playlist permanently"
                                                     Command="{Binding $parent[UserControl].((vm:JukeboxViewModel)DataContext).PlaylistViewModel.PromoteTransientToPlaylistCommand}"/>
-                                            <TextBlock Text="{Binding Genre}"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
+                                            <Border Grid.Column="1" ClipToBounds="True" Margin="0,0,6,0">
+                                                <TextBlock Text="{Binding Genre}"
+                                                           VerticalAlignment="Center"
+                                                           ToolTip.Tip="{Binding Genre}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </Border>
+                                        </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

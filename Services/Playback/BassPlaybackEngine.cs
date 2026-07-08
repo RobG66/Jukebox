@@ -1,5 +1,5 @@
 using Jukebox.Models;
-using ManagedBass;
+using Jukebox.Native;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -29,13 +29,13 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     // created one FX handle per band; PeakEQ creates one handle for all bands.
     private int _eqFxHandle;
 
-    private DSPProcedure? _dspProcedure;
-    private SyncProcedure? _endSyncProcedure;
+    private BassNative.BassDspProcedure? _dspProcedure;
+    private BassNative.BassSyncProcedure? _endSyncProcedure;
     private int _dspHandle;
     private int _endSyncHandle;
     private bool _ownsBassContext;
     private double _volume = 100;
-    private SyncProcedure? _metaSyncProcedure;
+    private BassNative.BassSyncProcedure? _metaSyncProcedure;
     private int _metaSyncHandle;
 
     // ── HttpClient-based URL streaming (BASS_StreamCreateFileUser) ──
@@ -128,98 +128,11 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     // (not local variables) so the GC doesn't collect them while BASS
     // still holds a pointer to the struct. If they get collected, BASS
     // will crash when it tries to call the callback.
-    private BASS_FILEPROCS _fileProcs;
-    private FileCloseProc? _fileCloseProc;
-    private FileLenProc? _fileLenProc;
-    private FileReadProc? _fileReadProc;
-    private FileSeekProc? _fileSeekProc;
-
-    // P/Invoke for BASS_StreamCreateFileUser.
-    //
-    // We use raw P/Invoke instead of ManagedBass's wrapper because the
-    // wrapper's API surface for file-user streams varies across
-    // ManagedBass versions. The native BASS API is stable and documented:
-    //
-    //   HSTREAM BASS_StreamCreateFileUser(
-    //       DWORD system,        // STREAMFILE_NOBUFFER=0, STREAMFILE_BUFFER=1
-    //       DWORD flags,         // BASS_STREAM_BLOCK, BASS_STREAM_STATUS, etc.
-    //       BASS_FILEPROCS *procs,
-    //       void *user
-    //   );
-    //
-    // STREAMFILE_BUFFER (1) is used so BASS pre-buffers in a background
-    // thread, matching how Bass.CreateStream(url) works internally.
-    [DllImport("bass", EntryPoint = "BASS_StreamCreateFileUser")]
-    private static extern int BASS_StreamCreateFileUser(
-        int system,
-        int flags,
-        ref BASS_FILEPROCS procs,
-        IntPtr user);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BASS_FILEPROCS
-    {
-        public FileCloseProc close;
-        public FileLenProc length;
-        public FileReadProc read;
-        public FileSeekProc seek;
-    }
-
-    private delegate void FileCloseProc(IntPtr user);
-    private delegate long FileLenProc(IntPtr user);
-    private delegate int FileReadProc(IntPtr buffer, int length, IntPtr user);
-    private delegate bool FileSeekProc(long offset, IntPtr user);
-
-    private const int STREAMFILE_BUFFER = 1;
-    private const int BASS_STREAM_STATUS = 0x800000;
-
-    private static bool _bassPreloaded;
-    private static IntPtr _bassNativeHandle;
-    private static IntPtr _bassFxNativeHandle;
-
-    // ── PeakEQ effect type and parameter struct ──
-    //
-    // Uses BASS_FX's PeakEQ (cross-platform pure-DSP effect).
-    //
-    // We define the effect type constant and parameter struct inline rather
-    // than adding the ManagedBass.Fx NuGet package, because:
-    //   1. ManagedBass.Fx (latest 3.0.1) may not be API-compatible with
-    //      ManagedBass 4.0.2 used by this project.
-    //   2. The core Bass.ChannelSetFX and Bass.FXSetParameters methods
-    //      (in ManagedBass core) already support any effect type and any
-    //      blittable parameter struct — no extra dependency needed.
-    //   3. We only need one effect (PeakEQ), so defining it inline is
-    //      simpler than pulling in a whole package.
-    //
-    // The native bass_fx library (bass_fx.dll / libbass_fx.so) must be
-    // shipped in lib/ alongside bass.dll / libbass.so. It's preloaded
-    // into the process in PreloadBassFxNative() so BASS can find it
-    // when ChannelSetFX is called with the PeakEQ effect type.
-    //
-    // ManagedBass defines EffectType.PeakEQ (= 0x10004, matching the native
-    // BASS_FX_BFX_PEAKEQ constant in bass_fx.h). We use the enum value directly.
-    //
-    // Must match the native BASS_BFX_PEAKEQ struct layout from bass_fx.h:
-    //   typedef struct {
-    //     int   lBand;        // band index (0-based)
-    //     int   lChannel;     // BASS_BFX_CHANxxx flags (0 = all channels)
-    //     float fCenter;      // center frequency in Hz
-    //     float fGain;        // gain in dB (-30 to +30)
-    //     float fBandwidth;   // bandwidth in octaves (0.1 to 4.0) [fQ can be used instead]
-    //     float fQ;           // Q factor (0.1 to 10.0) [fBandwidth can be used instead]
-    //   } BASS_BFX_PEAKEQ;
-    // Must match the 24-byte native layout (2 ints + 4 floats). Passing less than 24 bytes
-    // would result in random garbage for fQ. Setting fQ = 0 tells BASS to use fBandwidth instead.
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PeakEqParams
-    {
-        public int lBand;
-        public float fBandwidth;
-        public float fQ;
-        public float fCenter;
-        public float fGain;
-        public int lChannel;
-    }
+    private BassNative.BASS_FILEPROCS _fileProcs;
+    private BassNative.BassFileProcClose? _fileCloseProc;
+    private BassNative.BassFileProcLength? _fileLenProc;
+    private BassNative.BassFileProcRead? _fileReadProc;
+    private BassNative.BassFileProcSeek? _fileSeekProc;
 
     // Bandwidth in octaves. The old DXParamEQ used 18 semitones (= 1.5 octaves).
     // PeakEQ's fBandwidth is directly in octaves, so 1.5f is the equivalent.
@@ -241,9 +154,9 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     #region Constructor
     public BassPlaybackEngine()
     {
-        _dspProcedure = new DSPProcedure(OnDsp);
-        _endSyncProcedure = new SyncProcedure(OnBassEndSync);
-        _metaSyncProcedure = new SyncProcedure(OnBassMetaSync);
+        _dspProcedure = new BassNative.BassDspProcedure(OnDsp);
+        _endSyncProcedure = new BassNative.BassSyncProcedure(OnBassEndSync);
+        _metaSyncProcedure = new BassNative.BassSyncProcedure(OnBassMetaSync);
     }
     #endregion
 
@@ -251,17 +164,17 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     public void Initialize()
     {
         var sw = Stopwatch.StartNew();
-        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Initializing ManagedBass...");
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Initializing BASS...");
         try
         {
-            PreloadBassNative();
+            BassNative.EnsureLoaded();
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 // On Linux (especially under PipeWire/PulseAudio ALSA emulation), BASS default buffers
                 // can cause stuttering/underruns. Increase buffer to 1000ms and update period to 50ms.
-                Bass.Configure(Configuration.PlaybackBufferLength, 1000);
-                Bass.Configure(Configuration.UpdatePeriod, 50);
+                BassNative.Configure(BassNative.BassConfiguration.PlaybackBufferLength, 1000);
+                BassNative.Configure(BassNative.BassConfiguration.UpdatePeriod, 50);
             }
             else
             {
@@ -279,17 +192,20 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 //
                 // The playback buffer stays at the default 300ms — only the
                 // update frequency changes. Audio playback is unaffected.
-                Bass.Configure(Configuration.UpdatePeriod, 30);
+                BassNative.Configure(BassNative.BassConfiguration.UpdatePeriod, 30);
             }
 
-            bool bassOk = Bass.Init(-1, 44100, DeviceInitFlags.Default, IntPtr.Zero);
-            if (bassOk || Bass.LastError == Errors.Already)
+            // BASS_Init: device = -1 → default output device.
+            // All 5 parameters must be passed; omitting clsid shifts the device
+            // argument and silently selects the silent device 0.
+            bool bassOk = BassNative.Init(-1, 44100, BassNative.BassInitFlags.Default, IntPtr.Zero, IntPtr.Zero);
+            if (bassOk || BassNative.GetLastError() == BassNative.BassErrors.Already)
             {
                 IsAvailable = true;
                 _ownsBassContext = bassOk;
                 Debug.WriteLine(bassOk
-                    ? $"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] ManagedBass initialized successfully in {sw.ElapsedMilliseconds}ms."
-                    : $"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Using shared ManagedBass initialization.");
+                    ? $"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] BASS initialized successfully in {sw.ElapsedMilliseconds}ms."
+                    : $"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Using shared BASS initialization.");
 
                 // Load AAC, Opus, HLS, and FLAC plugins if present in the lib folder.
                 //
@@ -299,7 +215,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 // bassflac adds FLAC decoding — core bass.dll does not handle
                 // FLAC natively (unlike MP3/OGG/WAV), so local .flac files
                 // (already in Constants.AudioExtensions) fail to open via
-                // Bass.CreateStream without this plugin loaded.
+                // BassNative.CreateStream without this plugin loaded.
                 //
                 // Note: StreamTheWorld/Triton MediaGateway URLs are routed
                 // through BASS via BassPlaybackEngine.OpenUrlStreamAsync
@@ -307,19 +223,19 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 // comment on that method for why BASS's own built-in HTTP
                 // client can't be used directly for these streams.
                 string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
-                LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "basshls.dll" : "libbasshls.so"));
-                LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bass_aac.dll" : "libbass_aac.so"));
-                LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassopus.dll" : "libbassopus.so"));
-                LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassflac.dll" : "libbassflac.so"));
+                BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "basshls.dll" : "libbasshls.so"));
+                BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bass_aac.dll" : "libbass_aac.so"));
+                BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassopus.dll" : "libbassopus.so"));
+                BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassflac.dll" : "libbassflac.so"));
             }
             else
             {
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] ManagedBass failed to initialize. Error: {Bass.LastError}");
+                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] BASS failed to initialize. Error: {BassNative.GetLastError()}");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] ManagedBass Init Exception: {ex.Message}");
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] BASS Init Exception: {ex.Message}");
         }
     }
 
@@ -327,12 +243,12 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     {
         if (!IsAvailable)
         {
-            throw new InvalidOperationException("Audio playback is unavailable. ManagedBass failed to initialize.");
+            throw new InvalidOperationException("Audio playback is unavailable. BASS failed to initialize.");
         }
 
         Stop();
 
-        Errors error = Errors.OK;
+        BassNative.BassErrors error = BassNative.BassErrors.OK;
         try
         {
             string urlToPlay = track.FilePath;
@@ -355,14 +271,14 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 _bassStream = await OpenUrlStreamAsync(urlToPlay);
                 if (_bassStream == 0)
                 {
-                    error = Bass.LastError;
+                    error = BassNative.GetLastError();
                 }
             }
             else
             {
                 _bassStream = await Task.Run(() => {
-                    int handle = Bass.CreateStream(urlToPlay, 0, 0, BassFlags.Default);
-                    if (handle == 0) error = Bass.LastError;
+                    int handle = BassNative.CreateStream(urlToPlay, BassNative.BassFlags.Default);
+                    if (handle == 0) error = BassNative.GetLastError();
                     return handle;
                 });
             }
@@ -379,8 +295,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             throw new InvalidOperationException($"Could not open audio stream:\n{track.FilePath}\n\nReason: {error}");
         }
 
-        long byteLength = Bass.ChannelGetLength(_bassStream);
-        double durationSeconds = Bass.ChannelBytes2Seconds(_bassStream, byteLength);
+        long byteLength = BassNative.ChannelGetLength(_bassStream);
+        double durationSeconds = BassNative.ChannelBytes2Seconds(_bassStream, byteLength);
         if (double.IsNaN(durationSeconds) || double.IsInfinity(durationSeconds) || durationSeconds < 0 || durationSeconds > 315360000)
         {
             durationSeconds = 0;
@@ -392,30 +308,30 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             track.Length = TimeSpan.FromSeconds(durationSeconds);
         }
 
-        Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, _volume / 100.0);
+        BassNative.ChannelSetAttribute(_bassStream, BassNative.BassChannelAttribute.Volume, _volume / 100.0);
 
-        _dspHandle = Bass.ChannelSetDSP(_bassStream, _dspProcedure!, IntPtr.Zero, 0);
-        _endSyncHandle = Bass.ChannelSetSync(_bassStream, SyncFlags.End, 0, _endSyncProcedure!, IntPtr.Zero);
+        _dspHandle = BassNative.ChannelSetDSP(_bassStream, _dspProcedure!, IntPtr.Zero, 0);
+        _endSyncHandle = BassNative.ChannelSetSync(_bassStream, BassNative.BassSyncFlags.End, 0, _endSyncProcedure!, IntPtr.Zero);
         // NOTE: This sync will never fire for URL streams — those are all
         // created via BASS_StreamCreateFileUser (see OpenUrlStreamAsync),
         // which has no native ICY awareness. "Now Playing" title updates
         // for URL streams are handled manually in ReadAudioBytes/
         // ConsumeIcyMetadataBlock, which fire MetadataChanged directly.
         // This sync is only meaningful if something ever creates a stream
-        // via Bass.CreateStream(url) directly again — currently nothing
+        // via BassNative.CreateStream directly again — currently nothing
         // does (the local-file branch below never passes a URL). Left in
         // place as a harmless no-op rather than removed, since it costs
         // nothing and is one less thing to re-add if that ever changes.
-        _metaSyncHandle = Bass.ChannelSetSync(_bassStream, SyncFlags.MetadataReceived, 0, _metaSyncProcedure!, IntPtr.Zero);
+        _metaSyncHandle = BassNative.ChannelSetSync(_bassStream, BassNative.BassSyncFlags.MetadataReceived, 0, _metaSyncProcedure!, IntPtr.Zero);
 
-        Bass.ChannelPlay(_bassStream);
+        BassNative.ChannelPlay(_bassStream);
     }
 
     public void Pause()
     {
         if (_bassStream != 0)
         {
-            Bass.ChannelPause(_bassStream);
+            BassNative.ChannelPause(_bassStream);
         }
     }
 
@@ -431,7 +347,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
 
         if (_bassStream != 0)
         {
-            Bass.StreamFree(_bassStream);
+            BassNative.StreamFree(_bassStream);
             _bassStream = 0;
             _eqFxHandle = 0;
             _dspHandle = 0;
@@ -444,7 +360,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     {
         if (_bassStream != 0)
         {
-            Bass.ChannelPlay(_bassStream);
+            BassNative.ChannelPlay(_bassStream);
         }
     }
 
@@ -452,16 +368,16 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     {
         if (_bassStream != 0)
         {
-            Bass.ChannelSetPosition(_bassStream, Bass.ChannelSeconds2Bytes(_bassStream, positionMs / 1000.0));
+            BassNative.ChannelSetPosition(_bassStream, BassNative.ChannelSeconds2Bytes(_bassStream, positionMs / 1000.0));
         }
     }
 
     public double GetPositionMs()
     {
         if (_bassStream == 0) return -1;
-        var pos = Bass.ChannelGetPosition(_bassStream);
+        var pos = BassNative.ChannelGetPosition(_bassStream);
         if (pos < 0) return 0;
-        double seconds = Bass.ChannelBytes2Seconds(_bassStream, pos);
+        double seconds = BassNative.ChannelBytes2Seconds(_bassStream, pos);
         if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0 || seconds > 315360000)
         {
             return 0;
@@ -474,7 +390,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         _volume = volume;
         if (_bassStream != 0)
         {
-            Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, volume / 100.0);
+            BassNative.ChannelSetAttribute(_bassStream, BassNative.BassChannelAttribute.Volume, volume / 100.0);
         }
     }
 
@@ -488,14 +404,14 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // Remove any existing EQ FX before re-creating.
         if (_eqFxHandle != 0)
         {
-            Bass.ChannelRemoveFX(_bassStream, _eqFxHandle);
+            BassNative.ChannelRemoveFX(_bassStream, _eqFxHandle);
             _eqFxHandle = 0;
         }
 
-        _eqFxHandle = Bass.ChannelSetFX(_bassStream, EffectType.PeakEQ, 0);
+        _eqFxHandle = BassNative.ChannelSetFX(_bassStream, BassNative.BassEffectType.PeakEQ, 0);
         if (_eqFxHandle == 0)
         {
-            Debug.WriteLine($"[BASS Engine] ChannelSetFX(PeakEQ) failed. Error: {Bass.LastError}. " +
+            Debug.WriteLine($"[BASS Engine] ChannelSetFX(PeakEQ) failed. Error: {BassNative.GetLastError()}. " +
                             "Ensure bass_fx.dll / libbass_fx.so is in the lib/ folder.");
             return;
         }
@@ -518,10 +434,10 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
 
         if (_eqFxHandle == 0)
         {
-            _eqFxHandle = Bass.ChannelSetFX(_bassStream, EffectType.PeakEQ, 0);
+            _eqFxHandle = BassNative.ChannelSetFX(_bassStream, BassNative.BassEffectType.PeakEQ, 0);
             if (_eqFxHandle == 0)
             {
-                Debug.WriteLine($"[BASS Engine] UpdateEqBand: ChannelSetFX failed. Error: {Bass.LastError}.");
+                Debug.WriteLine($"[BASS Engine] UpdateEqBand: ChannelSetFX failed. Error: {BassNative.GetLastError()}.");
                 return;
             }
         }
@@ -531,22 +447,14 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     #endregion
 
     #region Private Methods
-    /// <summary>
-    /// Sets the PeakEQ parameters for a single band on the EQ FX handle.
-    ///
-    /// ManagedBass 4.0.2's <see cref="Bass.FXSetParameters(int, IntPtr)"/>
-    /// overload takes a raw <see cref="IntPtr"/> to the parameter struct,
-    /// not the struct itself (the <c>(int, IEffectParameter)</c> overload
-    /// requires implementing the <c>IEffectParameter</c> interface, which
-    /// is more ceremony than we need for one effect). We marshal the
-    /// <see cref="PeakEqParams"/> struct to unmanaged memory, pass the
-    /// pointer, then free.
-    /// </summary>
+    // Sets the PeakEQ parameters for a single band on the EQ FX handle.
+    // Marshals the BassNative.PeakEqParams struct to unmanaged memory,
+    // passes the raw IntPtr to BASS_FXSetParameters, then frees.
     private void SetPeakEqParameters(int band, float centerFreq, float gainDb)
     {
         if (_eqFxHandle == 0) return;
 
-        var p = new PeakEqParams
+        var p = new BassNative.PeakEqParams
         {
             lBand = band,
             fBandwidth = EqBandwidthOctaves,
@@ -556,17 +464,13 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             lChannel = -1 // Apply to all channels (BASS_BFX_CHANALL)
         };
 
-        // Use manual marshaling via IntPtr — ManagedBass's IEffectParameter
-        // interface requires a FXType property we don't want to implement.
-        // The IntPtr overload of FXSetParameters passes the raw struct bytes
-        // directly to BASS_FXSetParameters.
-        IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<PeakEqParams>());
+        IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<BassNative.PeakEqParams>());
         try
         {
             Marshal.StructureToPtr(p, ptr, false);
-            if (!Bass.FXSetParameters(_eqFxHandle, ptr))
+            if (!BassNative.FXSetParameters(_eqFxHandle, ptr))
             {
-                Debug.WriteLine($"[BASS Engine] FXSetParameters failed for band {band} (freq={centerFreq}Hz, gain={gainDb}dB). Error: {Bass.LastError}");
+                Debug.WriteLine($"[BASS Engine] FXSetParameters failed for band {band} (freq={centerFreq}Hz, gain={gainDb}dB). Error: {BassNative.GetLastError()}");
             }
         }
         finally
@@ -745,12 +649,12 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // pointer to the BASS_FILEPROCS struct, which contains raw function
         // pointers to these delegates. If the delegates are collected, BASS
         // will crash when it tries to call them.
-        _fileCloseProc = new FileCloseProc(OnFileClose);
-        _fileLenProc = new FileLenProc(OnFileLength);
-        _fileReadProc = new FileReadProc(OnFileRead);
-        _fileSeekProc = new FileSeekProc(OnFileSeek);
+        _fileCloseProc = new BassNative.BassFileProcClose(OnFileClose);
+        _fileLenProc = new BassNative.BassFileProcLength(OnFileLength);
+        _fileReadProc = new BassNative.BassFileProcRead(OnFileRead);
+        _fileSeekProc = new BassNative.BassFileProcSeek(OnFileSeek);
 
-        _fileProcs = new BASS_FILEPROCS
+        _fileProcs = new BassNative.BASS_FILEPROCS
         {
             close = _fileCloseProc,
             length = _fileLenProc,
@@ -761,7 +665,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // Create the BASS user stream.
         //
         // STREAMFILE_BUFFER (1): BASS pre-buffers in a background thread,
-        //   matching how Bass.CreateStream(url) works internally. BASS calls
+        //   matching how BassNative.CreateStream works internally. BASS calls
         //   our read callback to fill its buffer, then decodes from the buffer.
         //
         // BASS_STREAM_STATUS (0x800000): allows BASS to report download
@@ -771,15 +675,15 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // basshls (if the response is an m3u8 playlist), bass_aac (if AAC),
         // bassopus (if Opus), or Media Foundation (Windows built-in) in that
         // order. This happens automatically inside BASS_StreamCreateFileUser.
-        int handle = BASS_StreamCreateFileUser(
-            STREAMFILE_BUFFER,
-            BASS_STREAM_STATUS,
+        int handle = BassNative.StreamCreateFileUser(
+            BassNative.STREAMFILE_BUFFER,
+            BassNative.BASS_STREAM_STATUS,
             ref _fileProcs,
             IntPtr.Zero);
 
         if (handle == 0)
         {
-            Debug.WriteLine($"[BASS Engine] BASS_StreamCreateFileUser failed. Error: {Bass.LastError}");
+            Debug.WriteLine($"[BASS Engine] BASS_StreamCreateFileUser failed. Error: {BassNative.GetLastError()}");
             CleanupHttpStream();
         }
         else
@@ -787,7 +691,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             // Log which decoder BASS chose.
             try
             {
-                var info = Bass.ChannelGetInfo(handle);
+                BassNative.GetChannelInfo(handle, out var info);
                 Debug.WriteLine($"[BASS Engine] URL stream created: handle={handle}, " +
                                 $"codec={info.ChannelType}, freq={info.Frequency}, " +
                                 $"chans={info.Channels}, plugin={info.Plugin}.");
@@ -832,9 +736,19 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 // audio bytes here, same as before ICY support was added.
                 read = ReadAudioBytes(buffer, totalRead, length - totalRead);
             }
+            catch (Exception ex) when (
+                ex is OperationCanceledException ||
+                ex is ObjectDisposedException ||
+                ex is System.IO.IOException { InnerException: System.Net.Sockets.SocketException })
+            {
+                // Stream was cancelled or disposed during shutdown — expected path.
+                // Return whatever we've already read so BASS can play it out,
+                // then 0 on the next call (stream is null/disposed) signals EOF.
+                return totalRead;
+            }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BASS Engine] OnFileRead stream read failed: {ex.Message}");
+                Debug.WriteLine($"[BASS Engine] OnFileRead unexpected error: {ex.GetType().Name}: {ex.Message}");
                 return totalRead > 0 ? totalRead : 0;
             }
 
@@ -842,21 +756,12 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             {
                 // End of stream — server closed the connection.
                 var elapsed = DateTime.UtcNow - _streamStartTimestamp;
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Network stream ended (server closed connection). " +
-                                $"Received {_streamBytesReceived:N0} bytes in {elapsed.TotalSeconds:F1}s. " +
-                                $"At 48kbps, that's ~{_streamBytesReceived / 6000:F1}s of audio.");
+                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Network stream ended (server closed). " +
+                                $"Received {_streamBytesReceived:N0} bytes in {elapsed.TotalSeconds:F1}s.");
                 break;
             }
 
             totalRead += read;
-
-            // Log every 50KB so we can see if data is arriving continuously
-            // (good — streaming) or in one burst then stopping (bad — preview).
-            if (_streamBytesReceived % 51200 < 16384)
-            {
-                var elapsed = DateTime.UtcNow - _streamStartTimestamp;
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [BASS Engine] Stream progress: {_streamBytesReceived:N0} bytes in {elapsed.TotalSeconds:F1}s.");
-            }
         }
 
         return totalRead;
@@ -980,124 +885,6 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         }
     }
 
-    private static void PreloadBassNative()
-    {
-        if (_bassPreloaded) return;
-        _bassPreloaded = true;
-
-        // Register a DllImportResolver on the ManagedBass assembly so its
-        // [DllImport("bass")] calls resolve to our lib/ folder. On Windows
-        // this is redundant (NativeLibrary.Load is process-global), but on
-        // Linux .NET scopes native handles per-assembly — so a library
-        // loaded by the Jukebox assembly is invisible to ManagedBass.dll's
-        // P/Invoke. The resolver makes it work on both platforms.
-        NativeLibrary.SetDllImportResolver(typeof(Bass).Assembly, (name, assembly, path) =>
-        {
-            string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
-
-            if (name == "bass")
-            {
-                if (_bassNativeHandle != IntPtr.Zero)
-                    return _bassNativeHandle;
-
-                string fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? "bass.dll"
-                    : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                        ? "libbass.so"
-                        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                            ? "libbass.dylib"
-                            : "bass";
-
-                string fullPath = Path.Combine(libDir, fileName);
-                if (File.Exists(fullPath))
-                {
-                    if (NativeLibrary.TryLoad(fullPath, out _bassNativeHandle))
-                    {
-                        Debug.WriteLine($"[BASS Engine] Loaded BASS native library from: {fullPath}");
-                        return _bassNativeHandle;
-                    }
-                }
-
-                if (NativeLibrary.TryLoad(fileName, out _bassNativeHandle))
-                {
-                    Debug.WriteLine($"[BASS Engine] Loaded BASS native library from OS search path: {fileName}");
-                    return _bassNativeHandle;
-                }
-
-                Debug.WriteLine($"[BASS Engine] BASS native library not found. Looked in: {fullPath} and OS default search path.");
-            }
-
-            if (name == "bass_fx")
-            {
-                if (_bassFxNativeHandle != IntPtr.Zero)
-                    return _bassFxNativeHandle;
-                string fxFile = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? "bass_fx.dll"
-                    : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                        ? "libbass_fx.so"
-                        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                            ? "libbass_fx.dylib"
-                            : "bass_fx";
-                string fxFullPath = Path.Combine(libDir, fxFile);
-                if (File.Exists(fxFullPath) && NativeLibrary.TryLoad(fxFullPath, out _bassFxNativeHandle))
-                {
-                    Debug.WriteLine($"[BASS Engine] Loaded BASS_FX from: {fxFullPath}");
-                    return _bassFxNativeHandle;
-                }
-                if (NativeLibrary.TryLoad(fxFile, out _bassFxNativeHandle))
-                {
-                    Debug.WriteLine($"[BASS Engine] Loaded BASS_FX from OS search path: {fxFile}");
-                    return _bassFxNativeHandle;
-                }
-                Debug.WriteLine($"[BASS Engine] BASS_FX NOT FOUND. EQ will not work. Looked in: {fxFullPath}");
-            }
-
-            return IntPtr.Zero;
-        });
-
-        // Preload bass_fx into the process so BASS can find it when
-        // ChannelSetFX is called with the PeakEQ effect type. BASS loads
-        // bass_fx dynamically via LoadLibrary/dlopen — if we preload it
-        // here, BASS finds it already in the process address space.
-        // Without this, bass_fx must be on the OS default search path
-        // (which it isn't in our flat lib/ layout).
-        PreloadBassFxNative();
-    }
-
-    private static void PreloadBassFxNative()
-    {
-        if (_bassFxNativeHandle != IntPtr.Zero) return;
-
-        string libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib");
-        string fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "bass_fx.dll"
-            : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                ? "libbass_fx.so"
-                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? "libbass_fx.dylib"
-                    : "bass_fx";
-
-        // 1) Try the lib/ drop-in folder.
-        string fullPath = Path.Combine(libDir, fileName);
-        if (File.Exists(fullPath))
-        {
-            if (NativeLibrary.TryLoad(fullPath, out _bassFxNativeHandle))
-            {
-                Debug.WriteLine($"[BASS Engine] Loaded BASS_FX native library from: {fullPath}");
-                return;
-            }
-        }
-
-        // 2) Fall back to OS default search path.
-        if (NativeLibrary.TryLoad(fileName, out _bassFxNativeHandle))
-        {
-            Debug.WriteLine($"[BASS Engine] Loaded BASS_FX native library from OS search path: {fileName}");
-            return;
-        }
-
-        Debug.WriteLine($"[BASS Engine] BASS_FX native library not found. Looked in: {fullPath} and OS default search path. " +
-                        "EQ will not be available. Download from https://www.un4seen.com/ (bass_fx add-on).");
-    }
 
     // Use the standard event-invocation pattern with a local copy to prevent
     // NullReferenceException during shutdown.
@@ -1144,7 +931,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     {
         try
         {
-            IntPtr ptr = Bass.ChannelGetTags(channel, TagType.META);
+            IntPtr ptr = BassNative.ChannelGetTags(channel, BassNative.BassTagType.META);
             if (ptr != IntPtr.Zero)
             {
                 string? metadata = Marshal.PtrToStringAnsi(ptr);
@@ -1183,27 +970,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         return null;
     }
 
-    private void LoadPlugin(string path)
-    {
-        if (File.Exists(path))
-        {
-            // Preload the native library into the process first so that the unmanaged loader can find it and resolve its static dependencies
-            if (NativeLibrary.TryLoad(path, out IntPtr handle))
-            {
-                Debug.WriteLine($"[BASS Engine] Preloaded plugin successfully via NativeLibrary: {path}");
-            }
 
-            int pluginHandle = Bass.PluginLoad(path);
-            if (pluginHandle != 0)
-            {
-                Debug.WriteLine($"[BASS Engine] Loaded plugin successfully: {path}");
-            }
-            else
-            {
-                Debug.WriteLine($"[BASS Engine] Failed to load plugin: {path}. Error: {Bass.LastError}");
-            }
-        }
-    }
     #endregion
 
     #region Dispose
@@ -1216,30 +983,30 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         if (_bassStream != 0)
         {
             // Explicitly remove DSP and SYNC callbacks before freeing the
-            // stream. Bass.StreamFree would auto-remove them, but explicit
+            // stream. BassNative.StreamFree would auto-remove them, but explicit
             // removal guarantees any in-flight callback has been drained
             // before the stream memory is released. This is the belt-and-
             // suspenders companion to the OnDsp local-copy fix.
             if (_dspHandle != 0)
             {
-                try { Bass.ChannelRemoveDSP(_bassStream, _dspHandle); }
+                try { BassNative.ChannelRemoveDSP(_bassStream, _dspHandle); }
                 catch (Exception ex) { Debug.WriteLine($"[BASS Engine] ChannelRemoveDSP failed: {ex.Message}"); }
                 _dspHandle = 0;
             }
             if (_endSyncHandle != 0)
             {
-                try { Bass.ChannelRemoveSync(_bassStream, _endSyncHandle); }
+                try { BassNative.ChannelRemoveSync(_bassStream, _endSyncHandle); }
                 catch (Exception ex) { Debug.WriteLine($"[BASS Engine] ChannelRemoveSync failed: {ex.Message}"); }
                 _endSyncHandle = 0;
             }
             if (_metaSyncHandle != 0)
             {
-                try { Bass.ChannelRemoveSync(_bassStream, _metaSyncHandle); }
+                try { BassNative.ChannelRemoveSync(_bassStream, _metaSyncHandle); }
                 catch (Exception ex) { Debug.WriteLine($"[BASS Engine] ChannelRemoveSync (meta) failed: {ex.Message}"); }
                 _metaSyncHandle = 0;
             }
 
-            try { Bass.StreamFree(_bassStream); }
+            try { BassNative.StreamFree(_bassStream); }
             catch (Exception ex) { Debug.WriteLine($"[BASS Engine] StreamFree failed: {ex.Message}"); }
             _bassStream = 0;
             _eqFxHandle = 0;
@@ -1247,7 +1014,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
 
         if (IsAvailable && _ownsBassContext)
         {
-            Bass.Free();
+            BassNative.Free();
         }
 
         IsAvailable = false;

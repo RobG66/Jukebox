@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jukebox.Models;
 using Jukebox.Native;
-using ManagedBass;
 
 namespace Jukebox.Services;
 
@@ -72,7 +71,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     private int _bassStream;
     private int _eqFxHandle;
     private int _endSyncHandle;
-    private SyncProcedure? _endSyncProcedure;
+    private BassNative.BassSyncProcedure? _endSyncProcedure;
     private Thread? _renderThread;
     private CancellationTokenSource? _renderCts;
     private double _volume = 100;
@@ -81,22 +80,11 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     private bool _isPlaying;
     private bool _isPaused;
     private bool _loopInfinite = false;  // false = play 2 loops then end (triggers PlaybackEnded)
-    private DSPProcedure? _dspProcedure;
+    private BassNative.BassDspProcedure? _dspProcedure;
     private readonly object _renderLock = new();
 
     // One-shot guard for PlaybackStarted — same pattern as BassPlaybackEngine.
     private int _playbackStartedFired;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PeakEqParams
-    {
-        public int lBand;
-        public float fBandwidth;
-        public float fQ;
-        public float fCenter;
-        public float fGain;
-        public int lChannel;
-    }
     #endregion
 
     #region Public Properties (IMediaPlayerEngine)
@@ -258,30 +246,28 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                 track.Length = TimeSpan.FromMilliseconds(_durationMs);
 
             // 7. Create a BASS push stream — stereo 16-bit at 44100 Hz.
-            //    ManagedBass has a dedicated overload for push streams:
-            //      Bass.CreateStream(freq, chans, flags, StreamProcedureType.Push)
-            //    No StreamProcedure delegate is needed — data is pushed via
-            //    Bass.StreamPutData. 16-bit signed PCM matches libvgm's output
+            //    BassNative.CreatePushStream wraps the IntPtr(-1) sentinel so
+            //    data is pushed via BassNative.StreamPutData rather than pulled
+            //    through a callback. 16-bit signed PCM matches libvgm's output
             //    and what the visualizer expects (short[]).
-            _bassStream = Bass.CreateStream(
+            _bassStream = BassNative.CreatePushStream(
                 SampleRate, Channels,
-                BassFlags.Default,
-                StreamProcedureType.Push);
+                BassNative.BassFlags.Default);
 
             if (_bassStream == 0)
             {
-                var err = Bass.LastError;
+                var err = BassNative.GetLastError();
                 throw new InvalidOperationException($"BASS push stream creation failed: {err}");
             }
 
             // 8. Wire up the PCM tap so the visualizer gets fed.
             //    Same pattern as BassPlaybackEngine.OnDsp — runs on BASS's thread.
-            _dspProcedure = new DSPProcedure(OnBassPcmTap);
-            Bass.ChannelSetDSP(_bassStream, _dspProcedure, IntPtr.Zero, 0);
+            _dspProcedure = new BassNative.BassDspProcedure(OnBassPcmTap);
+            BassNative.ChannelSetDSP(_bassStream, _dspProcedure, IntPtr.Zero, 0);
 
             // Register the end sync callback so that PlaybackEnded is fired when all pushed audio is played.
-            _endSyncProcedure = new SyncProcedure(OnBassEndSync);
-            _endSyncHandle = Bass.ChannelSetSync(_bassStream, SyncFlags.End, 0, _endSyncProcedure, IntPtr.Zero);
+            _endSyncProcedure = new BassNative.BassSyncProcedure(OnBassEndSync);
+            _endSyncHandle = BassNative.ChannelSetSync(_bassStream, BassNative.BassSyncFlags.End, 0, _endSyncProcedure, IntPtr.Zero);
 
             // 9. Start libvgm and the render thread that keeps the push buffer fed.
             if (VgmNative.Start(_player) != 0)
@@ -303,8 +289,8 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
             _renderThread.Start();
 
             // 10. Apply current volume + start BASS playback on the push stream.
-            Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, _volume / 100.0);
-            Bass.ChannelPlay(_bassStream);
+            BassNative.ChannelSetAttribute(_bassStream, BassNative.BassChannelAttribute.Volume, _volume / 100.0);
+            BassNative.ChannelPlay(_bassStream);
         }
         catch (Exception ex)
         {
@@ -318,7 +304,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         if (!_isPlaying) return;
         _isPaused = true;
         if (_player is not null) VgmNative.Pause(_player, paused: true);
-        if (_bassStream != 0) Bass.ChannelPause(_bassStream);
+        if (_bassStream != 0) BassNative.ChannelPause(_bassStream);
     }
 
     public void Resume()
@@ -326,7 +312,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         if (!_isPlaying || !_isPaused) return;
         _isPaused = false;
         if (_player is not null) VgmNative.Pause(_player, paused: false);
-        if (_bassStream != 0) Bass.ChannelPlay(_bassStream);
+        if (_bassStream != 0) BassNative.ChannelPlay(_bassStream);
     }
 
     public void Stop()
@@ -353,12 +339,12 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         {
             if (_endSyncHandle != 0)
             {
-                Bass.ChannelRemoveSync(_bassStream, _endSyncHandle);
+                BassNative.ChannelRemoveSync(_bassStream, _endSyncHandle);
                 _endSyncHandle = 0;
             }
             // StreamFree stops playback AND frees the stream — no separate
             // StreamStop needed (matches BassPlaybackEngine.Stop pattern).
-            try { Bass.StreamFree(_bassStream); } catch { }
+            try { BassNative.StreamFree(_bassStream); } catch { }
             _bassStream = 0;
             _eqFxHandle = 0;
         }
@@ -388,7 +374,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                 VgmNative.Seek(_player, samplePosition);
                 
                 // Flush the BASS push stream (resets its position count to 0)
-                Bass.ChannelSetPosition(_bassStream, 0);
+                BassNative.ChannelSetPosition(_bassStream, 0);
                 
                 _seekOffsetMs = positionMs;
             }
@@ -404,9 +390,9 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         if (_bassStream == 0) return -1;
         try
         {
-            var pos = Bass.ChannelGetPosition(_bassStream);
+            var pos = BassNative.ChannelGetPosition(_bassStream);
             if (pos < 0) return -1;
-            return _seekOffsetMs + (Bass.ChannelBytes2Seconds(_bassStream, pos) * 1000.0);
+            return _seekOffsetMs + (BassNative.ChannelBytes2Seconds(_bassStream, pos) * 1000.0);
         }
         catch { return -1; }
     }
@@ -419,7 +405,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         if (_player is not null)
             VgmNative.SetVolume(_player, (uint)(volume / 100.0 * FullVolume));
         if (_bassStream != 0)
-            Bass.ChannelSetAttribute(_bassStream, ChannelAttribute.Volume, volume / 100.0);
+            BassNative.ChannelSetAttribute(_bassStream, BassNative.BassChannelAttribute.Volume, volume / 100.0);
     }
     public void InitializeEqBands(double[] gains, float[] centerFrequencies)
     {
@@ -428,14 +414,14 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         // Remove any existing EQ FX before re-creating.
         if (_eqFxHandle != 0)
         {
-            Bass.ChannelRemoveFX(_bassStream, _eqFxHandle);
+            BassNative.ChannelRemoveFX(_bassStream, _eqFxHandle);
             _eqFxHandle = 0;
         }
 
-        _eqFxHandle = Bass.ChannelSetFX(_bassStream, EffectType.PeakEQ, 0);
+        _eqFxHandle = BassNative.ChannelSetFX(_bassStream, BassNative.BassEffectType.PeakEQ, 0);
         if (_eqFxHandle == 0)
         {
-            Debug.WriteLine($"[VGM Engine] ChannelSetFX(PeakEQ) failed. Error: {Bass.LastError}.");
+            Debug.WriteLine($"[VGM Engine] ChannelSetFX(PeakEQ) failed. Error: {BassNative.GetLastError()}.");
             return;
         }
         Debug.WriteLine($"[VGM Engine] EQ FX created (handle={_eqFxHandle}).");
@@ -456,10 +442,10 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
 
         if (_eqFxHandle == 0)
         {
-            _eqFxHandle = Bass.ChannelSetFX(_bassStream, EffectType.PeakEQ, 0);
+            _eqFxHandle = BassNative.ChannelSetFX(_bassStream, BassNative.BassEffectType.PeakEQ, 0);
             if (_eqFxHandle == 0)
             {
-                Debug.WriteLine($"[VGM Engine] UpdateEqBand: ChannelSetFX failed. Error: {Bass.LastError}.");
+                Debug.WriteLine($"[VGM Engine] UpdateEqBand: ChannelSetFX failed. Error: {BassNative.GetLastError()}.");
                 return;
             }
         }
@@ -471,7 +457,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     {
         if (_eqFxHandle == 0) return;
 
-        var p = new PeakEqParams
+        var p = new BassNative.PeakEqParams
         {
             lBand = band,
             fBandwidth = EqBandwidthOctaves,
@@ -481,13 +467,13 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
             lChannel = -1 // Apply to all channels (BASS_BFX_CHANALL)
         };
 
-        IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<PeakEqParams>());
+        IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<BassNative.PeakEqParams>());
         try
         {
             Marshal.StructureToPtr(p, ptr, false);
-            if (!Bass.FXSetParameters(_eqFxHandle, ptr))
+            if (!BassNative.FXSetParameters(_eqFxHandle, ptr))
             {
-                Debug.WriteLine($"[VGM Engine] FXSetParameters failed for band {band} (freq={centerFreq}Hz, gain={gainDb}dB). Error: {Bass.LastError}");
+                Debug.WriteLine($"[VGM Engine] FXSetParameters failed for band {band} (freq={centerFreq}Hz, gain={gainDb}dB). Error: {BassNative.GetLastError()}");
             }
         }
         finally
@@ -547,7 +533,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                     if (rendered > 0)
                     {
                         totalRendered += rendered;
-                        queued = Bass.StreamPutData(_bassStream, handle.AddrOfPinnedObject(), (int)rendered);
+                        queued = BassNative.StreamPutData(_bassStream, handle.AddrOfPinnedObject(), (int)rendered);
                     }
                 }
 
@@ -559,7 +545,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                     _isPlaying = false;
                     
                     // Signal the end of the BASS push stream so that it plays out the remaining buffer and triggers SyncFlags.End
-                    Bass.StreamPutData(_bassStream, IntPtr.Zero, unchecked((int)0x80000000));
+                    BassNative.StreamPutData(_bassStream, IntPtr.Zero, unchecked((int)0x80000000));
                     break;
                 }
 
