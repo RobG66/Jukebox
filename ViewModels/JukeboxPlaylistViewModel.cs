@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Jukebox.Extensions;
+using Jukebox.Helpers;
 using Jukebox.Models;
 using System;
 using System.Collections.Generic;
@@ -226,7 +227,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             FilePath = url,
             Bitrate = bitrateString,
             Genre = string.IsNullOrWhiteSpace(genre) ? "—" : genre,
-            Country = string.IsNullOrWhiteSpace(country) ? "—" : country.ToUpperInvariant().Trim(),
+            Country = ResolveCountryName(country),
             IsTagged = true
         };
 
@@ -279,7 +280,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             FilePath = url,
             Bitrate = bitrateString,
             Genre = string.IsNullOrWhiteSpace(genre) ? "—" : genre,
-            Country = string.IsNullOrWhiteSpace(country) ? "—" : country.ToUpperInvariant().Trim(),
+            Country = ResolveCountryName(country),
             IsTagged = true,
             IsTransient = true
         };
@@ -733,6 +734,40 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     {
         _playlistVersion++;
         _scrollVersion++;
+    }
+
+    // Resolves a country input (which may be an ISO 3166-1 alpha-2 code from
+    // radio-browser, or a free-form country name from a saved playlist) to a
+    // short, display-friendly country name.
+    //
+    // Two input shapes are handled:
+    //   1. ISO alpha-2 code ("US", "GB", "RU") — looked up via CountryNames.
+    //      Returns "United States", "United Kingdom", "Russia", etc.
+    //   2. Free-form string ("The Netherlands", "United States of America") —
+    //      returned as-is. Saved playlists may contain these from older
+    //      Jukebox versions that stored the radio-browser "country" field
+    //      verbatim. Re-normalizing them would require a reverse lookup; we
+    //      accept the minor inconsistency rather than risk corrupting user
+    //      data on load.
+    //
+    // Returns "—" for null/empty/whitespace input (matches the existing UI
+    // convention for missing metadata).
+    private static string ResolveCountryName(string? country)
+    {
+        if (string.IsNullOrWhiteSpace(country))
+            return "—";
+
+        string trimmed = country.Trim();
+
+        // ISO 3166-1 alpha-2 code: exactly 2 letters. Use CountryNames lookup
+        // for clean short names ("US" → "United States", not "US").
+        if (trimmed.Length == 2 && char.IsLetter(trimmed[0]) && char.IsLetter(trimmed[1]))
+        {
+            return CountryNames.GetShortName(trimmed);
+        }
+
+        // Free-form name (legacy saved playlist data) — return as-is.
+        return trimmed;
     }
 
     private static List<string> DiscoverFiles(List<string> paths, bool noRecurse)

@@ -28,5 +28,5 @@ public partial class JukeboxTrack : ObservableObject
     // the Radio playlist tab with a distinct visual style but is never persisted
     // to disk and is replaced the next time the user plays a station from the
     // radio browser.
-    public bool IsTransient { get; set; }
+    [ObservableProperty] private bool _isTransient;
 }

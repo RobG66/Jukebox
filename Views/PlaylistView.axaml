@@ -210,7 +210,7 @@
                               DoubleTapped="PlaylistDataGrid_DoubleTapped">
 
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="5*" SortMemberPath="DisplayName">
+                            <DataGridTemplateColumn Header="Station Name" x:DataType="models:JukeboxTrack" Width="7*" SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate x:DataType="models:JukeboxTrack">
                                         <Grid ColumnDefinitions="12,*" VerticalAlignment="Center">
@@ -265,7 +265,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Country" x:DataType="models:JukeboxTrack" Binding="{Binding Country}" Width="SizeToHeader"/>
+                            <DataGridTextColumn Header="CO" x:DataType="models:JukeboxTrack" Binding="{Binding Country}" Width="SizeToHeader"/>
                         </DataGrid.Columns>
                     </DataGrid>
 

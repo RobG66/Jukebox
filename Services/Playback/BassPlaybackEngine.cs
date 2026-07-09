@@ -1,6 +1,7 @@
 using Jukebox.Models;
 using Jukebox.Native;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -85,6 +86,64 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     {
         Timeout = Timeout.InfiniteTimeSpan, // live streams have no timeout
     };
+
+    // ── Per-host User-Agent overrides ──
+    //
+    // The default UA (DefaultBrowserUserAgent) is a full desktop Chrome string
+    // that satisfies Zeno.Fm, SurferNetwork, and standard Icecast/Shoutcast
+    // stations. A small set of ad-stitching CDNs (currently just Triton /
+    // StreamTheWorld) route browser UAs to a 5-second preview and need a bare
+    // "Mozilla/5.0" instead.
+    //
+    // Entries are hostname SUFFIXES — a request to
+    // "27263.live.streamtheworld.com" matches the "streamtheworld.com" entry.
+    // The check is case-insensitive and anchored at the host boundary.
+    //
+    // To add a new override, append an entry here. If a future CDN exhibits
+    // the "5-second preview" pattern (connection closes after exactly 32 KB),
+    // add its host suffix to this map with the bare UA.
+    private const string DefaultBrowserUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    private const string BareUserAgent = "Mozilla/5.0";
+
+    private static readonly Dictionary<string, string> _hostUserAgentOverrides =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            // Triton / StreamTheWorld MediaGateway — serves a 5-second preview
+            // (exactly 32768 bytes) to browser UAs. Bare UA gets the continuous
+            // live stream. Covers all *.streamtheworld.com subdomains including
+            // the per-station shards like "27263.live.streamtheworld.com".
+            { "streamtheworld.com", BareUserAgent },
+        };
+
+    /// <summary>
+    /// Returns the User-Agent string to send for a request to the given URI.
+    /// Walks the host's dot-suffix chain and returns the first matching
+    /// override; falls back to <see cref="DefaultBrowserUserAgent"/> if no
+    /// override applies.
+    /// </summary>
+    private static string GetUserAgentForHost(Uri? uri)
+    {
+        if (uri != null && !string.IsNullOrEmpty(uri.Host))
+        {
+            string host = uri.Host;
+            // Walk the suffix chain: "27263.live.streamtheworld.com" →
+            // "live.streamtheworld.com" → "streamtheworld.com" → "com".
+            // Stop before the TLD-only fragment to avoid silly matches.
+            string[] parts = host.Split('.');
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                string suffix = string.Join('.', parts, i, parts.Length - i);
+                if (_hostUserAgentOverrides.TryGetValue(suffix, out var ua))
+                {
+                    return ua;
+                }
+            }
+        }
+        return DefaultBrowserUserAgent;
+    }
     private HttpResponseMessage? _httpResponse;
     private Stream? _networkStream;
     private CancellationTokenSource? _streamCts;
@@ -479,6 +538,164 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         }
     }
 
+    // Detects whether a URL is an HLS playlist (.m3u8 or .m3u extension).
+    // Used to route the stream through BASS's native URL client instead of
+    // the HttpClient + StreamCreateFileUser path. basshls intercepts the URL
+    // and handles playlist parsing + segment fetching internally.
+    private static bool IsHlsUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        try
+        {
+            // Ignore query string when checking extension
+            string path = new Uri(url).AbsolutePath;
+            return path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                   path.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Not a valid absolute URI — fall back to a simple substring check
+            // (covers edge cases like malformed URLs from radio-browser cache)
+            int q = url.IndexOf('?');
+            string pathOnly = q >= 0 ? url.Substring(0, q) : url;
+            return pathOnly.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                   pathOnly.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // Opens an HLS stream via BASS's native URL streaming client. basshls
+    // (loaded as a plugin) intercepts the URL and handles:
+    //   1. Downloading the .m3u8 playlist
+    //   2. Parsing variant streams (master playlist → media playlist)
+    //   3. Fetching each .ts/.aac segment
+    //   4. Decoding and gaplessly stitching segments together
+    //
+    // This can't go through the HttpClient path because BASS needs to make
+    // its own HTTP requests for each segment — HttpClient only gives us the
+    // playlist bytes, which aren't audio.
+    //
+    // Uses BASS_StreamCreateURL (via BassNative.CreateUrlStream) — the
+    // documented BASS function for internet URLs. BASS_StreamCreateFile does
+    // NOT accept URLs and returns BASS_ERROR_ILLPARAM (20) if you try.
+    //
+    // The User-Agent is set via BASS_SetConfigPtr right before the call.
+    // BASS reads the config at the moment it makes the HTTP request, so the
+    // per-host UA override (GetUserAgentForHost) applies correctly.
+    //
+    // BASS_StreamCreateURL is synchronous and blocks until the playlist is
+    // fetched and at least the first segment is buffered. We run it on a
+    // background thread (Task.Run) to avoid blocking the UI thread.
+    private async Task<int> OpenHlsStreamAsync(string url)
+    {
+        // Set the User-Agent for BASS's HTTP requests (playlist + segment fetches).
+        // The per-host override applies — e.g. streamtheworld.com HLS gets the
+        // bare UA, zeno.fm HLS gets the full Chrome UA.
+        Uri? uri;
+        try { uri = new Uri(url); }
+        catch { uri = null; }
+
+        string userAgent = GetUserAgentForHost(uri);
+        BassNative.SetConfigPtr(BassNative.BassConfiguration.NetAgent, userAgent);
+
+        // 15-second timeout for HLS operations — covers playlist fetch + initial
+        // segment buffering. The default BASS timeout is 0 (no timeout), which
+        // would hang the UI indefinitely if the server is unresponsive.
+        BassNative.Configure(BassNative.BassConfiguration.NetTimeout, 15);
+
+        Debug.WriteLine($"[BASS Engine] HLS stream — using BASS native URL client. UA='{userAgent}', URL='{url}'.");
+
+        // ── Pre-flight HTTP check ──
+        //
+        // BASS_StreamCreateURL returns generic BASS error codes that don't
+        // distinguish between "server returned 403" and "invalid parameter".
+        // Probe the URL with HttpClient first so we can surface the actual
+        // HTTP status (403, 404, 451 geo-block, etc.) — much more useful for
+        // the user than "BASS error 20".
+        //
+        // We use HttpCompletionOption.ResponseHeadersRead so we don't download
+        // the whole playlist — just enough to see the status code and headers.
+        try
+        {
+            using var preflightReq = new HttpRequestMessage(HttpMethod.Get, url);
+            preflightReq.Headers.UserAgent.ParseAdd(userAgent);
+            preflightReq.Headers.Accept.ParseAdd("*/*");
+            preflightReq.Version = new Version(1, 1);
+            preflightReq.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+
+            using var preflightResp = await _httpClient.SendAsync(preflightReq,
+                HttpCompletionOption.ResponseHeadersRead);
+            if (!preflightResp.IsSuccessStatusCode)
+            {
+                int code = (int)preflightResp.StatusCode;
+                string reason = string.IsNullOrWhiteSpace(preflightResp.ReasonPhrase)
+                    ? "" : $" ({preflightResp.ReasonPhrase})";
+                Debug.WriteLine($"[BASS Engine] HLS pre-flight failed: HTTP {code}{reason} for '{url}'");
+                throw new InvalidOperationException(
+                    $"Could not open HLS stream:\n{url}\n\n" +
+                    $"Reason: server returned HTTP {code}{reason}.");
+            }
+            Debug.WriteLine($"[BASS Engine] HLS pre-flight OK — HTTP {preflightResp.StatusCode}.");
+        }
+        catch (InvalidOperationException) { throw; }  // re-throw the friendly HTTP error
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[BASS Engine] HLS pre-flight exception: {ex.Message}");
+            // Don't throw — let BASS try anyway, maybe it has better luck
+            // (e.g. the pre-flight failed for a transient reason but BASS will retry)
+        }
+
+        // BASS_StreamCreateURL with a URL is synchronous — run on a background
+        // thread to avoid blocking the UI. The function blocks until the
+        // playlist is fetched and the first segment is buffered.
+        //
+        // Uses BASS_StreamCreateURL (not BASS_StreamCreateFile) — the latter
+        // does not accept URLs and returns BASS_ERROR_ILLPARAM (20).
+        int handle = await Task.Run(() =>
+        {
+            try
+            {
+                return BassNative.CreateUrlStream(url);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[BASS Engine] HLS CreateUrlStream exception: {ex.Message}");
+                return 0;
+            }
+        });
+
+        if (handle == 0)
+        {
+            var err = BassNative.GetLastError();
+            Debug.WriteLine($"[BASS Engine] HLS CreateUrlStream failed. URL='{url}', Error: {err}");
+            throw new InvalidOperationException(
+                $"Could not open HLS stream:\n{url}\n\n" +
+                $"Reason: BASS error {err}. " +
+                $"Verify basshls.dll (Windows) or libbasshls.so (Linux) is in the lib/ folder " +
+                $"and that basshls was registered successfully on startup.");
+        }
+
+        // Log which decoder BASS chose (basshls, or a fallback decoder)
+        try
+        {
+            BassNative.GetChannelInfo(handle, out var info);
+            Debug.WriteLine($"[BASS Engine] HLS stream created: handle={handle}, " +
+                            $"codec={info.ChannelType}, freq={info.Frequency}, " +
+                            $"chans={info.Channels}, plugin={info.Plugin}.");
+        }
+        catch { }
+
+        // NOTE: ICY metadata isn't applicable to HLS. HLS uses ID3 tags embedded
+        // in segments for "Now Playing" metadata, which basshls surfaces via
+        // SyncFlags.MetadataReceived. The existing _metaSyncProcedure (set up
+        // in the constructor) already subscribes to this sync, so metadata
+        // updates from HLS segments will fire OnBassMetaSync automatically.
+
+        // No HttpClient state to clean up — BASS owns the network connection
+        // for HLS. The connection is freed when StreamFree(handle) is called
+        // by Stop/Dispose.
+        return handle;
+    }
+
     // ── HttpClient URL streaming ──
     //
     // Opens an HTTP connection with .NET's HttpClient and creates a BASS
@@ -487,8 +704,36 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     //
     // This replaces BASS's built-in HTTP client (Bass.CreateStream(url)),
     // which stops reading after ~32KB when the server sends Connection: close.
+    //
+    // ── HLS exception ──
+    //
+    // HLS streams (.m3u8 / .m3u URLs) take a different path. The response body
+    // is a playlist text file, not audio bytes — basshls must parse the playlist
+    // and make its OWN HTTP requests to fetch each segment. With
+    // BASS_StreamCreateFileUser (the HttpClient path), BASS only gets the
+    // playlist bytes and can't fetch segments.
+    //
+    // For HLS, we use BASS's native URL streaming client (BassNative.CreateStream
+    // with a URL) directly. When basshls is loaded, it intercepts the URL,
+    // downloads the playlist, fetches segments, and decodes them. This works
+    // because HLS makes many short HTTP requests (one per segment) — the
+    // "32KB then close" bug only matters for long direct streams, not HLS.
+    //
+    // The User-Agent is set via BASS_SetConfigPtr(BASS_CONFIG_NET_AGENT, ua)
+    // right before the CreateStream call. The per-host UA override map
+    // (GetUserAgentForHost) is applied to HLS streams too, so CDNs that need
+    // a bare UA (streamtheworld.com) or a browser UA (zeno.fm) are handled.
     private async Task<int> OpenUrlStreamAsync(string url)
     {
+        // ── HLS path: route through BASS's native URL streaming client ──
+        // basshls intercepts the URL and handles playlist parsing + segment
+        // fetching internally. HttpClient is bypassed entirely.
+        if (IsHlsUrl(url))
+        {
+            return await OpenHlsStreamAsync(url);
+        }
+
+        // ── Direct stream path: HttpClient + BASS_StreamCreateFileUser ──
         // Cancel any previous stream's HTTP connection.
         _streamCts?.Cancel();
         _streamCts?.Dispose();
@@ -541,22 +786,32 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         request.Version = new Version(1, 1);
         request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
 
-        // User-Agent: match the curl test byte-for-byte — a bare "Mozilla/5.0",
-        // not a full desktop browser string.
+        // User-Agent: per-host selection.
         //
-        // The previous full Chrome UA ("Mozilla/5.0 (Windows NT 10.0...)
-        // Chrome/120.0.0.0 Safari/537.36") did NOT actually match what the
-        // working curl test sent (curl -A "Mozilla/5.0" — literally just
-        // that). Ad-stitching CDNs like Triton/StreamTheWorld commonly key
-        // their routing off User-Agent: a recognizable desktop-browser UA
-        // can get routed to a short "web preview" flow (the real browser
-        // experience is expected to come from their own embedded player
-        // hitting a different endpoint), while a bare/minimal UA looks like
-        // a direct stream client (hardware receiver, app, curl) and gets the
-        // continuous live stream. This is a more likely explanation for the
-        // 5s cutoff than protocol version, since forcing HTTP/1.1 alone
-        // (see RequestVersionExact above) didn't change anything.
-        request.Headers.UserAgent.ParseAdd("Mozilla/5.0");
+        // Different streaming CDNs have OPPOSITE UA heuristics, so no single
+        // string satisfies all of them:
+        //
+        //   - Zeno.Fm / SurferNetwork: 401s anything that doesn't look like a
+        //     real desktop browser. Bare "Mozilla/5.0" gets 401; full Chrome
+        //     or Firefox UA gets 302 → 200 OK with the live stream.
+        //
+        //   - StreamTheWorld / Triton MediaGateway: serves a 5-second preview
+        //     (exactly 32768 bytes, then closes the connection) to anything
+        //     that looks like a real browser. Bare "Mozilla/5.0" gets the
+        //     continuous live stream; full Chrome UA gets the 32 KB preview.
+        //
+        // The default is a full desktop Chrome UA, which is what the majority
+        // of stations (including Zeno.Fm, SurferNetwork, plain Icecast/
+        // Shoutcast) expect. Known ad-stitching CDNs that route browser UAs
+        // to a preview get an override via GetUserAgentForHost.
+        //
+        // Verified by curl against both stations in July 2026:
+        //   - Zeno.FM with full Chrome UA:           446 KB in 20s (live)
+        //   - Zeno.FM with bare Mozilla/5.0:         401 Unauthorized
+        //   - StreamTheWorld with full Chrome UA:    32768 bytes (5s preview)
+        //   - StreamTheWorld with bare Mozilla/5.0:  175 KB in 20s (live)
+        string userAgent = GetUserAgentForHost(request.RequestUri);
+        request.Headers.UserAgent.ParseAdd(userAgent);
         // Accept: */* — curl sends this by default. Some servers gate on it.
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         // Accept-Encoding intentionally NOT sent — curl's test didn't send

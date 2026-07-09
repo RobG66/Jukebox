@@ -82,39 +82,23 @@ public class MarqueeTextBlock : TextBlock
 
     private void UpdateAnimation()
     {
-        if (!IsPlaying)
-        {
-            StopAnimation();
-            return;
-        }
-
-        var container = FindClippingContainer();
-        if (container == null)
-        {
-            StopAnimation();
-            return;
-        }
-
-        double textWidth = Bounds.Width;
-        double visibleWidth = container.Bounds.Width;
-
-        if (textWidth <= 0 || visibleWidth <= 0 || textWidth <= visibleWidth)
-        {
-            StopAnimation();
-            return;
-        }
-
-        // Calculate scroll offset: difference + space for ~2 characters (14px)
-        double offset = -(textWidth - visibleWidth + 14);
-
-        if (Math.Abs(offset - _currentOffset) < 0.1)
-        {
-            return;
-        }
-
+        // Marquee scrolling intentionally disabled. The control is kept for its
+        // IsPlaying property (which the playlist uses to show the now-playing
+        // speaker icon next to the track name), but the scrolling animation
+        // itself was removed because:
+        //   - It distracted from the playback experience.
+        //   - The wider station-name column (added in this patch) shows most
+        //     station names fully without needing to scroll.
+        //   - The TextTrimming="CharacterEllipsis" binding (set in
+        //     PlaylistView.axaml) already provides a clean "..." fallback for
+        //     names that don't fit.
+        //
+        // To re-enable, restore the body below:
+        //   if (!IsPlaying) { StopAnimation(); return; }
+        //   var container = FindClippingContainer();
+        //   if (container == null) { StopAnimation(); return; }
+        //   ... (original scroll logic) ...
         StopAnimation();
-        _currentOffset = offset;
-        StartMarqueeAnimation(offset);
     }
 
     private void StartMarqueeAnimation(double offset)

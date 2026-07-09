@@ -69,6 +69,21 @@ public class RadioStation
         set => _countryCode = value?.ToUpperInvariant() ?? string.Empty;
     }
 
+    // Display-friendly short country name derived from CountryCode via the
+    // ISO 3166-1 lookup in CountryNames. Use this for UI bindings instead of
+    // Country — the API's "country" field is often bloated
+    // ("The United Kingdom Of Great Britain And Northern Ireland",
+    // "The Russian Federation", etc.) while CountryCode is always a clean
+    // 2-letter alpha-2 code.
+    //
+    // Country (raw) is kept for serialization and the country dropdown filter,
+    // which still uses the API's free-form names for grouping.
+    [JsonIgnore]
+    public string CountryDisplayName =>
+        string.IsNullOrWhiteSpace(CountryCode)
+            ? (string.IsNullOrWhiteSpace(Country) ? "—" : Country)
+            : Jukebox.Helpers.CountryNames.GetShortName(CountryCode);
+
     [JsonPropertyName("state")]
     public string State { get; set; } = string.Empty;
 

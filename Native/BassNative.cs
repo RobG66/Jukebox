@@ -36,6 +36,10 @@ internal static class BassNative
     internal const int STREAMFILE_BUFFER = 1;
     internal const int BASS_STREAM_STATUS = 0x800000;
 
+    // BASS_STREAM_BLOCK: download/render in blocks. Used for BASS_StreamCreateURL.
+    // For HLS we don't use this — segments are short enough.
+    internal const int BASS_STREAM_BLOCK = 0x100000;
+
     // Sentinel passed to BASS_StreamCreate to create a push stream.
     // BASS does not call a DSP procedure for push streams — it expects data
     // fed via BASS_StreamPutData. Passing IntPtr(-1) signals this.
@@ -65,6 +69,9 @@ internal static class BassNative
     {
         PlaybackBufferLength = 8,   // BASS_CONFIG_BUFFER
         UpdatePeriod         = 9,   // BASS_CONFIG_UPDATEPERIOD
+        NetTimeout           = 14,  // BASS_CONFIG_NET_TIMEOUT — seconds (0 = no timeout)
+        NetAgent             = 16,  // BASS_CONFIG_NET_AGENT — User-Agent string (pointer)
+        NetProxy             = 17,  // BASS_CONFIG_NET_PROXY — proxy URL string (pointer)
     }
 
     // Flags for BASS_Init.
@@ -189,6 +196,11 @@ internal static class BassNative
     // Sync callback — fired by BASS for sync events (end-of-stream, metadata).
     internal delegate void BassSyncProcedure(int handle, int channel, int data, IntPtr user);
 
+    // Download callback for BASS_StreamCreateURL — called as data is downloaded.
+    // We don't use this (pass NULL), but the delegate type must exist for the
+    // P/Invoke signature to be valid.
+    internal delegate void BassDownloadProcedure(IntPtr buffer, int length, IntPtr user);
+
     #endregion
 
     #region Library Loading
@@ -303,6 +315,28 @@ internal static class BassNative
             return _StreamCreateFileW(false, filePath, 0, 0, (int)flags | BASS_UNICODE);
         else
             return _StreamCreateFile(false, filePath, 0, 0, (int)flags);
+    }
+
+    // Open an internet URL (HTTP/HTTPS, including HLS .m3u8) as a BASS stream.
+    // Uses BASS_StreamCreateURL — the documented function for URL streaming.
+    // BASS_StreamCreateFile does NOT support URLs (returns BASS_ERROR_ILLPARAM=20).
+    //
+    // When basshls plugin is loaded, it intercepts HLS URLs and handles playlist
+    // parsing + segment fetching internally.
+    //
+    // The download callback (DOWNLOADPROC) is passed as NULL — we don't need
+    // download progress notifications for HLS (segments are short).
+    //
+    // offset = 0 (no offset into the downloaded data).
+    // flags = 0 (no special flags — BASS_STREAM_BLOCK would force blocking
+    //   download which we don't want for live HLS streams).
+    internal static int CreateUrlStream(string url)
+    {
+        int flags = 0;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return _StreamCreateURLW(url, 0, flags | BASS_UNICODE, IntPtr.Zero, IntPtr.Zero);
+        else
+            return _StreamCreateURLA(url, 0, flags, IntPtr.Zero, IntPtr.Zero);
     }
 
     // Create a BASS push stream. Data is fed by the caller via StreamPutData.
@@ -421,6 +455,15 @@ internal static class BassNative
     [DllImport("bass", EntryPoint = "BASS_SetConfig")]
     private static extern bool _SetConfig(int option, int value);
 
+    // BASS_SetConfigPtr — sets a pointer-based config option (User-Agent, proxy).
+    // BASS stores the pointer (does NOT copy the string), so the caller must
+    // keep the memory alive until the next call to set the same option.
+    [DllImport("bass", EntryPoint = "BASS_SetConfigPtr", CharSet = CharSet.Ansi)]
+    private static extern bool _SetConfigPtr(int option, string value);
+
+    internal static bool SetConfigPtr(BassConfiguration option, string value)
+        => _SetConfigPtr((int)option, value);
+
     [DllImport("bass", EntryPoint = "BASS_ErrorGetCode")]
     private static extern BassErrors _ErrorGetCode();
 
@@ -448,6 +491,27 @@ internal static class BassNative
         [MarshalAs(UnmanagedType.Bool)] bool mem,
         [MarshalAs(UnmanagedType.LPStr)] string file,
         long offset, long length, int flags);
+
+    // BASS_StreamCreateURL — for internet URLs (HTTP/HTTPS/HLS).
+    // Two overloads: Unicode (Windows) and ANSI (Linux/macOS), matching the
+    // _StreamCreateFile pattern.
+    //
+    // The DOWNLOADPROC parameter is declared as IntPtr (not BassDownloadProcedure)
+    // so we can pass IntPtr.Zero when no download callback is wanted. Passing
+    // null for a delegate parameter in P/Invoke doesn't reliably translate to
+    // a null function pointer — the runtime may pass a garbage thunk instead,
+    // which BASS rejects with BASS_ERROR_ILLPARAM (20).
+    [DllImport("bass", EntryPoint = "BASS_StreamCreateURL", CharSet = CharSet.Unicode)]
+    private static extern int _StreamCreateURLW(
+        [MarshalAs(UnmanagedType.LPWStr)] string url,
+        int offset, int flags,
+        IntPtr proc, IntPtr user);
+
+    [DllImport("bass", EntryPoint = "BASS_StreamCreateURL")]
+    private static extern int _StreamCreateURLA(
+        [MarshalAs(UnmanagedType.LPStr)] string url,
+        int offset, int flags,
+        IntPtr proc, IntPtr user);
 
     // Stream creation — push stream (sentinel proc = IntPtr(-1)).
     // Separate overload from the delegate version because passing a delegate

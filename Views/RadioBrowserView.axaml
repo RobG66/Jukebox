@@ -191,11 +191,11 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Country" Width="100" SortMemberPath="Country">
+                        <DataGridTemplateColumn Header="Country" Width="100" SortMemberPath="CountryDisplayName">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:RadioStation">
-                                    <TextBlock Text="{Binding Country}"
-                                               ToolTip.Tip="{Binding Country}"
+                                    <TextBlock Text="{Binding CountryDisplayName}"
+                                               ToolTip.Tip="{Binding CountryDisplayName}"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
                                 </DataTemplate>

@@ -145,7 +145,7 @@
                                 ToolTip.Tip="Add current preset to Favorites"
                                 Width="30" Height="30"
                                 VerticalAlignment="Center">
-                            <Image Source="avares://Jukebox/Assets/Icons/heart.png"
+                            <Image Source="avares://Jukebox/Assets/Icons/favorite.png"
                                    Width="20" Height="20"
                                    VerticalAlignment="Center" HorizontalAlignment="Center"/>
                         </Button>
