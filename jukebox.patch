@@ -1,0 +1,209 @@
+diff --git a/ViewModels/JukeboxPlaylistViewModel.Persistence.cs b/ViewModels/JukeboxPlaylistViewModel.Persistence.cs
+old mode 100644
+new mode 100755
+index 197f5a5..ba0da70
+--- a/ViewModels/JukeboxPlaylistViewModel.Persistence.cs
++++ b/ViewModels/JukeboxPlaylistViewModel.Persistence.cs
+@@ -43,8 +43,12 @@ public partial class JukeboxPlaylistViewModel
+             }
+             if (SavedLibraryPlaylists.Count == 0)
+             {
+-                SavedLibraryPlaylists.Add("Default");
+-                await SavePlaylistToFileInternalAsync("Default", isRadio: false);
++                // "No Playlist" is a transient placeholder — added to the
++                // in-memory collection but never persisted to disk. It
++                // represents the state where the user is not using a named
++                // playlist (e.g. drag/drop items, play, close — gone on
++                // restart). To keep real items, use "Save As".
++                SavedLibraryPlaylists.Add("No Playlist");
+             }
+ 
+             var radioFiles = Directory.GetFiles(radioFolder, "*.json");
+@@ -55,8 +59,8 @@ public partial class JukeboxPlaylistViewModel
+             }
+             if (SavedRadioPlaylists.Count == 0)
+             {
+-                SavedRadioPlaylists.Add("Default");
+-                await SavePlaylistToFileInternalAsync("Default", isRadio: true);
++                // See the library note above — same transient placeholder.
++                SavedRadioPlaylists.Add("No Playlist");
+             }
+ 
+             var activeLibraryName = await LoadActivePlaylistNameAsync(isRadio: false);
+@@ -89,11 +93,12 @@ public partial class JukeboxPlaylistViewModel
+ 
+     public async Task AutoSaveCurrentPlaylistAsync()
+     {
+-        if (!string.IsNullOrEmpty(SelectedLibraryPlaylist))
++        // "No Playlist" is never persisted — it is the transient placeholder.
++        if (!string.IsNullOrEmpty(SelectedLibraryPlaylist) && SelectedLibraryPlaylist != "No Playlist")
+         {
+             await SavePlaylistToFileInternalAsync(SelectedLibraryPlaylist, isRadio: false);
+         }
+-        if (!string.IsNullOrEmpty(SelectedRadioPlaylist))
++        if (!string.IsNullOrEmpty(SelectedRadioPlaylist) && SelectedRadioPlaylist != "No Playlist")
+         {
+             await SavePlaylistToFileInternalAsync(SelectedRadioPlaylist, isRadio: true);
+         }
+@@ -181,6 +186,14 @@ public partial class JukeboxPlaylistViewModel
+     {
+         if (string.IsNullOrEmpty(SelectedLibraryPlaylist)) return;
+ 
++        if (SelectedLibraryPlaylist == "No Playlist")
++        {
++            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
++                "Delete Playlist",
++                "'No Playlist' is the transient placeholder and cannot be deleted.");
++            return;
++        }
++
+         if (SavedLibraryPlaylists.Count <= 1)
+         {
+             await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+@@ -216,6 +229,14 @@ public partial class JukeboxPlaylistViewModel
+     {
+         if (string.IsNullOrEmpty(SelectedRadioPlaylist)) return;
+ 
++        if (SelectedRadioPlaylist == "No Playlist")
++        {
++            await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
++                "Delete Playlist",
++                "'No Playlist' is the transient placeholder and cannot be deleted.");
++            return;
++        }
++
+         if (SavedRadioPlaylists.Count <= 1)
+         {
+             await Jukebox.Views.ThreeButtonDialogView.ShowErrorAsync(
+@@ -343,7 +364,7 @@ public partial class JukeboxPlaylistViewModel
+         _isSwitchingPlaylist = true;
+         try
+         {
+-            if (!string.IsNullOrEmpty(oldName))
++            if (!string.IsNullOrEmpty(oldName) && oldName != "No Playlist")
+             {
+                 await SavePlaylistToFileInternalAsync(oldName, isRadio: false);
+             }
+@@ -378,7 +399,7 @@ public partial class JukeboxPlaylistViewModel
+         _isSwitchingPlaylist = true;
+         try
+         {
+-            if (!string.IsNullOrEmpty(oldName))
++            if (!string.IsNullOrEmpty(oldName) && oldName != "No Playlist")
+             {
+                 await SavePlaylistToFileInternalAsync(oldName, isRadio: true);
+             }
+@@ -506,7 +527,7 @@ public partial class JukeboxPlaylistViewModel
+         {
+             System.Diagnostics.Debug.WriteLine($"[Playlist] Load active state failed: {ex.Message}");
+         }
+-        return "Default";
++        return "No Playlist";
+     }
+     #endregion
+ }
+diff --git a/Views/JukeboxControl.axaml.cs b/Views/JukeboxControl.axaml.cs
+old mode 100644
+new mode 100755
+index bf0986c..74ce6ac
+--- a/Views/JukeboxControl.axaml.cs
++++ b/Views/JukeboxControl.axaml.cs
+@@ -2,8 +2,11 @@ using Avalonia;
+ using Avalonia.Controls;
+ using Avalonia.Input;
+ using Avalonia.Interactivity;
++using Avalonia.Platform.Storage;
+ using Jukebox.ViewModels;
+ using System;
++using System.Collections.Generic;
++using System.Diagnostics;
+ 
+ namespace Jukebox.Views;
+ 
+@@ -97,6 +100,14 @@ public partial class JukeboxControl : UserControl
+         Loaded   += OnLoaded;
+         // Stop the inactivity timer when control is unloaded to prevent leaks.
+         Unloaded += OnUnloaded;
++
++        // Drag/drop: accept supported media files and folders anywhere on the
++        // control surface. Dropped items are appended to the current playlist
++        // and the first dropped item is played immediately. If something is
++        // already playing, it is stopped first. Uses existing VM methods —
++        // no new commands, no .axaml changes.
++        AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble);
++        AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble);
+     }
+ 
+     private void OnInactivityTimerTick(object? sender, EventArgs e)
+@@ -185,6 +196,71 @@ public partial class JukeboxControl : UserControl
+             _inactivityTimer.Start();
+     }
+ 
++    #region Drag / Drop
++
++    private void OnDragOver(object? sender, DragEventArgs e)
++    {
++        // Accept file/folder drops only — no URL/text drops.
++        e.DragEffects = e.Data.Contains(DataFormats.Files)
++            ? DragDropEffects.Copy
++            : DragDropEffects.None;
++        e.Handled = true;
++    }
++
++    private async void OnDrop(object? sender, DragEventArgs e)
++    {
++        e.Handled = true;
++        if (!e.Data.Contains(DataFormats.Files)) return;
++        if (DataContext is not JukeboxViewModel vm) return;
++
++        try
++        {
++            var items = await e.Data.GetFilesAsync();
++            if (items == null) return;
++
++            var paths = new List<string>();
++            foreach (var item in items)
++            {
++                var localPath = item.TryGetLocalPath();
++                if (!string.IsNullOrEmpty(localPath))
++                    paths.Add(localPath);
++            }
++            if (paths.Count == 0) return;
++
++            // Stop current playback before adding the new items. This gives
++            // immediate UI feedback (transport buttons flip to stopped) while
++            // file discovery runs on the background thread. StartTrackAsync
++            // would also cancel any in-flight connection, but the explicit
++            // Stop produces cleaner transport state.
++            if (vm.CanStop)
++                vm.StopCommand.Execute(null);
++
++            // Remember where the dropped items will land so we can play the
++            // first one. ProcessAndAddFilesAsync appends to the end of the
++            // playlist and handles file discovery, folder recursion, zip
++            // extraction, media-extension filtering, and tagging internally.
++            int startIndex = vm.PlaylistViewModel.Playlist.Count;
++
++            await vm.PlaylistViewModel.ProcessAndAddFilesAsync(paths, vm.NoRecurse);
++
++            // Play the first newly-dropped item (if any survived filtering).
++            // PlayTrackCommand is the same command invoked by double-clicking
++            // a row in the playlist.
++            if (startIndex < vm.PlaylistViewModel.Playlist.Count)
++            {
++                var firstDropped = vm.PlaylistViewModel.Playlist[startIndex];
++                if (vm.PlayTrackCommand.CanExecute(firstDropped))
++                    vm.PlayTrackCommand.Execute(firstDropped);
++            }
++        }
++        catch (Exception ex)
++        {
++            Debug.WriteLine($"[JukeboxControl] Drop failed: {ex.Message}");
++        }
++    }
++
++    #endregion
++
+     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+     {
+         base.OnPropertyChanged(change);
