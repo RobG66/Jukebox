@@ -452,32 +452,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable
         }
     }
 
-    [RelayCommand]
-    private async Task AddUrlAsync()
-    {
-        var url = await Jukebox.Views.TextInputDialogView.ShowAsync(
-            "Add Stream URL",
-            "Enter stream URL:",
-            placeholder: "http://example.com/stream.mp3",
-            validator: val =>
-            {
-                if (string.IsNullOrWhiteSpace(val))
-                    return (false, "URL cannot be empty.");
-                if (!Uri.TryCreate(val, UriKind.Absolute, out var uriResult) ||
-                    (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
-                {
-                    return (false, "Invalid URL format. Must start with http:// or https://");
-                }
-                return (true, string.Empty);
-            },
-            okButtonText: "Add"
-        );
-
-        if (!string.IsNullOrWhiteSpace(url))
-        {
-            await PlaylistViewModel.AddUrlTrackAsync(url);
-        }
-    }
+    
     [RelayCommand]
     private async Task OpenRadioBrowserAsync()
     {

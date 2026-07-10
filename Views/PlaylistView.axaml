@@ -46,12 +46,6 @@
                                 <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
                             </Button>
                             <Button Classes="transparentbutton" Width="30" Height="30"
-                                    ToolTip.Tip="Add Stream URL"
-                                    Command="{Binding AddUrlCommand}">
-                                <TextBlock Text="🔗" FontSize="16"
-                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                            </Button>
-                            <Button Classes="transparentbutton" Width="30" Height="30"
                                     ToolTip.Tip="Remove Selected"
                                     Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
                                     CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
