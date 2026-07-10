@@ -4,15 +4,15 @@ using System.IO;
 namespace Jukebox.Services;
 
 /// <summary>
-/// Default <see cref="IPathProvider"/> implementation. Uses the application's
-/// base directory for native libraries (<c>lib/</c>), ProjectM preset assets
-/// (<c>ProjectM/</c>), and the OS-specific ApplicationData folder for user
-/// settings.
-///
-/// Cross-platform behavior:
-///  - Windows: SettingsDirectory = C:\Users\&lt;user&gt;\AppData\Roaming\Jukebox
-///  - Linux:   SettingsDirectory = ~/.config/Jukebox
-///  - macOS:   SettingsDirectory = ~/.config/Jukebox
+/// Default <see cref="IPathProvider"/> implementation. Everything lives
+/// under the application's own base directory — native libraries
+/// (<c>lib/</c>), ProjectM preset assets (<c>ProjectM/</c>), saved
+/// playlists (<c>Playlists/</c>), cached data (<c>Cache/</c>), and
+/// miscellaneous settings (<c>Settings/</c>). Portable by design: no OS
+/// user-profile folders (AppData, ~/.config) are used, and no
+/// Windows/Linux branching is needed since <see cref="AppBaseDirectory"/>
+/// resolves consistently on both. Copy the app folder anywhere and its
+/// data comes with it.
 /// </summary>
 public sealed class PathProvider : IPathProvider
 {
@@ -76,10 +76,23 @@ public sealed class PathProvider : IPathProvider
         Path.Combine(ProjectMRoot, "current_preset");
 
     public string SettingsDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            Constants.SettingsDirectoryName);
+        Path.Combine(AppBaseDirectory, "Settings");
 
     public string EqSettingsFile =>
         Path.Combine(SettingsDirectory, Constants.EqSettingsFileName);
+
+    public string ActiveLibraryPlaylistStateFile =>
+        Path.Combine(SettingsDirectory, "ActiveLibraryPlaylist.txt");
+
+    public string ActiveRadioPlaylistStateFile =>
+        Path.Combine(SettingsDirectory, "ActiveRadioPlaylist.txt");
+
+    public string PlaylistsDirectory =>
+        Path.Combine(AppBaseDirectory, "Playlists");
+
+    public string CacheDirectory =>
+        Path.Combine(AppBaseDirectory, "Cache");
+
+    public string RadioStationsCacheFile =>
+        Path.Combine(CacheDirectory, "RadioStationsCache.json");
 }

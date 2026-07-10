@@ -26,7 +26,13 @@
 
         <TabControl Grid.Row="0">
             <!-- Library Tab -->
-            <TabItem Header="📂 Library" FontSize="14" FontWeight="Medium">
+            <TabItem FontSize="14" FontWeight="Medium">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Image Source="avares://Jukebox/Assets/Icons/folder.png" Width="16" Height="16"/>
+                        <TextBlock Text="Library" FontSize="14" FontWeight="Medium"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid Margin="0,10,0,0" RowDefinitions="Auto,*,Auto">
                     <!-- Toolbar -->
                     <StackPanel Grid.Row="0" Spacing="5" Margin="0,5,0,10">
@@ -37,13 +43,12 @@
                             <Button Classes="transparentbutton" Width="30" Height="30"
                                     ToolTip.Tip="Add Files"
                                     Command="{Binding AddFilesCommand}">
-                                <TextBlock Text="➕" FontSize="16"
-                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                <Image Source="avares://Jukebox/Assets/Icons/add.png" Width="18" Height="18"/>
                             </Button>
                             <Button Classes="transparentbutton" Width="30" Height="30"
                                     ToolTip.Tip="Add Folder"
                                     Command="{Binding AddFolderCommand}">
-                                <Image Source="avares://Jukebox/Assets/Buttons/folder.png" Width="20" Height="20"/>
+                                <Image Source="avares://Jukebox/Assets/Icons/addfolder.png" Width="20" Height="20"/>
                             </Button>
                             <Button Classes="transparentbutton" Width="30" Height="30"
                                     ToolTip.Tip="Remove Selected"
@@ -240,7 +245,6 @@
                                             -->
                                             <Button Grid.Column="0"
                                                     Classes="pill"
-                                                    Content="＋ Add to Playlist"
                                                     IsVisible="{Binding IsTransient}"
                                                     Background="{DynamicResource SystemAccentBrush}"
                                                     BorderBrush="{DynamicResource SystemAccentBrush}"
@@ -248,7 +252,12 @@
                                                     FontSize="9"
                                                     Margin="0,0,4,0"
                                                     ToolTip.Tip="Add this station to the playlist permanently"
-                                                    Command="{Binding $parent[UserControl].((vm:JukeboxViewModel)DataContext).PlaylistViewModel.PromoteTransientToPlaylistCommand}"/>
+                                                    Command="{Binding $parent[UserControl].((vm:JukeboxViewModel)DataContext).PlaylistViewModel.PromoteTransientToPlaylistCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                    <Image Source="avares://Jukebox/Assets/Icons/add.png" Width="10" Height="10"/>
+                                                    <TextBlock Text="Add to Playlist" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
                                             <Border Grid.Column="1" ClipToBounds="True" Margin="0,0,6,0">
                                                 <TextBlock Text="{Binding Genre}"
                                                            VerticalAlignment="Center"

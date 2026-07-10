@@ -5,23 +5,15 @@
 
 A cross-platform desktop media player built with Avalonia UI.
 
-## Dependencies
-
-This application requires:
-- External, unmanaged native libraries (`bass.dll` + plugins, `libmpv-2.dll`, `vgm-player_Win64.dll` + cores, and ProjectM assets).
-- Local custom forks of `Avalonia.Controls.DataGrid` and `Avalonia.Controls.TreeDataGrid`.
-
-For setup and installation instructions for all dependencies, see [DEPENDENCIES.md](DEPENDENCIES.md) and [`lib/README.md`](lib/README.md).
-
 ## Features
 
-- **Audio Playback**: Plays standard audio files (MP3, FLAC, WAV, OGG, M4A, WMA) using ManagedBass.
+- **Audio Playback**: Plays standard audio files (MP3, FLAC, WAV, OGG, M4A, WMA).
 - **VGM Emulation**: Emulates and plays VGM, VGZ, and VGX video game music files using a native `libvgm` player core.
 - **ZIP Playback**: Supports playing audio files directly from compressed `.zip` archives.
 - **Video Playback**: Plays video files (MP4, MKV, AVI, WEBM) using a custom libmpv wrapper rendering directly to an OpenGL context.
-- **Online Radio Browser**: Query, filter, and search thousands of global online radio stations powered by the community-driven Radio-Browser API.
+- **Online Radio Playback**: Query, filter, and search thousands of global online radio stations powered by the community-driven Radio-Browser API.
 - **Audio Equalizer**: 10-band peaking equalizer for custom sound tuning (via BASS_FX PeakEQ) with saved presets.
-- **Visualizations**: Optional music visualizations via projectM (loaded dynamically via reflection) with a picker containing 10,000+ milkdrop presets, favorites, and a customizable randomizer.
+- **Visualizations**: Optional music visualizations via projectM.
 
 ## Table of Contents
 
@@ -41,15 +33,6 @@ Jukebox.exe                          # Launch with defaults
 Jukebox.exe -dark -file "C:\Music"   # Dark theme, auto-load folder
 Jukebox.exe -?                       # Show help
 ```
-
-### Native Dependencies
-
-- **Windows:** place required library files (`bass.dll`, `libmpv-2.dll`, `vgm-player_Win64.dll`, etc.) in a `lib/` directory next to the executable.
-- **Linux:** install dependencies via package manager (`sudo apt install libmpv-dev`) and place companion native libraries in `lib/`.
-
-The ProjectM native library (`libprojectM`) is provided by the `JukeboxVisualizations` companion project. Download the ProjectM folder and place it in the root of the Jukebox project.
-
----
 
 ## Command-Line Switches
 

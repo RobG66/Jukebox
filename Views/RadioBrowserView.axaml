@@ -44,12 +44,16 @@
                     IsEnabled="{Binding !IsSearching}"
                     VerticalAlignment="Center"/>
             <Button Grid.Column="3"
-                    Content="🔄 Refresh Cache"
                     Command="{Binding RefreshCacheCommand}"
                     Classes="rounded secondary"
                     IsEnabled="{Binding !IsSearching}"
                     Margin="5,0,0,0"
-                    VerticalAlignment="Center"/>
+                    VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Image Source="avares://Jukebox/Assets/Icons/reset.png" Width="14" Height="14"/>
+                    <TextBlock Text="Refresh Cache"/>
+                </StackPanel>
+            </Button>
         </Grid>
 
         <!-- Filter Controls -->

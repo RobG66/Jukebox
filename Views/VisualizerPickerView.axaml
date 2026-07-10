@@ -27,8 +27,11 @@
         <StackPanel Grid.Row="0" Margin="10,0,10,10" Spacing="5">
             <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Grid.Column="0" Spacing="5">
-                    <TextBlock Text="🎇 Visualizations"
-                               Foreground="{DynamicResource PanelTextBrush}" FontSize="20" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Image Source="avares://Jukebox/Assets/Icons/visualizer.png" Width="20" Height="20"/>
+                        <TextBlock Text="Visualizations"
+                                   Foreground="{DynamicResource PanelTextBrush}" FontSize="20" FontWeight="Bold"/>
+                    </StackPanel>
                     <TextBlock Text="Double click to apply selected visualization"
                                Foreground="{DynamicResource SubtleTextBrush}" FontSize="12"/>
                 </StackPanel>

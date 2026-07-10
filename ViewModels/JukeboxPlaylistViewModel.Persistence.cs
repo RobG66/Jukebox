@@ -19,9 +19,11 @@ namespace Jukebox.ViewModels;
 public partial class JukeboxPlaylistViewModel
 {
     #region Path Constants
-    private string PlaylistsDirectory => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "Playlists");
-    private string ActiveLibraryPlaylistStateFile => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "ActiveLibraryPlaylist.txt");
-    private string ActiveRadioPlaylistStateFile => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "ActiveRadioPlaylist.txt");
+    // All actual path decisions live in PathProvider — these just keep the
+    // shorter local names used throughout the methods below.
+    private string PlaylistsDirectory => Jukebox.Services.PathProvider.Current.PlaylistsDirectory;
+    private string ActiveLibraryPlaylistStateFile => Jukebox.Services.PathProvider.Current.ActiveLibraryPlaylistStateFile;
+    private string ActiveRadioPlaylistStateFile => Jukebox.Services.PathProvider.Current.ActiveRadioPlaylistStateFile;
     #endregion
 
     #region Startup & Auto-Save
@@ -483,6 +485,7 @@ public partial class JukeboxPlaylistViewModel
         try
         {
             var file = isRadio ? ActiveRadioPlaylistStateFile : ActiveLibraryPlaylistStateFile;
+            Directory.CreateDirectory(Jukebox.Services.PathProvider.Current.SettingsDirectory);
             await File.WriteAllTextAsync(file, name);
         }
         catch (Exception ex)

@@ -25,7 +25,7 @@ public class OsdMarginConverter : IMultiValueConverter
                           (values[1] is bool picker && picker);
         }
 
-        double left = isPanelOpen ? 420 : 20;
+        double left = isPanelOpen ? 450 : 20;
         return new Thickness(left, 20, 0, 0);
     }
 }

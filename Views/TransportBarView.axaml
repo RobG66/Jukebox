@@ -61,7 +61,7 @@
                                   Classes="transparentbutton"
                                   Width="28" Height="28"
                                   ToolTip.Tip="Equalizer">
-                        <TextBlock Text="🎚️" FontSize="{DynamicResource GlobalHeaderFontSize}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        <Image Source="avares://Jukebox/Assets/Icons/eq.png" Width="20" Height="20"/>
                     </Button>
                 </StackPanel>
 

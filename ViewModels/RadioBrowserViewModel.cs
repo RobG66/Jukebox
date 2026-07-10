@@ -69,7 +69,7 @@ public partial class RadioBrowserViewModel : ViewModelBase
     #endregion
 
     #region Private Properties
-    private string CacheFilePath => Path.Combine(Jukebox.Services.PathProvider.Current.SettingsDirectory, "RadioStationsCache.json");
+    private string CacheFilePath => Jukebox.Services.PathProvider.Current.RadioStationsCacheFile;
     #endregion
 
     #region Constructor
@@ -156,6 +156,7 @@ public partial class RadioBrowserViewModel : ViewModelBase
                 _allStations.AddRange(allStations);
 
                 var json = JsonSerializer.Serialize(_allStations, new JsonSerializerOptions { WriteIndented = true });
+                Directory.CreateDirectory(Jukebox.Services.PathProvider.Current.CacheDirectory);
                 await File.WriteAllTextAsync(CacheFilePath, json);
 
                 PopulateFilterDropdowns();

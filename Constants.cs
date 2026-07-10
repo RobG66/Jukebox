@@ -15,7 +15,6 @@ public static class Constants
         new HashSet<string>(AudioExtensions.Concat(VideoExtensions), System.StringComparer.OrdinalIgnoreCase);
 
     // ── Settings file locations ──
-    public const string SettingsDirectoryName = "Jukebox";
     public const string EqSettingsFileName = "EqSettings.json";
 
     // ── Playback timer ──
