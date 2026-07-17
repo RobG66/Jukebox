@@ -184,9 +184,6 @@ DocProject/Help/*.hhp
 DocProject/Help/Html2
 DocProject/Help/html
 
-# Click-Once directory
-publish/
-
 # Publish Web Output
 *.[Pp]ublish.xml
 *.azurePubxml
@@ -309,10 +306,6 @@ node_modules/
 *.dsw
 *.dsp
 
-# Visual Studio 6 technical files
-*.ncb
-*.aps
-
 # Visual Studio LightSwitch build output
 **/*.HTMLClient/GeneratedArtifacts
 **/*.DesktopClient/GeneratedArtifacts
@@ -413,7 +406,6 @@ FodyWeavers.xsd
 
 # globs
 Makefile.in
-*.userprefs
 *.usertasks
 config.make
 config.status
@@ -468,13 +460,6 @@ ehthumbs_vista.db
 # Recycle Bin used on file shares
 $RECYCLE.BIN/
 
-# Windows Installer files
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
-
 # Windows shortcuts
 *.lnk
 
@@ -488,12 +473,12 @@ libmpv-2.dll
 # Build scripts output
 publish/
 
-# Locally built plugin binaries and symbols
-plugins/**/*.dll
-plugins/**/*.pdb
-
 # Native runtime libraries are downloaded or built separately
 lib/*.dll
 lib/*.so
 lib/*.exp
 lib/*.lib
+plugins/
+
+*.ps1
+*.sh
