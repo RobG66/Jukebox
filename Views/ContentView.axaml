@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:localViews="using:Jukebox.Views"
+             xmlns:conv="using:Jukebox.Converters"
+             mc:Ignorable="d" d:DesignWidth="880" d:DesignHeight="655"
+             x:Class="Jukebox.Views.ContentView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+    
+    <UserControl.Resources>
+        <conv:OsdMarginConverter x:Key="OsdMarginConverter"/>
+        <conv:OsdMaxWidthConverter x:Key="OsdMaxWidthConverter"/>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource ContentBackground}" ClipToBounds="True">
+        <Grid x:Name="ContentGrid">
+
+            <!-- Initializing state -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20" IsVisible="{Binding IsInitializing}">
+                <TextBlock Text="Initializing..."
+                           Foreground="#888888"
+                           HorizontalAlignment="Center"
+                           FontSize="24"/>
+                <ProgressBar IsIndeterminate="True"
+                             Width="200"
+                             Height="4"
+                             HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!--
+                Connecting overlay - shown while a URL stream (radio) is
+                being opened and no audio has started flowing yet. Bound
+                to IsConnecting, which is set to true in
+                JukeboxViewModel.StartTrackAsync right before PlayAsync is
+                called, and cleared on PlaybackStarted (success), on a
+                thrown exception (HTTP/SSL error), or on a 15-second
+                timeout (no audio received). The ConnectingMessage is
+                pre-formatted as "Connecting to host:port..." by the VM.
+            -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20" IsVisible="{Binding IsConnecting}">
+                <TextBlock Text="{Binding ConnectingMessage}"
+                           Foreground="#CCCCCC"
+                           HorizontalAlignment="Center"
+                           FontSize="20"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"/>
+                <ProgressBar IsIndeterminate="True"
+                             Width="200"
+                             Height="4"
+                             HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!--
+                Single host for video/visualizer content.
+                ContentControl swaps between MpvView (video mode),
+                a plugin control (audio mode + visualizer available), and
+                empty (audio mode + visualizer unavailable). The
+                plugin control is created dynamically in code-behind
+                through the visualizer contract. Only ONE
+                OpenGlControlBase is in the visual tree at a time —
+                prevents GL context conflicts (each OpenGlControlBase
+                creates its own private GL context; having two
+                simultaneously can break native visualizer rendering).
+            -->
+            <ContentControl x:Name="MediaHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+
+            <!-- OSD Current Title — rendered in-layout (no Popup) so it stays within the window -->
+            <TextBlock Text="{Binding ShowPlayingText}"
+                       Opacity="{Binding ShowPlayingOpacity}"
+                       IsVisible="{Binding IsShowPlayingVisible}"
+                       IsHitTestVisible="False"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Foreground="White"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.Margin>
+                    <MultiBinding Converter="{StaticResource OsdMarginConverter}">
+                        <Binding Path="IsPlaylistVisible"/>
+                        <Binding Path="IsPickerVisible"/>
+                    </MultiBinding>
+                </TextBlock.Margin>
+                <TextBlock.MaxWidth>
+                    <MultiBinding Converter="{StaticResource OsdMaxWidthConverter}">
+                        <Binding Path="IsPlaylistVisible"/>
+                        <Binding Path="IsPickerVisible"/>
+                        <Binding Path="#ContentGrid.Bounds.Width"/>
+                    </MultiBinding>
+                </TextBlock.MaxWidth>
+            </TextBlock>
+
+            <!-- EQ slide-up overlay -->
+            <Border Background="{DynamicResource EqOverlayBackground}"
+                    VerticalAlignment="Bottom"
+                    CornerRadius="8,8,0,0"
+                    Padding="20"
+                    IsVisible="{Binding IsEqVisible}">
+                <Grid RowDefinitions="Auto,*">
+
+                    <!-- Preset selector -->
+                    <Grid Grid.Row="0" Margin="0,0,0,20">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                            <TextBlock Text="Preset:" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding EqViewModel.EqPresets}"
+                                      SelectedItem="{Binding EqViewModel.SelectedEqPreset}"
+                                      Width="112"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- EQ bands -->
+                    <Viewbox Grid.Row="1" Stretch="Uniform" StretchDirection="DownOnly">
+                        <ItemsControl ItemsSource="{Binding EqViewModel.EqBands}"
+                                      HorizontalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="25"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Vertical" Spacing="10"
+                                                HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding Gain, StringFormat=\{0:F1\}}"
+                                                   FontSize="11" Foreground="{DynamicResource EqOverlayTextBrush}"
+                                                   HorizontalAlignment="Center"/>
+                                        <Slider Minimum="-15" Maximum="15"
+                                                Value="{Binding Gain}"
+                                                Orientation="Vertical" Height="150"
+                                                HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding FrequencyLabel}"
+                                                   FontSize="12" Foreground="{DynamicResource SubtleTextBrush}"
+                                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Viewbox>
+
+                </Grid>
+            </Border>
+
+        </Grid>
+    </Border>
+
+</UserControl>

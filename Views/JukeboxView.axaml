@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Jukebox.ViewModels"
+        xmlns:views="using:Jukebox.Views"
+        mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="600"
+        x:Class="Jukebox.Views.JukeboxView"
+        x:DataType="vm:JukeboxViewModel"
+        Title="Jukebox"
+        Width="760" Height="600"
+        MinWidth="760" MinHeight="600"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        RequestedThemeVariant="Dark"
+        Background="{DynamicResource WindowBackground}"
+        Topmost="{Binding StayOnTop}"
+        WindowState="{Binding WindowState, Mode=TwoWay}">
+
+    <!-- Jukebox-specific element-selector styles scoped to this window.
+         Kept here (not in GM's App.axaml) so they don't override GM's own
+         DataGrid / Slider / ComboBox styles when running in-process. -->
+    <Window.Styles>
+        <StyleInclude Source="avares://Jukebox/Styles/DataGridStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/SliderStyle.axaml"/>
+        <StyleInclude Source="avares://Jukebox/Styles/ComboBoxStyle.axaml"/>
+    </Window.Styles>
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <!-- Host the standalone UI UserControl -->
+    <views:JukeboxControl DataContext="{Binding}" />
+
+</Window>

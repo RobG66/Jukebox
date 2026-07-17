@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="200"
+        x:Class="Jukebox.Views.TextInputDialogView"
+        Title="Add URL"
+        MinWidth="450"
+        SizeToContent="WidthAndHeight"
+        FontSize="{DynamicResource GlobalFontSize}"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackground}"
+        CanResize="False">
+
+    <StackPanel Margin="20" Spacing="16">
+        <StackPanel Spacing="8">
+            <TextBlock x:Name="PromptTextBlock"
+                       Text="Enter stream URL:"
+                       FontSize="{DynamicResource GlobalFontSize}"
+                       FontWeight="Medium"/>
+            <TextBox x:Name="InputTextBox"
+                     FontSize="{DynamicResource GlobalFontSize}"
+                     Width="410"
+                     HorizontalAlignment="Left"
+                     TextChanged="InputTextBox_TextChanged"/>
+            <TextBlock x:Name="ErrorTextBlock"
+                       Foreground="{DynamicResource ErrorTextBrush}"
+                       FontSize="{DynamicResource GlobalSmallFontSize}"
+                       TextWrapping="Wrap"
+                       IsVisible="False"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <CheckBox x:Name="DefaultCheckBox"
+                  Content="Save as default startup playlist"
+                  IsVisible="False"
+                  Click="DefaultCheckBox_Click"
+                  FontSize="{DynamicResource GlobalFontSize}"/>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,8,0,0">
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Click="CancelButton_Click"
+                    Classes="rounded grey"
+                    FontSize="{DynamicResource GlobalFontSize}"/>
+            <Button x:Name="OkButton"
+                    Content="Add"
+                    Click="OkButton_Click"
+                    Classes="rounded green"
+                    FontSize="{DynamicResource GlobalFontSize}"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

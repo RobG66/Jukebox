@@ -1,0 +1,235 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Bundled vector icons: platform-independent, DPI-safe and themeable. -->
+    <Styles.Resources>
+        <StreamGeometry x:Key="MediaIconClose">M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconQueue">M12,3V13.55A4,4 0 1 0 14,17V7H18V3H12 M6,6V8H10V6H6 M6,10V12H10V10H6</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconFolder">M10,4H2C.89,4 0,4.89 0,6V18C0,19.1 .9,20 2,20H22C23.1,20 24,19.1 24,18V8C24,6.9 23.1,6 22,6H12L10,4Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconSave">M17,3H5C3.89,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V7L17,3M12,19C10.34,19 9,17.66 9,16S10.34,13 12,13 15,14.34 15,16 13.66,19 12,19M15,9H5V5H15V9Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconRemove">M19,13H5V11H19V13Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconDelete">M9,3V4H4V6H5V19C5,20.1 5.9,21 7,21H17C18.1,21 19,20.1 19,19V6H20V4H15V3H9M7,6H17V19H7V6Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconAdd">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconAddFolder">M10,4H2C.89,4 0,4.89 0,6V18C0,19.1 .9,20 2,20H22C23.1,20 24,19.1 24,18V8C24,6.9 23.1,6 22,6H12L10,4 M15,10V13H12V15H15V18H17V15H20V13H17V10H15Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconSearch">M9.5,3A6.5,6.5 0 1 0 13.6,14.55L19.05,20 20.5,18.55 15.05,13.1A6.5,6.5 0 0 0 9.5,3M9.5,5A4.5,4.5 0 1 1 9.5,14A4.5,4.5 0 0 1 9.5,5Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconRepeat">M7,7H17V10L21,6 17,2V5H7C4.79,5 3,6.79 3,9V13H5V9C5,7.9 5.9,7 7,7 M17,17H7V14L3,18 7,22V19H17C19.21,19 21,17.21 21,15V11H19V15C19,16.1 18.1,17 17,17Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconRepeatOne">M7,7H17V10L21,6 17,2V5H7C4.79,5 3,6.79 3,9V13H5V9C5,7.9 5.9,7 7,7 M17,17H7V14L3,18 7,22V19H17C19.21,19 21,17.21 21,15V11H19V15C19,16.1 18.1,17 17,17 M11,9V11H12V15H14V9H11Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconShuffle">M16,3H21V8H19V6.41L5.41,20 4,18.59 17.59,5H16V3 M4.27,5.68L9.35,10.76 10.76,9.35 5.68,4.27 4.27,5.68 M14.5,14.5L13.09,15.91 17.17,20H16V22H21V17H19V18.59L14.5,14.5Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconFocus">M7,3H3V7H5V5H7V3 M17,3V5H19V7H21V3H17 M7,21V19H5V17H3V21H7 M17,21H21V17H19V19H17V21 M12,8A4,4 0 1 0 12,16A4,4 0 0 0 12,8Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconMusic">M12,3V13.55A4,4 0 1 0 14,17V7H18V3H12Z</StreamGeometry>
+    </Styles.Resources>
+
+    <Style Selector="PathIcon.media-vector">
+        <Setter Property="Width" Value="18"/>
+        <Setter Property="Height" Value="18"/>
+        <Setter Property="Foreground" Value="{DynamicResource PanelTextBrush}"/>
+    </Style>
+
+    <Style Selector="PathIcon.media-vector.muted">
+        <Setter Property="Foreground" Value="{DynamicResource MediaPanelMutedBrush}"/>
+    </Style>
+
+    <Style Selector="PathIcon.media-vector.danger">
+        <Setter Property="Foreground" Value="{DynamicResource MediaPanelDangerBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.media-eyebrow">
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.media-page-title">
+        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource PanelTextBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.media-muted">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource MediaPanelMutedBrush}"/>
+    </Style>
+
+    <Style Selector="Border.media-card">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+
+    <Style Selector="Border.media-rail">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelRailBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/>
+        <Setter Property="BorderThickness" Value="0,0,1,0"/>
+    </Style>
+
+    <Style Selector="Button.media-iconbutton, ToggleButton.media-iconbutton">
+        <Setter Property="Width" Value="36"/>
+        <Setter Property="Height" Value="36"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      Padding="{TemplateBinding Padding}"
+                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <Style Selector="Button.media-iconbutton:pointerover, ToggleButton.media-iconbutton:pointerover">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="Button.media-iconbutton:pressed, ToggleButton.media-iconbutton:pressed">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSelectedBrush}"/>
+    </Style>
+
+    <Style Selector="Button.media-iconbutton.danger:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelDangerBrush}"/>
+    </Style>
+
+    <Style Selector="Button.media-primarybutton, Button.media-secondarybutton">
+        <Setter Property="Height" Value="34"/>
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Button.media-primarybutton">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelAccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelAccentBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+
+    <Style Selector="Button.media-primarybutton:pointerover">
+        <Setter Property="Opacity" Value="0.88"/>
+    </Style>
+
+    <Style Selector="Button.media-secondarybutton">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/>
+        <Setter Property="Foreground" Value="{DynamicResource PanelTextBrush}"/>
+    </Style>
+
+    <Style Selector="Button.media-secondarybutton:pointerover">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="ToggleButton.media-modebutton">
+        <Setter Property="Width" Value="38"/>
+        <Setter Property="Height" Value="34"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Opacity" Value="0.58"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <Style Selector="ToggleButton.media-modebutton:pointerover">
+        <Setter Property="Opacity" Value="0.9"/>
+        <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+    </Style>
+
+    <Style Selector="ToggleButton.media-modebutton:checked">
+        <Setter Property="Opacity" Value="1"/>
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSelectedBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TabItem.media-tab">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,2"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="ToolTip.Placement" Value="Right"/>
+        <Setter Property="ToolTip.HorizontalOffset" Value="8"/>
+    </Style>
+
+    <Style Selector="Border.media-tab-icon">
+        <Setter Property="Width" Value="40"/>
+        <Setter Property="Height" Value="40"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style Selector="TabItem.media-tab:pointerover Border.media-tab-icon">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+    </Style>
+
+    <Style Selector="TabItem.media-tab:selected Border.media-tab-icon">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSelectedBrush}"/>
+    </Style>
+
+    <Style Selector="Border.media-tab-marker">
+        <Setter Property="Opacity" Value="0"/>
+        <Setter Property="Background" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TabItem.media-tab:selected Border.media-tab-marker">
+        <Setter Property="Opacity" Value="1"/>
+    </Style>
+
+    <Style Selector="TextBox.media-input, ComboBox.media-input">
+        <Setter Property="Height" Value="34"/>
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSurfaceAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+    </Style>
+
+    <Style Selector="TextBox.media-input:focus, ComboBox.media-input:focus">
+        <Setter Property="BorderBrush" Value="{DynamicResource MediaPanelAccentBrush}"/>
+    </Style>
+
+    <Style Selector="DataGrid.media-grid">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSurfaceAltBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource PanelBorder}"/>
+    </Style>
+
+    <Style Selector="DataGrid.media-grid DataGridRow:pointerover">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+    </Style>
+
+    <Style Selector="DataGrid.media-grid DataGridRow:selected">
+        <Setter Property="Background" Value="{DynamicResource MediaPanelSelectedBrush}"/>
+    </Style>
+
+</Styles>

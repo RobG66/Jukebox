@@ -1,0 +1,6 @@
+<Solution>
+  <Project Id="Jukebox" ProjectName="Jukebox" Path="Jukebox.csproj" />
+  <Project Path="../Avalonia.Controls.DataGrid/src/Avalonia.Controls.DataGrid/Avalonia.Controls.DataGrid.csproj" />
+  <Project Path="../Avalonia.Controls.TreeDataGrid/src/Avalonia.Controls.TreeDataGrid/Avalonia.Controls.TreeDataGrid.csproj" />
+  <Project Id="Jukebox.Plugin.Abstractions" ProjectName="Jukebox.Plugin.Abstractions" Path="Jukebox.Plugin.Abstractions/Jukebox.Plugin.Abstractions.csproj" />
+</Solution>

@@ -1,0 +1,240 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:models="using:Jukebox.Models"
+             xmlns:controls="using:Jukebox.Controls"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="620"
+             x:Class="Jukebox.Views.SavedPlaylistsView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding AddFilesCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+O" Command="{Binding AddFolderCommand}"/>
+        <KeyBinding Gesture="Delete"
+                    Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}"/>
+        <KeyBinding Gesture="Ctrl+Shift+L"
+                    Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+D"
+                    Command="{Binding PlaylistViewModel.DeleteLibraryPlaylistCommand}"/>
+        <KeyBinding Gesture="Enter"
+                    Command="{Binding PlayTrackCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItem}"/>
+        <KeyBinding Gesture="Ctrl+Enter"
+                    Command="{Binding PlaySavedTrackNowCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItem}"/>
+        <KeyBinding Gesture="Ctrl+Shift+N"
+                    Command="{Binding QueueSelectedNextCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}"/>
+        <KeyBinding Gesture="Ctrl+Shift+End"
+                    Command="{Binding QueueSelectedLastCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}"/>
+    </UserControl.KeyBindings>
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <Grid Margin="10,2,4,4"
+          RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,12">
+            <StackPanel Spacing="2">
+                <TextBlock Classes="media-eyebrow" Text="YOUR LIBRARY"/>
+                <TextBlock Classes="media-page-title" Text="Saved Playlists"/>
+                <TextBlock Classes="media-muted"
+                           Text="Collections kept separate from the queue"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Classes="media-muted"
+                       Text="{Binding PlaylistViewModel.SavedLibraryPlaylists.Count, StringFormat='{}{0} saved'}"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+        </Grid>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto,Auto"
+              ColumnSpacing="6"
+              Margin="0,0,0,8">
+            <ComboBox Grid.Column="0"
+                      Classes="media-input"
+                      ItemsSource="{Binding PlaylistViewModel.SavedLibraryPlaylists}"
+                      SelectedItem="{Binding PlaylistViewModel.SelectedLibraryPlaylist}"
+                      PlaceholderText="Select a playlist"
+                      HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Select Saved Playlist"/>
+            <Button Grid.Column="1"
+                    Classes="media-iconbutton"
+                    ToolTip.Tip="New Playlist"
+                    Command="{Binding PlaylistViewModel.NewLibraryPlaylistCommand}">
+                <PathIcon Classes="media-vector"
+                          Data="{StaticResource MediaIconAdd}"/>
+            </Button>
+            <Button Grid.Column="2"
+                    Classes="media-iconbutton danger"
+                    ToolTip.Tip="Delete Selected Playlist (Ctrl+Shift+D)"
+                    Command="{Binding PlaylistViewModel.DeleteLibraryPlaylistCommand}">
+                <PathIcon Classes="media-vector danger"
+                          Data="{StaticResource MediaIconDelete}"/>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="2"
+              ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+              ColumnSpacing="6"
+              Margin="0,0,0,8">
+            <Button Grid.Column="0"
+                    Classes="media-secondarybutton"
+                    ToolTip.Tip="Add Files (Ctrl+O)"
+                    Command="{Binding AddFilesCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <PathIcon Classes="media-vector"
+                              Data="{StaticResource MediaIconAdd}"
+                              Width="16" Height="16"/>
+                    <TextBlock Text="Files" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="1"
+                    Classes="media-secondarybutton"
+                    ToolTip.Tip="Add Folder (Ctrl+Shift+O)"
+                    Command="{Binding AddFolderCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <PathIcon Classes="media-vector"
+                              Data="{StaticResource MediaIconAddFolder}"
+                              Width="16" Height="16"/>
+                    <TextBlock Text="Folder" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="3"
+                    Classes="media-iconbutton"
+                    ToolTip.Tip="Remove Selected (Delete)"
+                    Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
+                <PathIcon Classes="media-vector"
+                          Data="{StaticResource MediaIconRemove}"/>
+            </Button>
+            <Button Grid.Column="4"
+                    Classes="media-iconbutton danger"
+                    ToolTip.Tip="Clear Playlist (Ctrl+Shift+L)"
+                    Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}">
+                <PathIcon Classes="media-vector danger"
+                          Data="{StaticResource MediaIconDelete}"/>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,0,0,8">
+            <TextBox Classes="media-input"
+                     Text="{Binding PlaylistViewModel.SearchLibraryText}"
+                     PlaceholderText="Search this playlist..."
+                     Padding="34,0,10,0"/>
+            <PathIcon Classes="media-vector muted"
+                      Data="{StaticResource MediaIconSearch}"
+                      Width="16" Height="16"
+                      Margin="11,0,0,0"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Center"
+                      IsHitTestVisible="False"/>
+        </Grid>
+
+        <Border Grid.Row="4" Classes="media-card">
+        <DataGrid x:Name="LibraryDataGrid"
+                  Classes="media-grid"
+                  ItemsSource="{Binding PlaylistViewModel.FilteredLibraryPlaylist}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Extended"
+                  HeadersVisibility="Column"
+                  CanUserReorderColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal"
+                  RowHeight="38"
+                  DoubleTapped="LibraryDataGrid_DoubleTapped">
+            <DataGrid.ContextMenu>
+                <ContextMenu x:Name="LibraryContextMenu"
+                             Opened="LibraryContextMenu_Opened">
+                    <MenuItem x:Name="LibraryPlayNowMenuItem"
+                              Header="Play now"
+                              InputGesture="Ctrl+Enter"
+                              Click="LibraryPlayNow_Click"/>
+                    <MenuItem x:Name="LibraryPlayPlaylistMenuItem"
+                              Header="Play this playlist"
+                              InputGesture="Enter"
+                              Click="LibraryPlayPlaylist_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="LibraryQueueNextMenuItem"
+                              Header="Queue next"
+                              InputGesture="Ctrl+Shift+N"
+                              Click="LibraryQueueNext_Click"/>
+                    <MenuItem x:Name="LibraryQueueLastMenuItem"
+                              Header="Queue last"
+                              InputGesture="Ctrl+Shift+End"
+                              Click="LibraryQueueLast_Click"/>
+                    <MenuItem x:Name="AddToPlaylistMenuItem"
+                              Header="Add to playlist"/>
+                    <Separator/>
+                    <MenuItem x:Name="LibraryRemoveMenuItem"
+                              Header="Remove from saved playlist"
+                              InputGesture="Delete"
+                              Click="LibraryRemove_Click"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Title"
+                                        x:DataType="models:JukeboxTrack"
+                                        Width="7*"
+                                        SortMemberPath="DisplayName">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:JukeboxTrack">
+                            <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                                <PathIcon Grid.Column="0"
+                                          Classes="media-vector"
+                                          Data="{StaticResource MediaIconMusic}"
+                                          Width="12" Height="12"
+                                          Margin="4,0,5,0"
+                                          VerticalAlignment="Center"
+                                          IsVisible="{Binding IsPlaying}"/>
+                                <Border Grid.Column="1" ClipToBounds="True" Margin="0,0,5,0">
+                                    <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
+                                                               Text="{Binding DisplayName}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip.Tip="{Binding DisplayName}"
+                                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Length"
+                                    x:DataType="models:JukeboxTrack"
+                                    Binding="{Binding DisplayLength}"
+                                    Width="SizeToHeader"/>
+                <DataGridTextColumn Header="Bitrate"
+                                    x:DataType="models:JukeboxTrack"
+                                    Binding="{Binding Bitrate}"
+                                    Width="2*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        </Border>
+
+        <Border Grid.Row="5"
+                Classes="media-card"
+                Margin="0,8,0,0"
+                Padding="10,7">
+            <Grid ColumnDefinitions="Auto,*">
+                <PathIcon Classes="media-vector muted"
+                          Data="{StaticResource MediaIconFolder}"
+                          Width="15" Height="15"
+                          Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding PlaylistViewModel.LibraryPlaylistSummary}"
+                           Foreground="{DynamicResource MediaPanelMutedBrush}"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

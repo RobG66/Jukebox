@@ -1,0 +1,13 @@
+Avalonia.ProjectM Linux x64 build
+======================================
+ProjectM source: https://github.com/projectM-visualizer/projectm.git
+ProjectM ref:    v4.1.6
+ProjectM commit: 3158ee615eaafd93a8912b5f6dd84a9c47b2e00a
+Built:           2026-06-30T08:39:27Z
+Runner:          Linux X64
+Workflow:        https://github.com/RobG66/Avalonia.ProjectM/actions/runs/28431481677
+
+Contents:
+- Avalonia.ProjectM.dll        — managed wrapper (MIT)
+- Avalonia.ProjectM.deps.json  — dependency manifest
+- libprojectM.so.4                 — LGPL v2.1+ (see libprojectM-LICENSE.txt)

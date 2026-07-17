@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:localViews="using:Jukebox.Views"
+             xmlns:conv="using:Jukebox.Converters"
+             xmlns:jukebox="using:Jukebox"
+             mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="720"
+             x:Class="Jukebox.Views.JukeboxControl"
+             x:DataType="vm:JukeboxViewModel"
+             Background="Transparent">
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <!-- Visualizer picker overlay background: ~75% opaque dark -->
+        <SolidColorBrush x:Key="SidePanelOverlayBackground" Color="#B0000000"/>
+        <!-- Transport bar overlay background (auto-hide mode): ~75% opaque dark -->
+        <SolidColorBrush x:Key="TransportBarOverlayBackground" Color="#B0000000"/>
+
+        <!-- Converter: ContentView bottom margin based on auto-hide state -->
+        <conv:AutoHideMarginConverter x:Key="AutoHideMarginConverter"/>
+        <!-- Converter: Side panel bottom margin based on control bar height -->
+        <conv:DoubleToBottomThicknessConverter x:Key="DoubleToBottomThicknessConverter"/>
+    </UserControl.Resources>
+
+    <!--
+      Layout: single Panel. ContentView fills the entire area. Side panels
+      and the transport bar overlay on top (Z-order). ContentView's bottom
+      margin resizes only when auto-hide is toggled on/off (a one-time
+      layout change, not per-frame) — never during panel open/close, which
+      eliminates native visualizer resize stutter.
+    -->
+    <Panel>
+
+        <!-- Playing content (video + visualizer + EQ overlay) -->
+        <!-- Bottom margin: 0 when auto-hide (bar overlays), ControlBarHeight when not (bar has own row) -->
+        <localViews:ContentView x:Name="ContentViewChild">
+            <localViews:ContentView.Margin>
+                <MultiBinding Converter="{StaticResource AutoHideMarginConverter}">
+                    <Binding Path="IsAutoHideEnabled"/>
+                    <Binding Path="ControlBarHeight"/>
+                </MultiBinding>
+            </localViews:ContentView.Margin>
+        </localViews:ContentView>
+
+        <!-- Media surface: compact host panel or full plugin browser, both with a persistent rail. -->
+        <Border HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Margin="{Binding ControlBarHeight, Converter={StaticResource DoubleToBottomThicknessConverter}}"
+                Background="Transparent"
+                IsVisible="{Binding IsPlaylistVisible}"
+                ClipToBounds="True">
+            <Border.Opacity>
+                <Binding Path="IsPlaylistVisible"/>
+            </Border.Opacity>
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:PlaylistView/>
+        </Border>
+
+        <!-- Side panel overlay: Visualizer Picker (left-aligned, semi-transparent) -->
+        <!--
+          The picker panel requires BOTH IsPickerVisible (user toggled it
+          on) AND IsVisualizerAvailable (a visualizer plugin is available
+          at runtime). MultiBinding with BoolAllConverter would be cleaner
+          but we keep the existing single-binding to IsPickerVisible and
+          rely on the TogglePickerCommand's CanExecute guard plus the
+          transport-bar button's IsVisible binding to keep the picker
+          closed when the visualizer is unavailable. As an extra safety,
+          the VM's OnIsVisualizerAvailableChanged forces IsPickerVisible
+          to false when availability drops.
+        -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Stretch"
+                Width="{x:Static jukebox:Constants.SidePanelWidth}"
+                Margin="{Binding ControlBarHeight, Converter={StaticResource DoubleToBottomThicknessConverter}}"
+                Background="{StaticResource SidePanelOverlayBackground}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,0,1,0"
+                IsVisible="{Binding IsPickerVisible}"
+                ClipToBounds="True">
+            <Border.Opacity>
+                <Binding Path="IsPickerVisible"/>
+            </Border.Opacity>
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:VisualizerPickerView/>
+        </Border>
+
+        <!--
+          Transport bar (always overlays the bottom).
+          Background: opaque (PanelBackground) when auto-hide is OFF — looks
+          like a normal bar in its own row because ContentView has bottom
+          margin = ControlBarHeight. Semi-transparent when auto-hide is ON
+          so playback shows through underneath.
+          Height: bound to ControlBarHeight — goes to 0 when auto-hidden.
+        -->
+        <Border Classes.autohide="{Binding IsAutoHideEnabled}"
+                VerticalAlignment="Bottom"
+                HorizontalAlignment="Stretch"
+                Height="{Binding ControlBarHeight}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,1,0,0"
+                ClipToBounds="True">
+            <Border.Styles>
+                <Style Selector="Border">
+                    <Setter Property="Background" Value="{DynamicResource PanelBackground}" />
+                </Style>
+                <Style Selector="Border.autohide">
+                    <Setter Property="Background" Value="{StaticResource TransportBarOverlayBackground}" />
+                </Style>
+            </Border.Styles>
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Height" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Border.Transitions>
+            <localViews:TransportBarView/>
+        </Border>
+
+    </Panel>
+
+</UserControl>

@@ -1,0 +1,55 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Transparent/chrome-free button - shows only its content (e.g. an image) -->
+    <!-- Transitions live on the Button itself so pseudo-class changes animate reliably -->
+    <Style Selector="Button.transparentbutton, ToggleButton.transparentbutton">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Opacity" Value="0.90"/>
+        <Setter Property="ToolTip.Placement" Value="Bottom"/>
+        <Setter Property="ToolTip.VerticalOffset" Value="4"/>
+        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+        <Setter Property="RenderTransform" Value="scale(1)"/>
+        <Setter Property="Transitions">
+            <Transitions>
+                <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.1"/>
+            </Transitions>
+        </Setter>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <ContentPresenter Content="{TemplateBinding Content}"
+                                  Background="Transparent"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                  Padding="{TemplateBinding Padding}"/>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <Style Selector="Button.transparentbutton, ToggleButton.transparentbutton:not(:disabled):pointerover">
+        <Setter Property="Opacity" Value="1"/>
+        <Setter Property="RenderTransform" Value="scale(1.05)"/>
+    </Style>
+
+    <Style Selector="Button.transparentbutton:pressed, ToggleButton.transparentbutton:not(:disabled):pressed">
+        <Setter Property="Opacity" Value="1"/>
+        <Setter Property="RenderTransform" Value="scale(0.95)"/>
+    </Style>
+
+    <Style Selector="Button.transparentbutton:disabled, ToggleButton.transparentbutton:disabled"> 
+        <Setter Property="Opacity" Value="0.5"/>
+        <Setter Property="Cursor" Value="Arrow"/>
+    </Style>
+
+    <!-- ToggleButton visual states -->
+    <Style Selector="ToggleButton.transparentbutton:not(:checked)">
+        <Setter Property="Opacity" Value="0.4"/>
+    </Style>
+
+    <Style Selector="ToggleButton.transparentbutton:checked">
+        <Setter Property="Opacity" Value="1.0"/>
+    </Style>
+
+</Styles>

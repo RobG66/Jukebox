@@ -1,0 +1,166 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:models="using:Jukebox.Models"
+             xmlns:controls="using:Jukebox.Controls"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="620"
+             x:Class="Jukebox.Views.PlayQueueView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Delete"
+                    Command="{Binding PlaylistViewModel.RemovePlayQueueSelectedCommand}"
+                    CommandParameter="{Binding #PlayQueueDataGrid.SelectedItems}"/>
+        <KeyBinding Gesture="Ctrl+Shift+L"
+                    Command="{Binding PlaylistViewModel.ClearPlayQueueCommand}"/>
+        <KeyBinding Gesture="Ctrl+S"
+                    Command="{Binding PlaylistViewModel.SavePlayQueueAsPlaylistCommand}"/>
+        <KeyBinding Gesture="Enter"
+                    Command="{Binding PlayTrackCommand}"
+                    CommandParameter="{Binding #PlayQueueDataGrid.SelectedItem}"/>
+    </UserControl.KeyBindings>
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <Grid Margin="10,2,4,4" RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,12">
+            <StackPanel Spacing="2">
+                <TextBlock Classes="media-eyebrow" Text="UP NEXT"/>
+                <TextBlock Classes="media-page-title" Text="Play Queue"/>
+                <TextBlock Classes="media-muted"
+                           Text="Your current playback order"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Classes="media-muted"
+                       Text="{Binding PlaylistViewModel.PlayQueue.Count, StringFormat='{}{0} tracks'}"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+        </Grid>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto,Auto"
+              ColumnSpacing="6"
+              Margin="0,0,0,10">
+            <Button Grid.Column="0"
+                    Classes="media-primarybutton"
+                    HorizontalAlignment="Left"
+                    ToolTip.Tip="Save Queue As Playlist (Ctrl+S)"
+                    Command="{Binding PlaylistViewModel.SavePlayQueueAsPlaylistCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <PathIcon Data="{StaticResource MediaIconSave}"
+                              Width="16" Height="16"
+                              Foreground="White"/>
+                    <TextBlock Text="Save queue" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="1"
+                    Classes="media-iconbutton"
+                    ToolTip.Tip="Remove Selected (Delete)"
+                    Command="{Binding PlaylistViewModel.RemovePlayQueueSelectedCommand}"
+                    CommandParameter="{Binding #PlayQueueDataGrid.SelectedItems}">
+                <PathIcon Classes="media-vector"
+                          Data="{StaticResource MediaIconRemove}"/>
+            </Button>
+            <Button Grid.Column="2"
+                    Classes="media-iconbutton danger"
+                    ToolTip.Tip="Clear Play Queue (Ctrl+Shift+L)"
+                    Command="{Binding PlaylistViewModel.ClearPlayQueueCommand}">
+                <PathIcon Classes="media-vector danger"
+                          Data="{StaticResource MediaIconDelete}"/>
+            </Button>
+        </Grid>
+
+        <Border Grid.Row="2" Classes="media-card">
+        <DataGrid x:Name="PlayQueueDataGrid"
+                  Classes="media-grid"
+                  ItemsSource="{Binding PlaylistViewModel.PlayQueue}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Extended"
+                  HeadersVisibility="Column"
+                  CanUserReorderColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="False"
+                  GridLinesVisibility="Horizontal"
+                  RowHeight="38"
+                  DoubleTapped="PlayQueueDataGrid_DoubleTapped">
+            <DataGrid.ContextMenu>
+                <ContextMenu x:Name="PlayQueueContextMenu"
+                             Opened="PlayQueueContextMenu_Opened">
+                    <MenuItem x:Name="PlayQueuePlayNowMenuItem"
+                              Header="Play now"
+                              Click="PlayQueuePlayNow_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="PlayQueueRemoveMenuItem"
+                              Header="Remove from queue"
+                              InputGesture="Delete"
+                              Click="PlayQueueRemove_Click"/>
+                    <MenuItem Header="Save queue as playlist"
+                              InputGesture="Ctrl+S"
+                              Click="PlayQueueSave_Click"/>
+                    <MenuItem Header="Clear queue"
+                              InputGesture="Ctrl+Shift+L"
+                              Click="PlayQueueClear_Click"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Title"
+                                        x:DataType="models:JukeboxTrack"
+                                        Width="7*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:JukeboxTrack">
+                            <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                                <PathIcon Grid.Column="0"
+                                          Classes="media-vector"
+                                          Data="{StaticResource MediaIconMusic}"
+                                          Width="12" Height="12"
+                                          Margin="4,0,5,0"
+                                          VerticalAlignment="Center"
+                                          IsVisible="{Binding IsPlaying}"/>
+                                <Border Grid.Column="1" ClipToBounds="True" Margin="0,0,5,0">
+                                    <controls:MarqueeTextBlock IsPlaying="{Binding IsPlaying}"
+                                                               Text="{Binding DisplayName}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip.Tip="{Binding DisplayName}"
+                                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Length"
+                                    x:DataType="models:JukeboxTrack"
+                                    Binding="{Binding DisplayLength}"
+                                    Width="SizeToHeader"/>
+                <DataGridTextColumn Header="Bitrate"
+                                    x:DataType="models:JukeboxTrack"
+                                    Binding="{Binding Bitrate}"
+                                    Width="2*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        </Border>
+
+        <Border Grid.Row="3"
+                Classes="media-card"
+                Margin="0,8,0,0"
+                Padding="10,7">
+            <Grid ColumnDefinitions="Auto,*">
+                <PathIcon Classes="media-vector muted"
+                          Data="{StaticResource MediaIconMusic}"
+                          Width="15" Height="15"
+                          Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding PlaylistViewModel.PlayQueueSummary}"
+                           Foreground="{DynamicResource MediaPanelMutedBrush}"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

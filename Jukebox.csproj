@@ -1,0 +1,113 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Assets\Icons\icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Remove="plugins\**" />
+    <AvaloniaResource Remove="publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Host native runtime libraries (BASS, libmpv, and libvgm) live under `lib/` — flat,
+      no per-platform subfolders. Windows .dll and Linux .so files coexist
+      by extension. Each host playback loader picks the right filename per OS.
+
+      The `lib/` folder is NOT shipped in this repo — it is a drop-in
+      location populated by a separate setup script. The Condition guard
+      below ensures the build succeeds even when lib/ is empty.
+    -->
+    <None Include="lib\**\*" Condition="Exists('lib\')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <!-- Native playback libraries are supplied separately and must not be
+           copied into self-contained publish packages. -->
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+    <None Remove="plugins\**" />
+    <None Remove="publish\**" />
+    <None Remove="lib\bass.dll" />
+    <None Remove="lib\bass_aac.dll" />
+    <None Remove="lib\bass_fx.dll" />
+    <None Remove="lib\bassopus.dll" />
+    <None Remove="lib\libbass.so" />
+    <None Remove="lib\libbass_fx.so" />
+    <None Remove="lib\libmpv-2.dll" />
+    <None Remove="lib\vgm-emu_Win64.dll" />
+    <None Remove="lib\vgm-emu_Win64.exp" />
+    <None Remove="lib\vgm-emu_Win64.lib" />
+    <None Remove="lib\vgm-player_Win64.dll" />
+    <None Remove="lib\vgm-player_Win64.exp" />
+    <None Remove="lib\vgm-player_Win64.lib" />
+    <None Remove="lib\vgm-utils_Win64.dll" />
+    <None Remove="lib\vgm-utils_Win64.exp" />
+    <None Remove="lib\vgm-utils_Win64.lib" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="plugins\**\*" Condition="Exists('plugins\')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- MPV replaces LibVLCSharp for video playback. We use our own custom
+         P/Invoke wrapper (Mpv/MpvNative.cs + Mpv/MpvContext.cs) — no third-
+         party MPV .NET package needed. The native libmpv binary is loaded
+         from the lib/ folder at runtime; see MpvNative.cs. -->
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ── Plugin abstractions ───────────────────────────────────────
+         The main app references the abstractions assembly so it can use
+         IJukeboxMediaBrowser and IJukeboxMediaBrowserContext in
+         PluginLoader.cs and JukeboxPluginContextFactory.cs. The actual
+         plugin assemblies are NOT referenced here — they're loaded at
+         runtime from the plugins/ folder by PluginLoader. This is what
+         makes plugins truly drop-in: add/remove a DLL, no recompile. -->
+    <!-- The nested project is also under the host directory, so exclude
+         its source files from the host's default SDK compile glob. -->
+    <Compile Remove="Jukebox.Plugin.Abstractions\**" />
+    <ProjectReference Include="..\Avalonia.Controls.DataGrid\src\Avalonia.Controls.DataGrid\Avalonia.Controls.DataGrid.csproj" />
+    <ProjectReference Include="..\Avalonia.Controls.TreeDataGrid\src\Avalonia.Controls.TreeDataGrid\Avalonia.Controls.TreeDataGrid.csproj" />
+    <ProjectReference Include="Jukebox.Plugin.Abstractions\Jukebox.Plugin.Abstractions.csproj" />
+    <Compile Remove="plugins\**" />
+    <Compile Remove="publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Remove="plugins\**" />
+    <AvaloniaXaml Remove="publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="plugins\**" />
+    <EmbeddedResource Remove="publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Remove="plugins\**" />
+    <AdditionalFiles Remove="publish\**" />
+  </ItemGroup>
+</Project>

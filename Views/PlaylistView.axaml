@@ -1,0 +1,184 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:views="using:Jukebox.Views"
+             mc:Ignorable="d"
+             d:DesignWidth="1100"
+             d:DesignHeight="680"
+             x:Class="Jukebox.Views.PlaylistView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <Style Selector="ToggleButton.media-nav">
+            <Setter Property="Width" Value="63"/>
+            <Setter Property="Height" Value="52"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip.Placement" Value="Right"/>
+            <Setter Property="ToolTip.HorizontalOffset" Value="8"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid>
+                        <Border x:Name="SelectionMarker"
+                                Width="3" Height="28"
+                                CornerRadius="0,2,2,0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource MediaPanelAccentBrush}"
+                                Opacity="0"/>
+                        <Border x:Name="IconSurface"
+                                Width="44" Height="44"
+                                Margin="5,0,0,0"
+                                CornerRadius="7"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="Transparent">
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleButton.media-nav:pointerover /template/ Border#IconSurface">
+            <Setter Property="Background" Value="{DynamicResource MediaPanelHoverBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.media-nav:checked /template/ Border#IconSurface">
+            <Setter Property="Background" Value="{DynamicResource MediaPanelSelectedBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.media-nav:checked /template/ Border#SelectionMarker">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="64,*">
+        <!-- Persistent host-owned navigation rail. -->
+        <Border Grid.Column="0" Classes="media-rail">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Row="0" Margin="0,8,0,0">
+                    <ToggleButton x:Name="QueueNavButton"
+                                  Classes="media-nav"
+                                  ToolTip.Tip="Play Queue"
+                                  Click="QueueNavButton_Click">
+                        <Image Source="avares://Jukebox/Assets/Icons/music.png"
+                               Width="27" Height="27"
+                               Stretch="Uniform"/>
+                    </ToggleButton>
+
+                    <ToggleButton x:Name="PlaylistsNavButton"
+                                  Classes="media-nav"
+                                  ToolTip.Tip="Saved Playlists"
+                                  Click="PlaylistsNavButton_Click">
+                        <Image Source="avares://Jukebox/Assets/Icons/folder.png"
+                               Width="27" Height="27"
+                               Stretch="Uniform"/>
+                    </ToggleButton>
+
+                    <Border Height="1"
+                            Margin="12,8"
+                            Background="{DynamicResource PanelBorder}"/>
+
+                    <StackPanel x:Name="PluginNavItems"/>
+                </StackPanel>
+
+                <Button Grid.Row="2"
+                        Classes="media-iconbutton"
+                        Width="42" Height="42"
+                        Margin="0,0,0,10"
+                        HorizontalAlignment="Center"
+                        Command="{Binding TogglePlaylistCommand}"
+                        ToolTip.Tip="Close Media">
+                    <PathIcon Classes="media-vector"
+                              Data="{StaticResource MediaIconClose}"
+                              Width="18" Height="18"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Queue and saved playlists remain a compact Jukebox-owned panel. -->
+        <Border x:Name="HostPanel"
+                Grid.Column="1"
+                Width="366"
+                HorizontalAlignment="Left"
+                Background="{DynamicResource MediaDrawerOverlayBackground}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,0,1,0"
+                ClipToBounds="True">
+            <Grid RowDefinitions="*,Auto">
+                <Grid Grid.Row="0" Margin="8,10,8,3">
+                    <views:PlayQueueView x:Name="QueueView"/>
+                    <views:SavedPlaylistsView x:Name="PlaylistsView" IsVisible="False"/>
+                </Grid>
+
+                <Border Grid.Row="1"
+                        Classes="media-card"
+                        Margin="10,4,10,9"
+                        Padding="7,4">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Classes="media-eyebrow"
+                                   Text="PLAYBACK"
+                                   Margin="4,0,10,0"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="3"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <ToggleButton Classes="media-modebutton"
+                                          ToolTip.Tip="Repeat Current Track"
+                                          IsChecked="{Binding IsRepeatEnabled}">
+                                <PathIcon Classes="media-vector"
+                                          Data="{StaticResource MediaIconRepeatOne}"/>
+                            </ToggleButton>
+                            <ToggleButton Classes="media-modebutton"
+                                          ToolTip.Tip="Loop Play Queue"
+                                          IsChecked="{Binding IsLoopEnabled}">
+                                <PathIcon Classes="media-vector"
+                                          Data="{StaticResource MediaIconRepeat}"/>
+                            </ToggleButton>
+                            <ToggleButton Classes="media-modebutton"
+                                          ToolTip.Tip="Random / Shuffle"
+                                          IsChecked="{Binding IsRandomPlayback}">
+                                <PathIcon Classes="media-vector"
+                                          Data="{StaticResource MediaIconShuffle}"/>
+                            </ToggleButton>
+                        </StackPanel>
+                        <Button Grid.Column="2"
+                                Classes="media-iconbutton"
+                                Width="34" Height="34"
+                                Command="{Binding CycleShowPlayingModeCommand}"
+                                ToolTip.Tip="{Binding ShowPlayingModeTooltip}">
+                            <PathIcon Classes="media-vector"
+                                      Data="{StaticResource MediaIconFocus}"/>
+                        </Button>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- A browser owns the remaining content surface, never a separate window. -->
+        <Border x:Name="BrowserPanel"
+                Grid.Column="1"
+                Background="{DynamicResource WindowBackground}"
+                BorderBrush="{DynamicResource PanelBorder}"
+                BorderThickness="0,0,0,0"
+                IsVisible="False"
+                ClipToBounds="True">
+            <ContentControl x:Name="BrowserContentPresenter"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch"/>
+        </Border>
+    </Grid>
+</UserControl>
