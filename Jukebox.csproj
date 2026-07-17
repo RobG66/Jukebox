@@ -24,34 +24,19 @@
       no per-platform subfolders. Windows .dll and Linux .so files coexist
       by extension. Each host playback loader picks the right filename per OS.
 
-      The `lib/` folder is NOT shipped in this repo — it is a drop-in
-      location populated by a separate setup script. The Condition guard
-      below ensures the build succeeds even when lib/ is empty.
+      The `lib/` folder is a drop-in location populated separately. Its files
+      are published beside the application but remain outside the single-file
+      executable so native loaders can access them directly. The Condition
+      guard below ensures the build succeeds even when lib/ is empty.
     -->
+    <None Remove="lib\**\*" />
     <None Include="lib\**\*" Condition="Exists('lib\')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <!-- Native playback libraries are supplied separately and must not be
-           copied into self-contained publish packages. -->
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
     <None Remove="plugins\**" />
     <None Remove="publish\**" />
-    <None Remove="lib\bass.dll" />
-    <None Remove="lib\bass_aac.dll" />
-    <None Remove="lib\bass_fx.dll" />
-    <None Remove="lib\bassopus.dll" />
-    <None Remove="lib\libbass.so" />
-    <None Remove="lib\libbass_fx.so" />
-    <None Remove="lib\libmpv-2.dll" />
-    <None Remove="lib\vgm-emu_Win64.dll" />
-    <None Remove="lib\vgm-emu_Win64.exp" />
-    <None Remove="lib\vgm-emu_Win64.lib" />
-    <None Remove="lib\vgm-player_Win64.dll" />
-    <None Remove="lib\vgm-player_Win64.exp" />
-    <None Remove="lib\vgm-player_Win64.lib" />
-    <None Remove="lib\vgm-utils_Win64.dll" />
-    <None Remove="lib\vgm-utils_Win64.exp" />
-    <None Remove="lib\vgm-utils_Win64.lib" />
     <None Remove="Jukebox_refactor_plan_current_status.md" />
     <None Remove="PROJECT_CONTEXT.md" />
   </ItemGroup>
@@ -59,6 +44,9 @@
   <ItemGroup>
     <None Include="plugins\**\*" Condition="Exists('plugins\')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="plugins\Avalonia.ProjectM\ProjectM\**\*">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 
