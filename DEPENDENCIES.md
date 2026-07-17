@@ -37,23 +37,10 @@ Host playback files live under a flat `lib/` folder next to `Jukebox.exe`. Windo
 │   └── libvgm-utils.so                (Linux   — libvgm utilities)
 └── plugins/
     ├── <PluginName>/                     (optional managed plugin)
-    └── Avalonia.ProjectM/
-        ├── Avalonia.ProjectM.dll
-        ├── Avalonia.ProjectM.deps.json
-        ├── libprojectM.dll            (Windows)
-        ├── glew32.dll                 (Windows)
-        ├── libprojectM.so.4           (Linux)
-        ├── libprojectM.dylib          (macOS, when supported)
-        ├── libprojectM-LICENSE.txt
-        └── ProjectM/
-            ├── presets/
-            ├── textures/
-            └── current_preset/
+
 ```
 
 The `lib/` folder is created empty by the build. At startup, Jukebox scans it and shows a dialog if any required libraries are missing — listing exactly what's missing and where to find download instructions.
-
-Media-browser plugins are managed assemblies and their managed dependencies. Each browser stays in its own `plugins/<PluginName>/` folder. `Avalonia.ProjectM` is a separate optional visualizer package with native libraries and assets; it is not loaded as a media browser.
 
 ---
 

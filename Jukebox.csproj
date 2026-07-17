@@ -52,6 +52,10 @@
     <None Remove="lib\vgm-utils_Win64.dll" />
     <None Remove="lib\vgm-utils_Win64.exp" />
     <None Remove="lib\vgm-utils_Win64.lib" />
+    <None Remove="build.ps1" />
+    <None Remove="BUILD-INFO.txt" />
+    <None Remove="Jukebox_refactor_plan_current_status.md" />
+    <None Remove="PROJECT_CONTEXT.md" />
   </ItemGroup>
 
   <ItemGroup>
