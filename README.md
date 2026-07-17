@@ -1,89 +1,117 @@
 # Jukebox
 
-A cross-platform Avalonia desktop media player with one host-owned play queue and drop-in media-browser plugins.
+<img width="1605" height="1275" alt="image" src="https://github.com/user-attachments/assets/86f533c9-7dc4-496a-8ddd-c9758621e319" />
 
-## Projects
+A simple, capable cross-platform media and radio player. Built with Avalonia UI.
 
-```text
-                              Main desktop application
-Jukebox.Plugin.Abstractions/          Host/plugin contract
-Jukebox.slnx                          Solution
+Jukebox is designed to be straightforward — play your music, watch videos, listen to online radio, and enjoy visualizations, all in one clean interface. It also works as an embeddable component for developers who want to add media playback to their own applications.
+
+**Note: Jukebox is a work in progress.  Documentation may be incomplete, incorrect or missing.**
+
+## Features
+
+- **Audio Playback** — Plays standard formats (MP3, WAV, OGG), lossless music (FLAC - Free Lossless Audio Codec, providing high-fidelity, CD-quality audio), compressed formats (AAC/M4A, WMA, and OPUS—a modern, open-source audio codec designed for highly efficient streaming and playback), and retro chiptunes (VGM, VGZ, VGX) via emulation.
+- **Video Playback** — Plays MP4, MKV, AVI, and WEBM formats.
+- **ZIP Archives** — Play audio files directly from `.zip` archives without extraction.
+- **Online Radio** — Search and stream thousands of global radio stations.
+- **Equalizer** — 10-band equalizer with saved presets.
+- **Visualizations** — Optional music visualizations with thousands of presets.
+- **Drag & Drop** — Drop files or folders onto the window to add them to your playlist.
+
+## Installation
+
+### Windows
+
+Download the latest Windows release from the [Releases](../../releases) page and extract it to a folder of your choice. Run `Jukebox.exe`.
+
+### Linux
+
+A Linux package is coming soon. For now, Linux users can build from source — see [DEPENDENCIES.md](DEPENDENCIES.md).
+
+### Visualizations (Optional)
+
+Visualizations are not included by default. If you want them:
+
+1. Download the `ProjectM.zip` file from the [Releases](../../releases) page
+2. Extract its contents into the same folder as Jukebox
+3. The visualizer button will appear in the transport bar automatically
+
+You can add or remove visualizations at any time — just restart Jukebox after copying or removing the files.
+
+## Command-Line Switches
+
+All switches are case-insensitive.
+
+| Switch | Value | Description |
+|--------|-------|-------------|
+| `-light` | — | Use light theme on startup |
+| `-dark` | — | Use dark theme on startup |
+| `-playlistlogo` | `[file path]` | Show an image logo above the playlist |
+| `-random` | — | Shuffle playback |
+| `-hidecontrols` | — | Auto-hide the bottom control bar when inactive |
+| `-nocontrols` | — | Hide all control panels and keyboard shortcuts |
+| `-novisualizer` | — | Turn off visualizations even if available |
+| `-showplaying` | `[seconds]?` | Show a "Now Playing" banner when tracks change |
+| `-randompreset` | `[seconds]?` | Auto-cycle visualizer presets (10-60 second interval) |
+| `-volume` | `[0-100]` | Set startup volume |
+| `-stayontop` | — | Keep window on top of other windows |
+| `-fullscreen` | — | Start in fullscreen |
+| `-minimized` | — | Start minimized |
+| `-file` | `[path]` | Open a file or folder on startup |
+| `-loop` | — | Loop the playlist continuously |
+| `-title` | `[text]` | Set a custom window title |
+| `-?` | — | Show help |
+
+### Examples
+
+```bash
+# Dark theme, volume 50, open a music folder, loop
+Jukebox.exe -dark -volume 50 -file "D:\Music\Playlist" -loop
+
+# Light theme, shuffle, always on top, custom title
+Jukebox.exe -light -random -stayontop -title "Retro Jukebox"
 ```
 
-Concrete plugins are developed outside this repository. Jukebox has no
-compile-time references to them and runs normally when none are installed.
+## Playlists
 
-Media-browser plugins discover remote media and return normalized `PlayRequest` items. The host owns the Play Queue, saved playlists, playback order, persistence, and playback engines.
+Jukebox has two playlist tabs: **Library** (your files) and **Radio** (online streams).
 
-## Requirements
+- **Drag and drop** files or folders onto the window to add them to your Library playlist. If nothing is playing, the first item starts automatically. If something is already playing, new items are added without interrupting.
+- **Save a playlist** by clicking the save icon. Check "Save as default startup playlist" if you want it to load automatically when Jukebox starts.
+- If no default playlist is set, Jukebox opens with an empty playlist — just drag in some files and press play.
+- Use the playlist dropdown to switch between saved playlists, or create new ones with "Save As".
 
-- .NET 10 SDK
-- Avalonia DataGrid and TreeDataGrid forks checked out beside this repository:
-  - `../Avalonia.Controls.DataGrid/`
-  - `../Avalonia.Controls.TreeDataGrid/`
-- Native playback libraries under `lib/`; see [DEPENDENCIES.md](DEPENDENCIES.md)
+## Keyboard Shortcuts
 
-## Build and run
+| Key | Action |
+|-----|--------|
+| `Escape` | Close open panels, or exit fullscreen |
+| `Space` | Play / Pause |
 
-```powershell
-dotnet build Jukebox.slnx
-dotnet run --project Jukebox
-```
+## Troubleshooting
 
-For distributable packages, run `.\build.ps1`. The `publish/win-x64` and
-`publish/linux-x64` packages include the .NET runtime and do not include the
-native `lib/` folder; provide that folder separately when installing playback
-libraries. `publish/win-x64-lite` remains the optional framework-dependent
-Windows package.
+**Video won't play** — Video support requires native libraries that are included in the release package. If you're building from source, make sure you've set up the `lib/` folder as described in [DEPENDENCIES.md](DEPENDENCIES.md).
 
-Installed plugin binaries under `plugins/<PluginName>/` are copied to
-the application output. They are installation artifacts, not projects in the
-Jukebox solution.
+**Audio files (FLAC, AAC, OPUS) or online radio streams won't play** — While MP3, OGG, and WAV are handled natively by BASS, advanced formats and HLS stream playback require the respective optional BASS plugins (`bassflac`, `bass_aac`, `bassopus`, `basshls`) to be dropped into the `lib/` folder. If building from source, see [DEPENDENCIES.md](DEPENDENCIES.md) / [lib/README.md](lib/README.md) for details.
 
-## Application layout
+**Visualizer button is missing** — The visualizer is optional. Download `ProjectM.zip` from the [Releases](../../releases) page and extract it into your Jukebox folder, then restart.
 
-- A persistent 64-pixel navigation rail contains Queue, Saved Playlists, and installed browser plugins.
-- Queue and Saved Playlists open the compact host-owned media panel.
-- A selected plugin uses the full remaining content surface inside the Jukebox window.
-- The transport bar remains available while browsing.
-- Escape navigates browser → last host panel → closed media surface.
+**Radio won't connect** — Some stations may be offline or have connection issues. Try a different station, or check your internet connection.
 
-## Queue and playlist ownership
+## For Developers
 
-- `PlayQueue` is the only runtime playback collection.
-- Saved playlists are independent persisted copies.
-- Playing a saved playlist copies it into the queue.
-- Editing or deleting a saved playlist does not mutate active playback.
-- Plugins may replace or append to the host queue through `IJukeboxMediaBrowserContext`; they do not own playlists.
+Jukebox can be embedded in other Avalonia applications as a user control. If you're a developer looking to integrate Jukebox's media playback capabilities into your own app, see:
 
-## Plugin framework
+- [EMBEDDING.md](EMBEDDING.md) — How to embed Jukebox in your application
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Internal architecture and technical details
+- [DEPENDENCIES.md](DEPENDENCIES.md) — Native library setup for building from source
 
-`PluginLoader` scans `plugins/*/*.dll`, creates each `IJukeboxMediaBrowser`, supplies an `IJukeboxMediaBrowserContext`, and hosts the plugin's `UserControl` in the main browser surface.
+## Credits
 
-The context exposes host-owned operations:
-
-- `PlayNow`
-- `ReplaceQueueAndPlay`
-- `AddToQueue`
-- `AddRangeToQueue`
-- stable-source URL update and resolution support
-
-Plugins may provide a branded bitmap through `IconUri` or themeable vector path data through `IconPathData`. The host controls rail sizing, selection, and fallback presentation.
-
-To add a plugin:
-
-1. Create a .NET class library referencing `Jukebox.Plugin.Abstractions`.
-2. Implement `IJukeboxMediaBrowser`.
-3. Return an embedded `UserControl` from `CreateView()`.
-4. Put the plugin and its dependencies in one `plugins/<PluginName>/` folder.
-5. Restart Jukebox.
-
-No main-application reference to the concrete plugin is required.
-
-## Documentation
-
-- [README.md](README.md) — user-facing features and operation
-- [ARCHITECTURE.md](ARCHITECTURE.md) — internal design and native lifecycles
-- [EMBEDDING.md](EMBEDDING.md) — embedding in another Avalonia application
-- [DEPENDENCIES.md](DEPENDENCIES.md) — native and local build dependencies
-- [Jukebox_refactor_plan_current_status.md](Jukebox_refactor_plan_current_status.md) — current implementation status and remaining verification
+- [Avalonia UI](https://github.com/AvaloniaUI/Avalonia) — Cross-platform UI framework
+- [libmpv](https://github.com/mpv-player/mpv) — Video playback
+- [BASS Audio Library](https://www.un4seen.com/) — Audio playback
+- [libvgm](https://github.com/RobG66/libvgm) — Video game music emulation
+- [projectM](https://github.com/projectM-visualizer/projectm) — Music visualizations
+- [Radio Browser API](https://www.radio-browser.info/) — Radio station directory
+- [TagLib#](https://github.com/mono/taglib-sharp) — Metadata reading
