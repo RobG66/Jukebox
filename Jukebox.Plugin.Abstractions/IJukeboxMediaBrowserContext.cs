@@ -24,7 +24,9 @@ public interface IJukeboxMediaBrowserContext
     string PluginDataDirectory { get; }
 
     /// <summary>
-    /// Replace the host play queue with one track and start playback.
+    /// Insert one track after the current queue item and start playback without
+    /// discarding the existing host play queue. If no queue item is current,
+    /// the track is inserted at the beginning.
     /// </summary>
     void PlayNow(PlayRequest request);
 

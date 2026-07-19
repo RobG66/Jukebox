@@ -43,6 +43,7 @@ public static class PluginLoader
         var pluginsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plugins");
         var browsers = new List<IJukeboxMediaBrowser>();
         var visualizers = new List<IJukeboxVisualizerPlugin>();
+        var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         if (!Directory.Exists(pluginsDir))
         {
@@ -50,10 +51,17 @@ public static class PluginLoader
             return new LoadedPlugins(browsers, visualizers);
         }
 
+        var pluginFolders = Directory.GetDirectories(pluginsDir);
+        Debug.WriteLine($"[PluginLoader] Scanning {pluginFolders.Length} plugin folder(s)...");
+
         // Folder and assembly names are deliberately irrelevant. The only
         // discovery rule is implementation of the shared plugin contract.
-        foreach (var pluginFolder in Directory.GetDirectories(pluginsDir))
+        foreach (var pluginFolder in pluginFolders)
         {
+            var folderStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var folderName = Path.GetFileName(pluginFolder);
+            Debug.WriteLine($"[PluginLoader] Scanning folder: {folderName}");
+
             var managedAssemblyPaths = Directory.GetFiles(pluginFolder, "*.dll")
                 .Where(IsManagedAssembly)
                 .ToArray();
@@ -63,18 +71,14 @@ public static class PluginLoader
             // plugin assemblies themselves.
             if (managedAssemblyPaths.Length == 0)
             {
+                Debug.WriteLine($"[PluginLoader] Skipped {folderName}: no managed assemblies.");
                 continue;
             }
 
-            var loadContext = new PluginLoadContext(pluginFolder);
+            var loadContext = new PluginLoadContext(pluginFolder, managedAssemblyPaths);
 
             foreach (var assemblyPath in managedAssemblyPaths)
             {
-                if (!IsManagedAssembly(assemblyPath))
-                {
-                    continue;
-                }
-
                 if (loadContext.IsSharedWithHost(assemblyPath))
                 {
                     continue;
@@ -93,7 +97,14 @@ public static class PluginLoader
                 browsers.AddRange(loaded.MediaBrowsers);
                 visualizers.AddRange(loaded.Visualizers);
             }
+
+            Debug.WriteLine(
+                $"[PluginLoader] Finished {folderName} in {folderStopwatch.ElapsedMilliseconds}ms.");
         }
+
+        Debug.WriteLine(
+            $"[PluginLoader] Scan completed in {totalStopwatch.ElapsedMilliseconds}ms: " +
+            $"{browsers.Count} browser(s), {visualizers.Count} visualizer(s).");
 
         return new LoadedPlugins(
             browsers
@@ -117,10 +128,15 @@ public static class PluginLoader
 
         try
         {
+            var assemblyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            Debug.WriteLine($"[PluginLoader] Inspecting {Path.GetFileName(dllPath)}...");
             var assembly = loadContext.LoadFromAssemblyPath(dllPath);
             var pluginTypes = FindPluginTypes(assembly).ToList();
             if (pluginTypes.Count == 0)
             {
+                Debug.WriteLine(
+                    $"[PluginLoader] No plugin types in {Path.GetFileName(dllPath)} " +
+                    $"({assemblyStopwatch.ElapsedMilliseconds}ms).");
                 return new LoadedPlugins(browsers, visualizers);
             }
 
@@ -131,18 +147,24 @@ public static class PluginLoader
                     var plugin = Activator.CreateInstance(pluginType);
                     if (plugin is IJukeboxMediaBrowser browser)
                     {
+                        Debug.WriteLine($"[PluginLoader] Initializing browser: {browser.Id}");
                         var context = contextFactory.CreateContext(browser.Id);
                         await browser.InitializeAsync(context);
                         browsers.Add(browser);
-                        Debug.WriteLine($"[PluginLoader] Loaded browser: {browser.DisplayName} ({browser.Id})");
+                        Debug.WriteLine(
+                            $"[PluginLoader] Loaded browser: {browser.DisplayName} ({browser.Id}) " +
+                            $"in {assemblyStopwatch.ElapsedMilliseconds}ms.");
                     }
                     else if (plugin is IJukeboxVisualizerPlugin visualizer)
                     {
+                        Debug.WriteLine($"[PluginLoader] Initializing visualizer: {visualizer.Id}");
                         await visualizer.InitializeAsync();
                         if (visualizer.IsAvailable)
                         {
                             visualizers.Add(visualizer);
-                            Debug.WriteLine($"[PluginLoader] Loaded visualizer: {visualizer.DisplayName} ({visualizer.Id})");
+                            Debug.WriteLine(
+                                $"[PluginLoader] Loaded visualizer: {visualizer.DisplayName} ({visualizer.Id}) " +
+                                $"in {assemblyStopwatch.ElapsedMilliseconds}ms.");
                         }
                     }
                 }
@@ -206,21 +228,24 @@ public static class PluginLoader
 
     private sealed class PluginLoadContext : AssemblyLoadContext
     {
-        private readonly AssemblyDependencyResolver _resolver;
+        private readonly IReadOnlyList<AssemblyDependencyResolver> _resolvers;
 
-        public PluginLoadContext(string pluginFolder)
+        public PluginLoadContext(string pluginFolder, IReadOnlyList<string> managedAssemblyPaths)
             : base($"Jukebox.Plugin:{Path.GetFileName(pluginFolder)}")
         {
-            var resolverAssemblyPath = Directory.GetFiles(pluginFolder, "*.dll")
-                .FirstOrDefault(IsManagedAssembly);
-
-            if (resolverAssemblyPath == null)
+            if (managedAssemblyPaths.Count == 0)
             {
                 throw new InvalidOperationException(
                     $"No managed plugin assembly found in '{pluginFolder}'.");
             }
 
-            _resolver = new AssemblyDependencyResolver(resolverAssemblyPath);
+            // A folder can contain more than one managed component and its
+            // dependencies. Use every component as a resolver root instead of
+            // relying on unspecified Directory.GetFiles ordering to pick the
+            // plugin entry assembly.
+            _resolvers = managedAssemblyPaths
+                .Select(path => new AssemblyDependencyResolver(path))
+                .ToArray();
         }
 
         public bool IsSharedWithHost(string assemblyPath)
@@ -248,33 +273,24 @@ public static class PluginLoader
                 {
                     return hostAssembly;
                 }
+            }
 
-                // If the host has the assembly in its publish directory but
-                // has not loaded it yet, let the default context resolve it.
-                // If it is not a host dependency, the plugin resolver below
-                // will find the private copy in this plugin's folder.
-                try
+            // Resolve plugin-private dependencies locally before falling back
+            // to the default context. Calling Default.LoadFromAssemblyName
+            // first makes every private dependency pay for a failed host probe
+            // and was the source of intermittent multi-second startup stalls.
+            foreach (var resolver in _resolvers)
+            {
+                var assemblyPath = resolver.ResolveAssemblyToPath(assemblyName);
+                if (assemblyPath != null)
                 {
-                    hostAssembly = AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
-                    if (hostAssembly != null)
-                    {
-                        return hostAssembly;
-                    }
-                }
-                catch (FileNotFoundException)
-                {
-                    // Resolve private plugin dependencies below.
-                }
-                catch (FileLoadException)
-                {
-                    // Resolve private plugin dependencies below.
+                    return LoadFromAssemblyPath(assemblyPath);
                 }
             }
 
-            var assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
-            return assemblyPath == null
-                ? null
-                : LoadFromAssemblyPath(assemblyPath);
+            // Returning null delegates normal host dependency resolution to
+            // the runtime's default load context without a redundant probe.
+            return null;
         }
 
         private static Assembly? FindHostAssembly(string simpleName)
@@ -288,8 +304,16 @@ public static class PluginLoader
 
         protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
         {
-            var libraryPath = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-            return libraryPath == null ? IntPtr.Zero : LoadUnmanagedDllFromPath(libraryPath);
+            foreach (var resolver in _resolvers)
+            {
+                var libraryPath = resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+                if (libraryPath != null)
+                {
+                    return LoadUnmanagedDllFromPath(libraryPath);
+                }
+            }
+
+            return IntPtr.Zero;
         }
     }
 }

@@ -9,10 +9,16 @@ public partial class JukeboxTrack : ObservableObject
     [ObservableProperty] private string _displayName = "Unknown Track";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayLength))]
+    [NotifyPropertyChangedFor(nameof(DisplayMetadata))]
     private TimeSpan _length = TimeSpan.Zero;
 
     public string DisplayLength => Length.TotalSeconds == 0 ? "—" : $"{(int)Length.TotalMinutes}:{Length.Seconds:D2}";
-    [ObservableProperty] private string _bitrate = "—";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayMetadata))]
+    [NotifyPropertyChangedFor(nameof(HasBitrate))]
+    private string _bitrate = "—";
+
+    public bool HasBitrate => !string.IsNullOrWhiteSpace(Bitrate) && Bitrate != "—";
 
     // FilePath is the source currently handed to the playback engine. For
     // online media this may be a short-lived URL produced by a plugin
@@ -40,6 +46,33 @@ public partial class JukeboxTrack : ObservableObject
     [ObservableProperty] private bool _isPlaying;
     [ObservableProperty] private string _genre = "—";
     [ObservableProperty] private string _country = "—";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayMetadata))]
+    private string _location = "—";
+
+    public string DisplayMetadata
+    {
+        get
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            if (Length.TotalSeconds > 0)
+            {
+                parts.Add(DisplayLength);
+            }
+
+            if (!string.IsNullOrWhiteSpace(Bitrate) && Bitrate != "—")
+            {
+                parts.Add(Bitrate);
+            }
+
+            if (!string.IsNullOrWhiteSpace(Location) && Location != "—")
+            {
+                parts.Add(Location);
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     // Internal flag — not observable, the DataGrid never binds to it
     public bool IsTagged { get; set; }

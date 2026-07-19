@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
 using Jukebox.Extensions;
@@ -6,13 +7,27 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using System;
+using System.ComponentModel;
 
 namespace Jukebox.Views;
 
 public partial class JukeboxView : Window
 {
+    // The compact host surface only needs the original 760x600 viewport.
+    // Browser sizing combines the persistent 64-DIP navigation rail and
+    // 275-DIP queue/playlist panel with the active plugin view's requested
+    // minimum. Plugins without an explicit minimum retain the wider fallback.
+    private const double CompactMinimumWidth = 760;
+    private const double CompactMinimumHeight = 600;
+    private const double BrowserHostChromeWidth = 339;
+    private const double DefaultBrowserContentMinimumWidth = 800;
+    private const double BrowserMinimumHeight = 680;
+
     private bool _isClosing = false;
+    private JukeboxPlaylistViewModel? _playlistViewModel;
+    private Control? _activeBrowserView;
 
     public JukeboxView()
     {
@@ -24,6 +39,8 @@ public partial class JukeboxView : Window
         base.OnLoaded(e);
         if (DataContext is JukeboxViewModel vm)
         {
+            AttachPlaylistViewModel(vm.PlaylistViewModel);
+
             // Initialize the backend asynchronously and safely capture/log any failures.
             vm.InitializeBackendAsync().SafeFireAndForget(nameof(vm.InitializeBackendAsync));
 
@@ -33,6 +50,111 @@ public partial class JukeboxView : Window
             vm.VisualizerViewModel.LoadVisualizersAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.LoadVisualizersAsync));
             vm.VisualizerViewModel.InitializeAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.InitializeAsync));
             vm.EqViewModel.LoadAsync().SafeFireAndForget(nameof(vm.EqViewModel.LoadAsync));
+        }
+    }
+
+    protected override void OnUnloaded(RoutedEventArgs e)
+    {
+        AttachPlaylistViewModel(null);
+        base.OnUnloaded(e);
+    }
+
+    private void AttachPlaylistViewModel(JukeboxPlaylistViewModel? viewModel)
+    {
+        if (ReferenceEquals(_playlistViewModel, viewModel))
+        {
+            return;
+        }
+
+        if (_playlistViewModel != null)
+        {
+            _playlistViewModel.PropertyChanged -= OnPlaylistPropertyChanged;
+        }
+
+        AttachActiveBrowserView(null);
+
+        _playlistViewModel = viewModel;
+
+        if (_playlistViewModel != null)
+        {
+            _playlistViewModel.PropertyChanged += OnPlaylistPropertyChanged;
+        }
+
+        AttachActiveBrowserView(GetActiveBrowserView());
+        UpdateMinimumWindowSize();
+    }
+
+    private void OnPlaylistPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(JukeboxPlaylistViewModel.ActiveTabIndex))
+        {
+            AttachActiveBrowserView(GetActiveBrowserView());
+            UpdateMinimumWindowSize();
+        }
+    }
+
+    private Control? GetActiveBrowserView()
+    {
+        if (_playlistViewModel == null)
+        {
+            return null;
+        }
+
+        int pluginIndex = _playlistViewModel.ActiveTabIndex - 2;
+        return pluginIndex >= 0 && pluginIndex < _playlistViewModel.MediaBrowserTabs.Count
+            ? _playlistViewModel.MediaBrowserTabs[pluginIndex].View
+            : null;
+    }
+
+    private void AttachActiveBrowserView(Control? view)
+    {
+        if (ReferenceEquals(_activeBrowserView, view))
+        {
+            return;
+        }
+
+        if (_activeBrowserView != null)
+        {
+            _activeBrowserView.PropertyChanged -= OnActiveBrowserViewPropertyChanged;
+        }
+
+        _activeBrowserView = view;
+
+        if (_activeBrowserView != null)
+        {
+            _activeBrowserView.PropertyChanged += OnActiveBrowserViewPropertyChanged;
+        }
+    }
+
+    private void OnActiveBrowserViewPropertyChanged(
+        object? sender,
+        AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == Layoutable.MinWidthProperty)
+        {
+            UpdateMinimumWindowSize();
+        }
+    }
+
+    private void UpdateMinimumWindowSize()
+    {
+        bool browserIsActive =
+            _playlistViewModel?.ActiveTab == PlaylistTabType.Plugins;
+        double browserContentMinimum = _activeBrowserView?.MinWidth > 0
+            ? _activeBrowserView.MinWidth
+            : DefaultBrowserContentMinimumWidth;
+        double browserMinimumWidth = BrowserHostChromeWidth + browserContentMinimum;
+
+        MinWidth = browserIsActive ? browserMinimumWidth : CompactMinimumWidth;
+        MinHeight = browserIsActive ? BrowserMinimumHeight : CompactMinimumHeight;
+
+        // Applying a larger minimum does not consistently resize an already
+        // shown native window on every platform. Grow a normal standalone
+        // window explicitly, while leaving maximized/full-screen sizing alone.
+        if (browserIsActive && WindowState == WindowState.Normal)
+        {
+            Width = Math.Max(Width, browserMinimumWidth);
+            Height = Math.Max(Height, BrowserMinimumHeight);
         }
     }
 

@@ -14,9 +14,8 @@ using System.ComponentModel;
 namespace Jukebox.Views;
 
 /// <summary>
-/// Host-owned media navigation. Queue and saved playlists use the compact
-/// drawer; media browser plugins use the full surface to the right of the
-/// persistent navigation rail.
+/// Host-owned media navigation. Queue and saved playlists remain available in
+/// the compact panel while media browser plugins use the surface to its right.
 /// </summary>
 public partial class PlaylistView : UserControl
 {
@@ -70,7 +69,8 @@ public partial class PlaylistView : UserControl
 
     private void OnPlaylistPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(JukeboxPlaylistViewModel.ActiveTabIndex))
+        if (e.PropertyName is nameof(JukeboxPlaylistViewModel.ActiveTabIndex) or
+            nameof(JukeboxPlaylistViewModel.LastHostTabIndex))
         {
             UpdateSelectedDestination();
         }
@@ -84,12 +84,32 @@ public partial class PlaylistView : UserControl
 
     private void QueueNavButton_Click(object? sender, RoutedEventArgs e)
     {
-        SelectDestination(0);
+        SelectHostDestination(0);
     }
 
     private void PlaylistsNavButton_Click(object? sender, RoutedEventArgs e)
     {
-        SelectDestination(1);
+        SelectHostDestination(1);
+    }
+
+    private void SelectHostDestination(int index)
+    {
+        if (_viewModel == null)
+        {
+            return;
+        }
+
+        if (_viewModel.PlaylistViewModel.ActiveTab == PlaylistTabType.Plugins)
+        {
+            // Browser selection and host-panel selection are independent. This
+            // lets the user switch between queue and saved playlists without
+            // closing the browser alongside them.
+            _viewModel.PlaylistViewModel.LastHostTabIndex = index;
+            UpdateSelectedDestination();
+            return;
+        }
+
+        SelectDestination(index);
     }
 
     private void OnPluginNavButtonClick(object? sender, RoutedEventArgs e)
@@ -159,18 +179,21 @@ public partial class PlaylistView : UserControl
         int pluginIndex = index - 2;
         bool isPlugin = pluginIndex >= 0 &&
                         pluginIndex < _viewModel.PlaylistViewModel.MediaBrowserTabs.Count;
+        int hostIndex = index is 0 or 1
+            ? index
+            : _viewModel.PlaylistViewModel.LastHostTabIndex;
 
-        QueueNavButton.IsChecked = index == 0;
-        PlaylistsNavButton.IsChecked = index == 1;
+        QueueNavButton.IsChecked = hostIndex == 0;
+        PlaylistsNavButton.IsChecked = hostIndex == 1;
         for (int i = 0; i < _pluginButtons.Count; i++)
         {
             _pluginButtons[i].IsChecked = isPlugin && i == pluginIndex;
         }
 
-        HostPanel.IsVisible = !isPlugin;
+        HostPanel.IsVisible = true;
         BrowserPanel.IsVisible = isPlugin;
-        QueueView.IsVisible = !isPlugin && index == 0;
-        PlaylistsView.IsVisible = !isPlugin && index == 1;
+        QueueView.IsVisible = hostIndex == 0;
+        PlaylistsView.IsVisible = hostIndex == 1;
 
         BrowserContentPresenter.Content = isPlugin
             ? _viewModel.PlaylistViewModel.MediaBrowserTabs[pluginIndex].View

@@ -219,11 +219,11 @@ Important: `Constants.SidePanelWidth` remains `430` logical pixels for compact h
 - Radio, KHInsider, and Internet Archive now expose their direct browser views to the host.
 - Removed plugin-owned playlist wrapper views, view-models, persistence, messaging bridges, and popup compatibility paths.
 - Removed plugin-owned save-on-close prompts and `Playlists` directory creation.
-- Radio Play replaces the host queue with the station; Add appends to the host queue.
-- KHInsider Play replaces the host queue with the whole album and starts the selected track.
+- Radio Play inserts the station after the current queue item and starts it without discarding the existing queue; Add appends to the host queue.
+- KHInsider Play inserts the selected track after the current queue item and starts it without discarding the existing queue.
 - KHInsider selected/all Add operations append directly to the host queue.
 - KHInsider preserves stable track-page URLs and resolves transient CDN URLs in the background.
-- Internet Archive Play replaces the host queue with the whole album and starts the selected track.
+- Internet Archive Play inserts the selected track after the current queue item and starts it without discarding the existing queue.
 - Internet Archive selected/all Add operations append directly to the host queue.
 - Plugin context operations are now named explicitly for host queue ownership:
   - `ReplaceQueueAndPlay`
@@ -353,6 +353,7 @@ Jukebox/THIRD_PARTY_LICENSES.md
 ### Plugins and stable URLs
 
 - Radio play/add operations use the host queue.
+- With an existing queue, plugin Play inserts and starts its item without removing any queued rows.
 - KHInsider host-saved items survive restart and re-resolve from stable source URLs.
 - Internet Archive play/add operations use the host queue.
 - No plugin owns or mutates a private runtime playlist.

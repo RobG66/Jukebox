@@ -76,7 +76,23 @@ public sealed class JukeboxPluginContextFactory : IJukeboxMediaBrowserContextFac
         public void PlayNow(PlayRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
-            ReplaceQueueAndPlay(new[] { request }, request.SourceUrl ?? request.Url);
+            var track = MapRequest(request);
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // A plugin is a discovery surface, so playing one of its items
+                // must not erase work the user already put in the host queue.
+                // Inserting after the current row also lets natural playback
+                // resume with the following queued item when this track ends.
+                _playlistViewModel.InsertNextInPlayQueue(
+                    new[] { track },
+                    _jukeboxViewModel.CurrentTrack);
+
+                if (_jukeboxViewModel.PlayTrackCommand.CanExecute(track))
+                {
+                    _jukeboxViewModel.PlayTrackCommand.Execute(track);
+                }
+            });
         }
 
         public void ReplaceQueueAndPlay(IEnumerable<PlayRequest> queue, string activeSource)
@@ -186,9 +202,13 @@ public sealed class JukeboxPluginContextFactory : IJukeboxMediaBrowserContextFac
                 SourcePluginId = string.IsNullOrWhiteSpace(request.SourcePluginId)
                     ? _pluginId
                     : request.SourcePluginId,
+                Length = request.Length is { } length && length > TimeSpan.Zero
+                    ? length
+                    : TimeSpan.Zero,
                 Bitrate = bitrate,
                 Genre = string.IsNullOrWhiteSpace(request.Genre) ? "—" : request.Genre,
                 Country = string.IsNullOrWhiteSpace(request.Country) ? "—" : request.Country,
+                Location = string.IsNullOrWhiteSpace(request.Location) ? "—" : request.Location,
                 IsTagged = true
             };
         }

@@ -18,7 +18,6 @@ Jukebox is a cross-platform desktop media player built with:
 - **TagLibSharp** — background metadata extraction
 - **CommunityToolkit.Mvvm** — source-generator-based MVVM (`[ObservableProperty]`, `[RelayCommand]`)
 - **AvaloniaUI.DiagnosticsSupport** — Debug-only diagnostics overlay
-- **AngleSharp 1.4.0** — declared in `Jukebox.csproj` but currently unreferenced from source; flagged for cleanup
 
 Two custom local forks of Avalonia's `DataGrid` and `TreeDataGrid` controls are required as sibling `ProjectReference`s. Both must be cloned next to the Jukebox project folder before the build will succeed — see [DEPENDENCIES.md](DEPENDENCIES.md).
 

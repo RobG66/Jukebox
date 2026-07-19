@@ -41,9 +41,18 @@ public sealed class PlayRequest
     /// <summary>Optional bitrate in kbps. Paired with Codec for display.</summary>
     public int? Bitrate { get; init; }
 
+    /// <summary>
+    /// Optional track length supplied by the browser. The host preserves it
+    /// when adding the request to the queue or a saved playlist.
+    /// </summary>
+    public System.TimeSpan? Length { get; init; }
+
     /// <summary>Optional genre/category shown in the Genre column.</summary>
     public string? Genre { get; init; }
 
     /// <summary>Optional ISO 3166-1 alpha-2 country code shown in the Country column.</summary>
     public string? Country { get; init; }
+
+    /// <summary>Optional human-readable station or media location.</summary>
+    public string? Location { get; init; }
 }

@@ -149,6 +149,24 @@ public partial class SavedPlaylistsView : UserControl
         }
     }
 
+    private void MoveLibrarySelectedUp_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.MoveLibrarySelectedUpCommand.CanExecute(LibraryDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.MoveLibrarySelectedUpCommand.Execute(LibraryDataGrid.SelectedItems);
+        }
+    }
+
+    private void MoveLibrarySelectedDown_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.MoveLibrarySelectedDownCommand.CanExecute(LibraryDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.MoveLibrarySelectedDownCommand.Execute(LibraryDataGrid.SelectedItems);
+        }
+    }
+
     private void OnLoadingRow(object? sender, DataGridRowEventArgs e)
     {
         _loadedRowIndices.Add(e.Row.Index);

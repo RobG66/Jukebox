@@ -120,6 +120,11 @@ public sealed class MpvContext : IDisposable
     public event Action? EndReached;
 
     /// <summary>
+    /// Called once mpv has loaded a file and it is ready for playback.
+    /// </summary>
+    public event Action? FileLoaded;
+
+    /// <summary>
     /// Create a new mpv handle and initialize it.
     /// </summary>
     public bool Initialize()
@@ -186,7 +191,11 @@ public sealed class MpvContext : IDisposable
     public void SetOptionString(string name, string value)
     {
         if (_mpv == IntPtr.Zero) return;
-        MpvNative.mpv_set_property_string(_mpv, name, value);
+        int result = MpvNative.mpv_set_option_string(_mpv, name, value);
+        if (result < 0)
+        {
+            Trace.WriteLine($"[MPV] Could not set option '{name}' to '{value}' (error {result}).");
+        }
     }
 
     // ── Playback commands ──
@@ -358,7 +367,15 @@ public sealed class MpvContext : IDisposable
             // hardcoded offsets.
             var evt = Marshal.PtrToStructure<MpvEvent>(eventPtr);
 
-            if (evt.EventId == MpvEventId.PropertyChange)
+            if (evt.EventId == MpvEventId.FileLoaded)
+            {
+                Task.Run(() =>
+                {
+                    try { FileLoaded?.Invoke(); }
+                    catch (Exception ex) { Debug.WriteLine($"[MPV] FileLoaded callback error: {ex.Message}"); }
+                });
+            }
+            else if (evt.EventId == MpvEventId.PropertyChange)
             {
                 // evt.Data points to an mpv_event_property struct:
                 //   { const char *name; mpv_format format; void *data; }

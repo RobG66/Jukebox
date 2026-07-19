@@ -70,4 +70,22 @@ public partial class PlayQueueView : UserControl
             vm.PlaylistViewModel.ClearPlayQueueCommand.Execute(null);
         }
     }
+
+    private void MovePlayQueueSelectedUp_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.MovePlayQueueSelectedUpCommand.CanExecute(PlayQueueDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.MovePlayQueueSelectedUpCommand.Execute(PlayQueueDataGrid.SelectedItems);
+        }
+    }
+
+    private void MovePlayQueueSelectedDown_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.MovePlayQueueSelectedDownCommand.CanExecute(PlayQueueDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.MovePlayQueueSelectedDownCommand.Execute(PlayQueueDataGrid.SelectedItems);
+        }
+    }
 }

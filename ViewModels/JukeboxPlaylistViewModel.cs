@@ -64,6 +64,10 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     // playback subscriptions and UI bindings remain stable.
     public ObservableCollection<JukeboxTrack> PlayQueue { get; } = new();
 
+    // The queue grid uses a view so explicit reorder operations can refresh
+    // the visible order reliably across DataGrid collection-change handling.
+    public DataGridCollectionView PlayQueueView { get; }
+
     // The currently selected persisted library playlist.
     public ObservableCollection<JukeboxTrack> LibraryPlaylist { get; } = new();
 
@@ -126,6 +130,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     public JukeboxPlaylistViewModel(IUserDialogService? dialogService)
     {
         _dialogService = dialogService ?? new UserDialogService();
+        PlayQueueView = new DataGridCollectionView(PlayQueue);
         FilteredLibraryPlaylist = new DataGridCollectionView(LibraryPlaylist);
         FilteredLibraryPlaylist.Filter = FilterLibraryTrack;
     }
@@ -341,8 +346,79 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
             Bitrate = source.Bitrate,
             Genre = source.Genre,
             Country = source.Country,
+            Location = source.Location,
             IsTagged = source.IsTagged
         };
+    }
+
+    [RelayCommand]
+    private void MovePlayQueueSelectedUp(System.Collections.IList? selectedItems)
+    {
+        if (MoveTracks(PlayQueue, GetSelectedTracks(selectedItems), -1))
+        {
+            PlayQueueView.Refresh();
+            UpdatePlaylistSummary();
+        }
+    }
+
+    [RelayCommand]
+    private void MovePlayQueueSelectedDown(System.Collections.IList? selectedItems)
+    {
+        if (MoveTracks(PlayQueue, GetSelectedTracks(selectedItems), 1))
+        {
+            PlayQueueView.Refresh();
+            UpdatePlaylistSummary();
+        }
+    }
+
+    private static List<JukeboxTrack> GetSelectedTracks(
+        System.Collections.IList? selectedItems)
+    {
+        return selectedItems?
+            .Cast<object>()
+            .OfType<JukeboxTrack>()
+            .Distinct()
+            .ToList()
+            ?? new List<JukeboxTrack>();
+    }
+
+    internal static bool MoveTracks(
+        ObservableCollection<JukeboxTrack> tracks,
+        IReadOnlyCollection<JukeboxTrack> selectedTracks,
+        int offset)
+    {
+        if (selectedTracks.Count == 0 || offset is not (-1 or 1))
+        {
+            return false;
+        }
+
+        var selected = selectedTracks.ToHashSet();
+        bool moved = false;
+        var orderedTracks = offset < 0
+            ? tracks.Where(selected.Contains).ToList()
+            : tracks.Where(selected.Contains).Reverse().ToList();
+
+        foreach (var track in orderedTracks)
+        {
+            int oldIndex = tracks.IndexOf(track);
+            int newIndex = oldIndex + offset;
+            if (oldIndex < 0 || newIndex < 0 || newIndex >= tracks.Count)
+            {
+                continue;
+            }
+
+            // Treat the selection as a group. This preserves the relative
+            // order of adjacent selections while also supporting gaps.
+            if (selected.Contains(tracks[newIndex]))
+            {
+                continue;
+            }
+
+            tracks.Move(oldIndex, newIndex);
+            moved = true;
+        }
+
+        return moved;
     }
 
     public void NotifyVisibleRange(int firstIndex, int lastIndex)

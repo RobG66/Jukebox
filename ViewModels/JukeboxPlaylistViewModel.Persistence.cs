@@ -294,6 +294,48 @@ public partial class JukeboxPlaylistViewModel
     }
 
     [RelayCommand]
+    private async Task MoveLibrarySelectedUpAsync(System.Collections.IList? selectedItems)
+    {
+        var selectedTracks = selectedItems?
+            .Cast<object>()
+            .OfType<JukeboxTrack>()
+            .Distinct()
+            .ToList()
+            ?? new List<JukeboxTrack>();
+
+        if (!MoveTracks(LibraryPlaylist, selectedTracks, -1))
+        {
+            return;
+        }
+
+        InvalidatePlaylist();
+        FilteredLibraryPlaylist.Refresh();
+        UpdatePlaylistSummary();
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
+    private async Task MoveLibrarySelectedDownAsync(System.Collections.IList? selectedItems)
+    {
+        var selectedTracks = selectedItems?
+            .Cast<object>()
+            .OfType<JukeboxTrack>()
+            .Distinct()
+            .ToList()
+            ?? new List<JukeboxTrack>();
+
+        if (!MoveTracks(LibraryPlaylist, selectedTracks, 1))
+        {
+            return;
+        }
+
+        InvalidatePlaylist();
+        FilteredLibraryPlaylist.Refresh();
+        UpdatePlaylistSummary();
+        await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
     private async Task CopySelectedToPlaylistAsync(CopyToPlaylistRequest? request)
     {
         if (request is null ||
@@ -398,6 +440,7 @@ public partial class JukeboxPlaylistViewModel
                     Bitrate = t.Bitrate,
                     Genre = t.Genre,
                     Country = t.Country,
+                    Location = t.Location,
                     IsTagged = t.IsTagged
                 }).ToList()
             };
@@ -433,6 +476,7 @@ public partial class JukeboxPlaylistViewModel
                 Bitrate = t.Bitrate,
                 Genre = t.Genre,
                 Country = t.Country ?? "—",
+                Location = t.Location ?? "—",
                 IsTagged = t.IsTagged
             }).ToList();
         }

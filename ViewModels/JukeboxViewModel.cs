@@ -462,7 +462,7 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
     }
 
     private PlaylistTarget GetInteractiveImportTarget()
-        => PlaylistViewModel.ActiveTab == PlaylistTabType.SavedPlaylists
+        => PlaylistViewModel.LastHostTabIndex == 1
             ? PlaylistTarget.SelectedSavedPlaylist
             : PlaylistTarget.PlayQueue;
 

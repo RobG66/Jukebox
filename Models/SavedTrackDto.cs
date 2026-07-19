@@ -12,5 +12,6 @@ public class SavedTrackDto
     public string Bitrate { get; set; } = "—";
     public string Genre { get; set; } = "—";
     public string Country { get; set; } = "—";
+    public string Location { get; set; } = "—";
     public bool IsTagged { get; set; }
 }

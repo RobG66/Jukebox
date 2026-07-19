@@ -1,5 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="using:Jukebox.Models"
+        xmlns:controls="using:Jukebox.Controls">
 
     <!-- Bundled vector icons: platform-independent, DPI-safe and themeable. -->
     <Styles.Resources>
@@ -17,6 +19,53 @@
         <StreamGeometry x:Key="MediaIconShuffle">M16,3H21V8H19V6.41L5.41,20 4,18.59 17.59,5H16V3 M4.27,5.68L9.35,10.76 10.76,9.35 5.68,4.27 4.27,5.68 M14.5,14.5L13.09,15.91 17.17,20H16V22H21V17H19V18.59L14.5,14.5Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconFocus">M7,3H3V7H5V5H7V3 M17,3V5H19V7H21V3H17 M7,21V19H5V17H3V21H7 M17,21H21V17H19V19H17V21 M12,8A4,4 0 1 0 12,16A4,4 0 0 0 12,8Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconMusic">M12,3V13.55A4,4 0 1 0 14,17V7H18V3H12Z</StreamGeometry>
+
+        <!-- Shared Title-column cell template for track DataGrids (PlayQueueView,
+             SavedPlaylistsView). One line: playing icon, title (elastic, ellipsis),
+             format badge, duration. Tooltip on the badge carries the fuller
+             DisplayMetadata (bitrate + location) for anything the row itself omits. -->
+        <DataTemplate x:Key="TrackTitleCellTemplate" x:DataType="models:JukeboxTrack">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
+                <PathIcon Grid.Column="0"
+                          Classes="media-vector"
+                          Data="{StaticResource MediaIconMusic}"
+                          Width="12" Height="12"
+                          Margin="4,0,5,0"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsPlaying}"/>
+                <controls:MarqueeTextBlock Grid.Column="1"
+                                           IsPlaying="{Binding IsPlaying}"
+                                           Text="{Binding DisplayName}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource MediaPanelAccentBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding DisplayName}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0"/>
+                <Border Grid.Column="2"
+                        BorderBrush="{DynamicResource MediaPanelMutedBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Padding="4,1"
+                        Margin="0,0,6,0"
+                        MaxWidth="90"
+                        VerticalAlignment="Center"
+                        IsVisible="{Binding HasBitrate}"
+                        ToolTip.Tip="{Binding DisplayMetadata}">
+                    <TextBlock Text="{Binding Bitrate}"
+                               FontSize="9"
+                               Foreground="{DynamicResource MediaPanelMutedBrush}"
+                               TextTrimming="CharacterEllipsis"/>
+                </Border>
+                <TextBlock Grid.Column="3"
+                           Text="{Binding DisplayLength}"
+                           FontSize="10"
+                           MinWidth="28"
+                           TextAlignment="Right"
+                           Foreground="{DynamicResource MediaPanelMutedBrush}"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
     </Styles.Resources>
 
     <Style Selector="PathIcon.media-vector">

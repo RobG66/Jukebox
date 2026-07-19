@@ -513,13 +513,43 @@ public partial class JukeboxViewModel
         // keeps reading until the socket actually closes. This means
         // visualizations and EQ work for all radio stations, including
         // StreamTheWorld.
+        // Classify file-backed URL media from the URI path rather than the
+        // raw URL. Archive.org (and other providers) may escape path segments
+        // or append query/fragment data, which makes a raw EndsWith(".mp4")
+        // check miss a video and incorrectly send it to BASS.
+        string extensionPath = playbackPath;
+        if (Uri.TryCreate(playbackPath, UriKind.Absolute, out var playbackUri))
+        {
+            extensionPath = Uri.UnescapeDataString(playbackUri.AbsolutePath);
+        }
+        else
+        {
+            int suffixIndex = extensionPath.IndexOfAny(new[] { '?', '#' });
+            if (suffixIndex >= 0)
+            {
+                extensionPath = extensionPath[..suffixIndex];
+            }
+        }
+
+        bool hasVideoExtension = Constants.VideoExtensions.Any(ext =>
+            extensionPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+        // Browser plugins already provide an authoritative MIME hint through
+        // PlayRequest.Codec. The host displays that value in Bitrate, so keep
+        // using it when the URL itself is extensionless or redirected.
+        bool hasVideoCodec = trackToStart.Bitrate.Contains(
+            "video/",
+            StringComparison.OrdinalIgnoreCase);
+        bool isVideo = hasVideoExtension || hasVideoCodec;
+
         bool needsMpv = isUrl && (
             playbackPath.Contains(".pls", StringComparison.OrdinalIgnoreCase) ||
-            playbackPath.Contains(".ashx", StringComparison.OrdinalIgnoreCase)
+            playbackPath.Contains(".ashx", StringComparison.OrdinalIgnoreCase) ||
+            isVideo
         );
 
         bool isAudioExtension = Constants.AudioExtensions.Any(ext =>
-            playbackPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+            extensionPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
         // Route URL streams to BASS (isAudio = true) unless they need MPV.
         // BASS natively handles MP3, AAC, Opus, Shoutcast, and (via basshls)
@@ -533,6 +563,7 @@ public partial class JukeboxViewModel
                      playbackPath.EndsWith(".vgm", StringComparison.OrdinalIgnoreCase) ||
                      playbackPath.EndsWith(".vgx", StringComparison.OrdinalIgnoreCase);
         Debug.WriteLine($"[Playback] FilePath={playbackPath}");
+        Debug.WriteLine($"[Playback] ExtensionPath={extensionPath}, VideoExtension={hasVideoExtension}, VideoCodec={hasVideoCodec}");
         Debug.WriteLine($"[Playback] isVgm={isVgm}, VgmEngine={(VgmEngine != null ? "not null" : "NULL")}");
         Debug.WriteLine($"[Playback] Routing to: {(isVgm && VgmEngine is not null ? "VGM" : (isAudio ? "BASS" : "MPV"))} engine");
 

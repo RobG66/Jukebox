@@ -13,8 +13,9 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     private double _volume = 100;
 
     // One-shot guard for PlaybackStarted — reset in Stop and at the start
-    // of PlayAsync, set to true the first time OnMpvPropertyChanged sees
-    // a positive time-pos. Volatile because the MPV event thread writes
+    // of PlayAsync, set to true when MPV reports that the file has loaded
+    // (or when a positive time-pos is observed as a fallback). Volatile
+    // because the MPV event thread writes
     // it while Stop/PlayAsync on the UI thread read/reset it.
     private volatile bool _playbackStartedFired;
     #endregion
@@ -60,6 +61,7 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
             _mpv.ObserveProperty("eof-reached", MpvFormat.Flag);
 
             _mpv.PropertyChanged += OnMpvPropertyChanged;
+            _mpv.FileLoaded += OnMpvFileLoaded;
             _mpv.EndReached += OnMpvEndReached;
 
             IsAvailable = true;
@@ -144,12 +146,20 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
             // back this file. One-shot per PlayAsync via _playbackStartedFired.
             // Raised on the MPV event thread — handlers must marshal to UI
             // thread if they touch UI. JukeboxViewModel's handler does so.
-            if (!_playbackStartedFired)
-            {
-                _playbackStartedFired = true;
-                PlaybackStarted?.Invoke(this, EventArgs.Empty);
-            }
+            SignalPlaybackStarted();
         }
+    }
+
+    private void OnMpvFileLoaded()
+    {
+        SignalPlaybackStarted();
+    }
+
+    private void SignalPlaybackStarted()
+    {
+        if (_playbackStartedFired) return;
+        _playbackStartedFired = true;
+        PlaybackStarted?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnMpvEndReached()
@@ -192,6 +202,7 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
         if (mpv != null && IsAvailable)
         {
             mpv.PropertyChanged -= OnMpvPropertyChanged;
+            mpv.FileLoaded -= OnMpvFileLoaded;
             mpv.EndReached -= OnMpvEndReached;
             try { mpv.Dispose(); }
             catch (Exception ex) { Debug.WriteLine($"[MPV Engine] Dispose failed: {ex.Message}"); }

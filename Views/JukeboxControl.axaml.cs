@@ -247,7 +247,7 @@ public partial class JukeboxControl : UserControl
             if (paths.Count == 0) return;
 
             var target = vm.IsPlaylistVisible &&
-                         vm.PlaylistViewModel.ActiveTab == PlaylistTabType.SavedPlaylists
+                         vm.PlaylistViewModel.LastHostTabIndex == 1
                 ? PlaylistTarget.SelectedSavedPlaylist
                 : PlaylistTarget.PlayQueue;
 
@@ -256,7 +256,7 @@ public partial class JukeboxControl : UserControl
                 target,
                 vm.NoRecurse);
 
-            // A Queue/plugin drop may start the first new queue item when idle.
+            // A play-queue drop may start the first new queue item when idle.
             // Editing a saved playlist must never alter current playback.
             if (target == PlaylistTarget.PlayQueue &&
                 !vm.CanStop &&

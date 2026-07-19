@@ -62,7 +62,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="64,*">
+    <Grid ColumnDefinitions="64,275,*">
         <!-- Persistent host-owned navigation rail. -->
         <Border Grid.Column="0" Classes="media-rail">
             <Grid RowDefinitions="Auto,*,Auto">
@@ -109,8 +109,7 @@
         <!-- Queue and saved playlists remain a compact Jukebox-owned panel. -->
         <Border x:Name="HostPanel"
                 Grid.Column="1"
-                Width="366"
-                HorizontalAlignment="Left"
+                HorizontalAlignment="Stretch"
                 Background="{DynamicResource MediaDrawerOverlayBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,1,0"
@@ -168,9 +167,9 @@
             </Grid>
         </Border>
 
-        <!-- A browser owns the remaining content surface, never a separate window. -->
+        <!-- A browser owns the remaining surface to the right of the host panel. -->
         <Border x:Name="BrowserPanel"
-                Grid.Column="1"
+                Grid.Column="2"
                 Background="{DynamicResource WindowBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,0,0"

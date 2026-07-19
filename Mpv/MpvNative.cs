@@ -93,6 +93,9 @@ internal static class MpvNative
 
     // ── Property API ──
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int mpv_set_option_string(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name, [MarshalAs(UnmanagedType.LPStr)] string data);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int mpv_set_property_string(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name, [MarshalAs(UnmanagedType.LPStr)] string data);
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
