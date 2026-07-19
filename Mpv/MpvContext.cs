@@ -29,6 +29,7 @@ public sealed class MpvContext : IDisposable
     private Thread? _eventThread;
     private CancellationTokenSource? _eventCts;
     private bool _disposed;
+    private readonly object _renderContextLock = new();
 
     // Keep delegates alive — libmpv stores function pointers that must
     // remain valid for the lifetime of the render context.
@@ -45,7 +46,16 @@ public sealed class MpvContext : IDisposable
     internal IntPtr Handle => _mpv;
 
     /// <summary>Gets the render context handle. Set by MpvView after creating it.</summary>
-    internal IntPtr RenderContextHandle => _renderContext;
+    internal IntPtr RenderContextHandle
+    {
+        get
+        {
+            lock (_renderContextLock)
+            {
+                return _renderContext;
+            }
+        }
+    }
 
     /// <summary>
     /// True when the OpenGL render context has been created by MpvView
@@ -58,10 +68,20 @@ public sealed class MpvContext : IDisposable
     /// </remarks>
     public bool IsRenderContextReady { get; private set; }
 
-    internal void SetRenderContext(IntPtr ctx)
+    internal bool TrySetRenderContext(IntPtr ctx)
     {
-        _renderContext = ctx;
-        AllocateRenderBuffers();
+        lock (_renderContextLock)
+        {
+            if (_disposed || _renderContext != IntPtr.Zero)
+            {
+                MpvNative.mpv_render_context_free(ctx);
+                return false;
+            }
+
+            _renderContext = ctx;
+            AllocateRenderBuffers();
+            return true;
+        }
     }
 
     private void AllocateRenderBuffers()
@@ -83,26 +103,96 @@ public sealed class MpvContext : IDisposable
 
     internal void MarkRenderContextReady()
     {
-        IsRenderContextReady = true;
-        _renderContextReadyTcs?.TrySetResult();
+        lock (_renderContextLock)
+        {
+            if (_disposed || _renderContext == IntPtr.Zero) return;
+
+            IsRenderContextReady = true;
+            _renderContextReadyTcs?.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Releases the libmpv render context before Avalonia destroys the
+    /// OpenGL context that owns it. Playback state and the core mpv handle
+    /// remain alive, so a later <see cref="MpvView"/> attachment can create
+    /// a fresh render context for the new GL surface.
+    /// </summary>
+    internal void ReleaseRenderContext()
+    {
+        lock (_renderContextLock)
+        {
+            ReleaseRenderContextCore();
+        }
+    }
+
+    private void ReleaseRenderContextCore()
+    {
+        if (_renderContext != IntPtr.Zero)
+        {
+            try
+            {
+                // Stop native update notifications before the control drops
+                // the managed delegate that backs the callback pointer.
+                MpvNative.mpv_render_context_set_update_callback(
+                    _renderContext, IntPtr.Zero, IntPtr.Zero);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[MPV] set_update_callback(null) failed: {ex.Message}");
+            }
+
+            try
+            {
+                MpvNative.mpv_render_context_free(_renderContext);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[MPV] render_context_free failed: {ex.Message}");
+            }
+
+            _renderContext = IntPtr.Zero;
+        }
+
+        FreeRenderBuffers();
+        IsRenderContextReady = false;
+        _renderContextReadyTcs = null;
     }
 
     /// <summary>
     /// Wait for the render context to be ready (with timeout).
     /// Called by PlayVideoAsync before LoadFile.
     /// </summary>
-    public async Task WaitForRenderContextReadyAsync(int timeoutMs = 2000)
+    /// <param name="timeoutMs">
+    /// Maximum time to wait. Defaults to 3 seconds — long enough for the
+    /// MpvView to attach to the visual tree and create the render context
+    /// on a normal system, short enough that a missing render surface
+    /// fails fast instead of hanging the UI.
+    /// </param>
+    public async Task WaitForRenderContextReadyAsync(int timeoutMs = 3000)
     {
-        if (IsRenderContextReady) return;
+        Task readyTask;
+        lock (_renderContextLock)
+        {
+            if (IsRenderContextReady) return;
 
-        _renderContextReadyTcs ??= new TaskCompletionSource();
+            _renderContextReadyTcs ??= new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            readyTask = _renderContextReadyTcs.Task;
+        }
+
         try
         {
-            await _renderContextReadyTcs.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
+            await readyTask.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
         }
         catch (TimeoutException)
         {
-            Trace.WriteLine("[MPV] WaitForRenderContextReadyAsync timed out — proceeding anyway (may produce black first frame).");
+            // If the render context never becomes ready, proceed with
+            // LoadFile anyway. MPV will buffer decoded frames internally
+            // and render them as soon as the render context is created.
+            // The user will see a delayed first frame rather than no
+            // playback at all.
+            Trace.WriteLine($"[MPV] WaitForRenderContextReadyAsync timed out after {timeoutMs}ms — proceeding anyway (first frame will be delayed until the render context is created).");
         }
     }
 
@@ -160,6 +250,15 @@ public sealed class MpvContext : IDisposable
         SetOptionString("terminal", "no");       // Don't spam the terminal
         SetOptionString("msg-level", "all=no");  // Suppress log messages
         SetOptionString("keep-open", "yes");     // Don't close the file at EOF — we handle next-track ourselves
+        SetOptionString("background", "color");
+        SetOptionString("background-color", "#000000");
+
+        // Use copy-mode hardware decoding. Jukebox renders libmpv into an
+        // Avalonia-owned WGL framebuffer, so direct D3D11/OpenGL interop is
+        // not compatible on Windows. auto-copy still offloads decoding while
+        // returning frames through system memory; the explicit GL completion
+        // barrier in MpvView protects the shared presentation texture.
+        SetOptionString("hwdec", "auto-copy");
 
         int initResult = MpvNative.mpv_initialize(_mpv);
         if (initResult < 0)
@@ -170,6 +269,11 @@ public sealed class MpvContext : IDisposable
             _mpv = IntPtr.Zero;
             return false;
         }
+
+        // Surface native warnings through the managed trace even though mpv
+        // has no terminal. This exposes renderer stalls or VO failures that
+        // would otherwise be completely silent in an embedded client.
+        MpvNative.mpv_request_log_messages(_mpv, "warn");
 
         // Start the event thread to receive property-change notifications.
         _eventCts = new CancellationTokenSource();
@@ -194,8 +298,16 @@ public sealed class MpvContext : IDisposable
         int result = MpvNative.mpv_set_option_string(_mpv, name, value);
         if (result < 0)
         {
-            Trace.WriteLine($"[MPV] Could not set option '{name}' to '{value}' (error {result}).");
+            Trace.WriteLine($"[MPV] Could not set option '{name}' to '{value}': {GetErrorText(result)} ({result}).");
         }
+    }
+
+    private static string GetErrorText(int error)
+    {
+        var textPtr = MpvNative.mpv_error_string(error);
+        return textPtr == IntPtr.Zero
+            ? "unknown error"
+            : Marshal.PtrToStringAnsi(textPtr) ?? "unknown error";
     }
 
     // ── Playback commands ──
@@ -246,7 +358,18 @@ public sealed class MpvContext : IDisposable
     public string? GetString(string name)
     {
         if (_mpv == IntPtr.Zero) return null;
-        return MpvNative.mpv_get_property_string(_mpv, name);
+
+        var valuePtr = MpvNative.mpv_get_property_string(_mpv, name);
+        if (valuePtr == IntPtr.Zero) return null;
+
+        try
+        {
+            return Marshal.PtrToStringAnsi(valuePtr);
+        }
+        finally
+        {
+            MpvNative.mpv_free(valuePtr);
+        }
     }
 
     /// <summary>Get a double property (e.g. "time-pos", "duration"). Returns null if unavailable.</summary>
@@ -313,7 +436,11 @@ public sealed class MpvContext : IDisposable
                 ptrs[i] = allocatedStrings[i];
             }
             ptrs[args.Length] = IntPtr.Zero; // null terminator
-            MpvNative.mpv_command(_mpv, ptrs);
+            int result = MpvNative.mpv_command(_mpv, ptrs);
+            if (result < 0)
+            {
+                Trace.WriteLine($"[MPV] Command '{string.Join(' ', args)}' failed: {GetErrorText(result)} ({result}).");
+            }
         }
         finally
         {
@@ -374,6 +501,16 @@ public sealed class MpvContext : IDisposable
                     try { FileLoaded?.Invoke(); }
                     catch (Exception ex) { Debug.WriteLine($"[MPV] FileLoaded callback error: {ex.Message}"); }
                 });
+            }
+            else if (evt.EventId == MpvEventId.LogMessage)
+            {
+                if (evt.Data == IntPtr.Zero) continue;
+
+                var message = Marshal.PtrToStructure<MpvEventLogMessage>(evt.Data);
+                string prefix = Marshal.PtrToStringAnsi(message.Prefix) ?? "unknown";
+                string level = Marshal.PtrToStringAnsi(message.Level) ?? "unknown";
+                string text = (Marshal.PtrToStringAnsi(message.Text) ?? string.Empty).TrimEnd();
+                Trace.WriteLine($"[MPV/{level}/{prefix}] {text}");
             }
             else if (evt.EventId == MpvEventId.PropertyChange)
             {
@@ -441,27 +578,36 @@ public sealed class MpvContext : IDisposable
     }
 
     /// <summary>
-    /// Request a render update from the render context (called by MpvView's
-    /// update callback). Returns true if a new frame is available.
+    /// Acknowledge libmpv's update notification and render the current frame
+    /// into the specified OpenGL framebuffer while the Avalonia GL context is
+    /// current.
     /// </summary>
-    internal bool CheckRenderUpdate()
+    /// <returns><c>true</c> when a frame was rendered; otherwise <c>false</c>.</returns>
+    internal bool RenderFrame(int fbo, int width, int height)
     {
-        if (_disposed || _renderContext == IntPtr.Zero) return false;
-        var flags = MpvNative.mpv_render_context_update(_renderContext);
-        return (flags & MpvNative.MPV_RENDER_UPDATE_FRAME) != 0;
+        lock (_renderContextLock)
+        {
+            if (_disposed || _renderContext == IntPtr.Zero || _mpv == IntPtr.Zero)
+                return false;
+            if (_renderParamsPtr == IntPtr.Zero || width < 1 || height < 1)
+                return false;
+
+            // The render API requires update() after every callback. It is
+            // also safe on Avalonia-triggered redraws; render() then redraws
+            // the previous frame when libmpv has not queued a new one.
+            MpvNative.mpv_render_context_update(_renderContext);
+
+            return RenderCore(fbo, width, height);
+        }
     }
 
     /// <summary>
-    /// Render the current frame into the specified OpenGL FBO.
-    /// Called from MpvView.OnOpenGlRender (on the GL render thread).
+    /// Writes the per-frame FBO data into the pre-allocated buffers and
+    /// invokes <c>mpv_render_context_render</c>. Must be called while
+    /// holding <c>_renderContextLock</c>.
     /// </summary>
-    internal void Render(int fbo, int width, int height)
+    private bool RenderCore(int fbo, int width, int height)
     {
-        // Guard against rendering after disposal — the update callback
-        // might have already been queued before we nulled it.
-        if (_disposed || _renderContext == IntPtr.Zero || _mpv == IntPtr.Zero) return;
-        if (_renderParamsPtr == IntPtr.Zero) return;
-
         // Write per-frame FBO data into the pre-allocated buffer.
         var fboStruct = new MpvOpenglFbo { Fbo = fbo, W = width, H = height, InternalFormat = 0 };
         Marshal.StructureToPtr(fboStruct, _renderFboPtr, false);
@@ -479,46 +625,58 @@ public sealed class MpvContext : IDisposable
         Marshal.WriteInt32(_renderParamsPtr + 2 * _renderParamSize, MpvNative.MPV_RENDER_PARAM_INVALID);
         Marshal.WriteIntPtr(_renderParamsPtr + 2 * _renderParamSize + IntPtr.Size, IntPtr.Zero);
 
-        MpvNative.mpv_render_context_render(_renderContext, _renderParamsPtr);
+        int result = MpvNative.mpv_render_context_render(_renderContext, _renderParamsPtr);
+        if (result < 0)
+        {
+            // A render failure leaves the FBO with whatever contents it
+            // had before — usually the previous frame, but if the FBO
+            // was just (re)allocated by Avalonia during a resize, it'll
+            // be uninitialized garbage. Repeated render failures show
+            // up as black or flickering frames.
+            //
+            // Common causes:
+            //   - The GL framebuffer object was deleted/resized between
+            //     OnOpenGlRender entry and this call (very rare).
+            //   - The GL context was lost (driver crash, sleep/wake).
+            //   - hwdec produced a corrupt frame.
+            Trace.WriteLine($"[MPV] mpv_render_context_render failed: {GetErrorText(result)} ({result}); fbo={fbo}, {width}x{height}.");
+            return false;
+        }
+
+        return true;
     }
 
     // ── Dispose ──
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        lock (_renderContextLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
 
-        // Stop the event thread first.
+        // Stop and join the event thread before destroying the mpv handle.
+        // Cancelling without joining lets mpv_wait_event race
+        // mpv_terminate_destroy and can corrupt native state during shutdown.
         _eventCts?.Cancel();
+        if (_mpv != IntPtr.Zero)
+            MpvNative.mpv_wakeup(_mpv);
+
+        if (_eventThread is { IsAlive: true }
+            && !ReferenceEquals(Thread.CurrentThread, _eventThread))
+        {
+            if (!_eventThread.Join(TimeSpan.FromSeconds(2)))
+                Trace.WriteLine("[MPV] Event thread did not stop within 2 seconds.");
+        }
+
+        _eventThread = null;
         _eventCts?.Dispose();
-        MpvNative.mpv_wakeup(_mpv);
+        _eventCts = null;
 
-        // ── Critical: null the update callback BEFORE freeing the render
-        // context. If we don't, MPV's internal thread may call the callback
-        // after the context is freed, causing AccessViolationException. ──
-        if (_renderContext != IntPtr.Zero)
-        {
-            try
-            {
-                MpvNative.mpv_render_context_set_update_callback(
-                    _renderContext, IntPtr.Zero, IntPtr.Zero);
-            }
-            catch (Exception ex) { Trace.WriteLine($"[MPV] set_update_callback(null) failed: {ex.Message}"); }
-        }
-
-        // Give MPV's internal threads a moment to notice the null callback
-        // and stop calling it. Without this, a race between the callback
-        // thread and render_context_free can still crash.
-        System.Threading.Thread.Sleep(50);
-
-        // Now safe to free the render context.
-        if (_renderContext != IntPtr.Zero)
-        {
-            try { MpvNative.mpv_render_context_free(_renderContext); }
-            catch (Exception ex) { Trace.WriteLine($"[MPV] render_context_free failed: {ex.Message}"); }
-            _renderContext = IntPtr.Zero;
-        }
+        // Free the render context under the same lock used by update/render
+        // calls. This prevents disposal from racing an active GL render.
+        ReleaseRenderContext();
 
         // Terminate the mpv handle.
         if (_mpv != IntPtr.Zero)
@@ -527,8 +685,6 @@ public sealed class MpvContext : IDisposable
             catch (Exception ex) { Debug.WriteLine($"[MPV] terminate_destroy failed: {ex.Message}"); }
             _mpv = IntPtr.Zero;
         }
-
-        FreeRenderBuffers();
     }
 
     // ── Native structs ──
@@ -628,6 +784,15 @@ public sealed class MpvContext : IDisposable
         public IntPtr Name;        // const char*
         public MpvFormat Format;   // int (mpv_format)
         public IntPtr Data;        // void*
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MpvEventLogMessage
+    {
+        public IntPtr Prefix;
+        public IntPtr Level;
+        public IntPtr Text;
+        public int LogLevel;
     }
 
     [StructLayout(LayoutKind.Sequential)]

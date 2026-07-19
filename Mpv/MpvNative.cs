@@ -69,6 +69,7 @@ internal static class MpvNative
     }
 
     // ── Handle types ──
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate IntPtr MpvGetProcAddressDelegate(IntPtr ctx, [MarshalAs(UnmanagedType.LPStr)] string name);
 
     // ── Core API ──
@@ -99,8 +100,13 @@ internal static class MpvNative
     internal static extern int mpv_set_property_string(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name, [MarshalAs(UnmanagedType.LPStr)] string data);
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    [return: MarshalAs(UnmanagedType.LPStr)]
-    internal static extern string? mpv_get_property_string(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name);
+    internal static extern IntPtr mpv_get_property_string(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void mpv_free(IntPtr data);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr mpv_error_string(int error);
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int mpv_set_property(IntPtr mpv, [MarshalAs(UnmanagedType.LPStr)] string name, MpvFormat format, ref double data);
@@ -121,6 +127,11 @@ internal static class MpvNative
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void mpv_wakeup(IntPtr mpv);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int mpv_request_log_messages(
+        IntPtr mpv,
+        [MarshalAs(UnmanagedType.LPStr)] string min_level);
 
     // ── Render API ──
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]

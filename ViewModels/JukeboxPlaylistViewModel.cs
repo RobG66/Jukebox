@@ -204,12 +204,20 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         PlayQueueReplaced?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>Adds tracks to the end of the runtime play queue.</summary>
+    /// <summary>
+    /// Adds tracks to the end of the runtime play queue, ignoring tracks that
+    /// are already queued.
+    /// </summary>
     public void AppendToPlayQueue(IEnumerable<JukeboxTrack> tracks)
+    {
+        AppendNewToPlayQueue(tracks);
+    }
+
+    private IReadOnlyList<JukeboxTrack> AppendNewToPlayQueue(IEnumerable<JukeboxTrack> tracks)
     {
         ArgumentNullException.ThrowIfNull(tracks);
 
-        var additions = tracks.ToList();
+        var additions = GetNewPlayQueueTracks(tracks);
         foreach (var track in additions)
         {
             track.IsPlaying = false;
@@ -217,6 +225,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         }
 
         UpdatePlaylistSummary();
+        return additions;
     }
 
     /// <summary>
@@ -230,7 +239,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(tracks);
 
-        var additions = tracks.ToList();
+        var additions = GetNewPlayQueueTracks(tracks);
         int currentIndex = currentTrack is null ? -1 : PlayQueue.IndexOf(currentTrack);
         int insertionIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
 
@@ -241,6 +250,25 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         }
 
         UpdatePlaylistSummary();
+    }
+
+    internal JukeboxTrack? FindPlayQueueTrack(JukeboxTrack track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+
+        if (PlayQueue.Contains(track))
+        {
+            return track;
+        }
+
+        string? identity = GetQueueTrackIdentity(track);
+        return identity == null
+            ? null
+            : PlayQueue.FirstOrDefault(existingTrack =>
+                string.Equals(
+                    GetQueueTrackIdentity(existingTrack),
+                    identity,
+                    StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Clears the runtime queue while preserving its binding instance.</summary>
@@ -432,6 +460,40 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     #endregion
 
     #region Private Methods
+    private List<JukeboxTrack> GetNewPlayQueueTracks(IEnumerable<JukeboxTrack> tracks)
+    {
+        var queuedIdentities = PlayQueue
+            .Select(GetQueueTrackIdentity)
+            .Where(identity => identity != null)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var additions = new List<JukeboxTrack>();
+        foreach (var track in tracks)
+        {
+            string? identity = GetQueueTrackIdentity(track);
+            if (identity != null && !queuedIdentities.Add(identity))
+            {
+                continue;
+            }
+
+            additions.Add(track);
+        }
+
+        return additions;
+    }
+
+    private static string? GetQueueTrackIdentity(JukeboxTrack track)
+    {
+        if (!string.IsNullOrWhiteSpace(track.OriginalUrl))
+        {
+            return track.OriginalUrl.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(track.FilePath)
+            ? null
+            : track.FilePath.Trim();
+    }
+
     private bool FilterLibraryTrack(object arg)
     {
         if (arg is not JukeboxTrack track) return false;

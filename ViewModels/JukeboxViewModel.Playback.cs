@@ -178,7 +178,10 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Playback Commands
-    [RelayCommand]
+    // These commands must remain executable while an earlier remote source is
+    // connecting. Re-entry lets StartTrackAsync cancel the old attempt and its
+    // generation guard ensures only the newest request can own playback state.
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlayAsync()
     {
         if (!CanPlay) return;
@@ -203,7 +206,7 @@ public partial class JukeboxViewModel
         await StartTrackAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlayTrackAsync(JukeboxTrack? track)
     {
         if (track is null)
@@ -242,7 +245,7 @@ public partial class JukeboxViewModel
     /// The queue receives an independent copy so subsequent library edits
     /// cannot mutate active playback.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlaySavedTrackNowAsync(JukeboxTrack? track)
     {
         if (track is null)
@@ -357,7 +360,7 @@ public partial class JukeboxViewModel
         PlaybackPosition = 0;
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PreviousAsync()
     {
         var playlist = GetPlayQueue();
@@ -374,7 +377,7 @@ public partial class JukeboxViewModel
         await StartTrackAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task NextAsync()
     {
         var playlist = GetPlayQueue();
@@ -432,6 +435,22 @@ public partial class JukeboxViewModel
             _activeEngine.Stop();
         }
 
+        // Show connection feedback before plugin URL resolution as well as
+        // before the media engine opens the resolved URL. Archive.org sources
+        // commonly require a resolver request first, so waiting until after
+        // resolution would leave the UI looking idle during that network work.
+        bool sourceMayBeRemote = trackToStart.PlaybackSource.StartsWith(
+            "http://",
+            StringComparison.OrdinalIgnoreCase) ||
+            trackToStart.PlaybackSource.StartsWith(
+                "https://",
+                StringComparison.OrdinalIgnoreCase);
+        if (sourceMayBeRemote)
+        {
+            ConnectingMessage = $"Connecting to {ExtractStreamHost(trackToStart.PlaybackSource)}...";
+            IsConnecting = true;
+        }
+
         // Resolve stable plugin-owned URLs only after the previous engine has
         // been stopped. OriginalUrl remains unchanged; only FilePath is
         // refreshed for this playback attempt.
@@ -457,6 +476,8 @@ public partial class JukeboxViewModel
             }
 
             Debug.WriteLine($"[Playback] URL resolution failed: {ex.Message}");
+            IsConnecting = false;
+            ConnectingMessage = "";
             await _dialogService.ShowErrorAsync(
                 "Playback Resolution Error",
                 $"Could not prepare '{trackToStart.DisplayName}' for playback.\n\nReason: {UnwrapRootErrorMessage(ex)}");
@@ -494,6 +515,12 @@ public partial class JukeboxViewModel
         string playbackPath = trackToStart.FilePath;
         bool isUrl = playbackPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                      playbackPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        if (!isUrl)
+        {
+            IsConnecting = false;
+            ConnectingMessage = "";
+        }
 
         // Determine which URLs should NOT go to BASS.
         //
@@ -580,13 +607,35 @@ public partial class JukeboxViewModel
         engineForAttempt.DurationChanged += OnEngineDurationChanged;
         engineForAttempt.MetadataChanged += OnEngineMetadataChanged;
 
-        IsCurrentTrackStream = isUrl;
-        if (isUrl)
+        // An HTTP(S) source is not automatically a live stream. Archive.org
+        // and similar providers expose finite video files through remote URLs;
+        // those need the same position polling and seekable range as local
+        // video. Keep the live-stream state only for genuinely unbounded
+        // remote media (such as radio stations).
+        bool isFiniteRemoteMedia = isUrl &&
+                                   (isVideo || trackToStart.Length > TimeSpan.Zero);
+        IsCurrentTrackStream = isUrl && !isFiniteRemoteMedia;
+        if (IsCurrentTrackStream)
         {
             CurrentTimeString = "—";
             TotalTimeString = "—";
             PlaybackPosition = 0;
             PlaybackLength = 0;
+        }
+        else
+        {
+            CurrentTimeString = "0:00";
+            PlaybackPosition = 0;
+            if (trackToStart.Length > TimeSpan.Zero)
+            {
+                UpdateTrackDuration(trackToStart.Length.TotalMilliseconds);
+            }
+            else
+            {
+                CurrentTimeString = "0:00";
+                PlaybackLength = 0;
+                TotalTimeString = "—";
+            }
         }
 
         engineForAttempt.SetVolume(Volume);
@@ -597,8 +646,10 @@ public partial class JukeboxViewModel
         // connection was opened and BASS accepted the stream handle —
         // actual audio may not flow for another second or two while
         // BASS buffers and detects the codec. We show a "Connecting..."
-        // overlay and race PlayAsync + the engine's PlaybackStarted
-        // event against a 15-second timeout (Constants.StreamConnectionTimeoutMs).
+        // overlay and race PlayAsync + the engine's PlaybackStarted event
+        // against a bounded startup timeout. Seekable remote video gets a
+        // longer allowance than live audio because MPV may need to follow a
+        // CDN redirect and probe a container index before file-loaded.
         //
         // Failure modes covered:
         //   - SSL/TLS errors (e.g. expired server cert) — PlayAsync throws.
@@ -649,6 +700,9 @@ public partial class JukeboxViewModel
         Exception? playError = null;
         bool timedOut = false;
         bool cancelled = false;
+        int connectionTimeoutMs = isUrl && isVideo
+            ? Constants.RemoteVideoConnectionTimeoutMs
+            : Constants.StreamConnectionTimeoutMs;
         try
         {
             // PlayAsync itself may throw (HTTP/SSL failure happens inside
@@ -667,10 +721,10 @@ public partial class JukeboxViewModel
             else if (isUrl)
             {
                 // PlayAsync returned without throwing — now wait for
-                // PlaybackStarted, but cap the wait at 15 seconds. We also
+                // PlaybackStarted, but cap the wait. We also
                 // race against connectToken so a superseding call unblocks
-                // us immediately instead of waiting the full 15s.
-                Task timeoutTask = Task.Delay(Constants.StreamConnectionTimeoutMs);
+                // us immediately instead of waiting for the timeout.
+                Task timeoutTask = Task.Delay(connectionTimeoutMs);
                 Task cancelTask = connectToken is { } ct2
                     ? Task.Delay(Timeout.Infinite, ct2)
                     : Task.FromResult(false);
@@ -691,7 +745,7 @@ public partial class JukeboxViewModel
                 else
                 {
                     timedOut = true;
-                    Debug.WriteLine($"[Playback] Stream connection timed out after {Constants.StreamConnectionTimeoutMs}ms with no audio.");
+                    Debug.WriteLine($"[Playback] Connection timed out after {connectionTimeoutMs}ms without a playback-start signal.");
                 }
             }
         }
@@ -752,7 +806,7 @@ public partial class JukeboxViewModel
 
             string title = timedOut ? "Connection Unsuccessful" : "Playback Error";
             string reason = timedOut
-                ? $"Timed out after {Constants.StreamConnectionTimeoutMs / 1000} seconds with no audio from the stream."
+                ? $"Timed out after {connectionTimeoutMs / 1000} seconds without receiving a playback-start signal."
                 : UnwrapRootErrorMessage(playError);
 
             await _dialogService.ShowErrorAsync(
@@ -996,8 +1050,20 @@ public partial class JukeboxViewModel
         }
         else
         {
-            PlaybackLength = durationMs;
-            TotalTimeString = TimeSpan.FromMilliseconds(durationMs).ToString(@"m\:ss");
+            // A remote finite file may briefly report an unavailable duration
+            // while the backend is probing it. Preserve the plugin/file
+            // metadata range until a backend duration becomes available.
+            var knownDuration = CurrentTrack?.Length ?? TimeSpan.Zero;
+            if (knownDuration > TimeSpan.Zero)
+            {
+                PlaybackLength = knownDuration.TotalMilliseconds;
+                TotalTimeString = knownDuration.ToString(@"m\:ss");
+            }
+            else
+            {
+                PlaybackLength = 0;
+                TotalTimeString = "—";
+            }
         }
     }
 
@@ -1087,8 +1153,7 @@ public partial class JukeboxViewModel
 
         if (!string.IsNullOrEmpty(value.FilePath))
         {
-            bool isStream = value.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                            value.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            bool isStream = IsLiveStreamTrack(value);
 
             if (isStream)
             {
@@ -1107,8 +1172,7 @@ public partial class JukeboxViewModel
     {
         if (e.PropertyName == nameof(JukeboxTrack.Length) && CurrentTrack != null)
         {
-            bool isStream = CurrentTrack.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                            CurrentTrack.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            bool isStream = IsLiveStreamTrack(CurrentTrack);
 
             if (isStream)
             {
@@ -1190,11 +1254,37 @@ public partial class JukeboxViewModel
             }
 
             UpdateTrackDuration(durationMs);
-            if (durationTrack != null)
+            if (durationTrack != null && durationMs > 0)
             {
                 durationTrack.Length = TimeSpan.FromMilliseconds(durationMs);
             }
         });
+    }
+
+    private static bool IsLiveStreamTrack(JukeboxTrack track)
+    {
+        bool isUrl = track.FilePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                     track.FilePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        if (!isUrl || track.Length > TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        // Plugin MIME hints are authoritative when the remote URL is
+        // extensionless or ends in a CDN query string.
+        if (track.Bitrate.Contains("video/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string path = track.FilePath;
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
+        {
+            path = Uri.UnescapeDataString(uri.AbsolutePath);
+        }
+
+        return !Constants.VideoExtensions.Any(extension =>
+            path.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
     }
 
     private void OnBassPcmDataAvailable(object? sender, short[] pcm)

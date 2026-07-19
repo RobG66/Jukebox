@@ -152,6 +152,9 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
 
     private void OnMpvFileLoaded()
     {
+        string hwdec = _mpv?.GetString("hwdec-current") ?? "none";
+        string decoder = _mpv?.GetString("video-codec") ?? "unknown";
+        Debug.WriteLine($"[MPV Engine] File loaded. decoder={decoder}, hwdec-current={hwdec}.");
         SignalPlaybackStarted();
     }
 

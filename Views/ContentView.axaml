@@ -34,16 +34,16 @@
             </StackPanel>
 
             <!--
-                Connecting overlay - shown while a URL stream (radio) is
-                being opened and no audio has started flowing yet. Bound
-                to IsConnecting, which is set to true in
-                JukeboxViewModel.StartTrackAsync right before PlayAsync is
-                called, and cleared on PlaybackStarted (success), on a
-                thrown exception (HTTP/SSL error), or on a 15-second
-                timeout (no audio received). The ConnectingMessage is
-                pre-formatted as "Connecting to host:port..." by the VM.
+                Connecting overlay - shown while a remote source is being
+                resolved/opened and no playback has started yet. It is placed
+                above the media host so video/visualizer content cannot paint
+                over it. IsHitTestVisible is false so the overlay gives
+                feedback without blocking the rest of the GUI.
             -->
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20" IsVisible="{Binding IsConnecting}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20"
+                        Panel.ZIndex="10"
+                        IsHitTestVisible="False"
+                        IsVisible="{Binding IsConnecting}">
                 <TextBlock Text="{Binding ConnectingMessage}"
                            Foreground="#CCCCCC"
                            HorizontalAlignment="Center"

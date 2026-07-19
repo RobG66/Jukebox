@@ -48,10 +48,10 @@ public partial class JukeboxPlaylistViewModel
 
         if (target == PlaylistTarget.PlayQueue)
         {
-            AppendToPlayQueue(additions);
-            TagImportedQueueTracksAsync(additions)
+            var queuedAdditions = AppendNewToPlayQueue(additions);
+            TagImportedQueueTracksAsync(queuedAdditions)
                 .SafeFireAndForget(nameof(TagImportedQueueTracksAsync));
-            return additions;
+            return queuedAdditions;
         }
 
         foreach (var track in additions)

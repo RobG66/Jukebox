@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.OpenGL;
@@ -31,8 +32,8 @@ namespace Jukebox.Views;
 ///   <item>The callback (which must NOT call mpv APIs) schedules a render
 ///   on the UI thread via <see cref="OpenGlControlBase.RequestNextFrameRendering"/>.</item>
 ///   <item>Avalonia calls <see cref="OnOpenGlRender"/> on the GL thread —
-///   we call <see cref="MpvContext.Render(int, int, int)"/> to render the
-///   frame into Avalonia's FBO.</item>
+///   we call <see cref="MpvContext.RenderFrame(int, int, int)"/> to
+///   acknowledge the update and draw into Avalonia's FBO.</item>
 /// </list>
 /// </para>
 /// </remarks>
@@ -57,8 +58,17 @@ public class MpvView : OpenGlControlBase
     // delegate is GC'd, the next callback crashes.
     private MpvUpdateCallback? _updateCallback;
     private bool _renderContextCreated;
+    private MpvContext? _renderContextOwner;
+
+    // Set to 1 when we've scheduled a follow-up render via Dispatcher.UIThread.Post
+    // because Bounds was 0×0. Prevents unbounded re-posting if the layout
+    // never settles.
+    private int _boundsRetryPending;
+    private long _renderCount;
+    private long _updateCallbackCount;
 
     // Delegate type for the render update callback.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void MpvUpdateCallback(IntPtr ctx);
 
     static MpvView()
@@ -79,6 +89,8 @@ public class MpvView : OpenGlControlBase
 
     protected override void OnOpenGlInit(GlInterface gl)
     {
+        Interlocked.Exchange(ref _boundsRetryPending, 0);
+
         // Nothing to do here — the render context is created lazily in
         // OnOpenGlRender when we have both the GL interface and the
         // MpvContext. This avoids ordering issues if the MpvContext is
@@ -88,29 +100,75 @@ public class MpvView : OpenGlControlBase
     protected override void OnOpenGlRender(GlInterface gl, int fbo)
     {
         var ctx = MpvContext;
-        if (ctx == null || ctx.Handle == IntPtr.Zero) return;
 
-        // Skip rendering until the control has real dimensions.
+        // A styled-property change can replace or clear MpvContext while the
+        // control remains attached. Tear the old renderer down here, while
+        // Avalonia guarantees that its owning GL context is current.
+        if (_renderContextOwner != null
+            && !ReferenceEquals(_renderContextOwner, ctx))
+        {
+            ReleaseOwnedRenderContext();
+        }
+
+        if (ctx == null || ctx.Handle == IntPtr.Zero)
+        {
+            // No MpvContext bound (or it's been disposed). Don't paint —
+            // there's nothing to render. Don't schedule a follow-up
+            // either; the next MpvContextProperty change will trigger
+            // RequestNextFrameRendering via OnMpvContextChanged.
+            return;
+        }
+
+        // Skip a transient zero-sized surface. One guarded retry is enough;
+        // subsequent layout changes also invalidate OpenGlControlBase.
         if (Bounds.Width < 1 || Bounds.Height < 1)
         {
-            Dispatcher.UIThread.Post(() => RequestNextFrameRendering(),
-                Avalonia.Threading.DispatcherPriority.Background);
+            if (Interlocked.Exchange(ref _boundsRetryPending, 1) == 0)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Interlocked.Exchange(ref _boundsRetryPending, 0);
+                    RequestNextFrameRendering();
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }
             return;
         }
 
         // Create the render context if not already created.
-        if (ctx.RenderContextHandle == IntPtr.Zero && !_renderContextCreated)
+        if (!_renderContextCreated)
         {
             CreateRenderContext(gl, ctx);
         }
 
-        if (!_renderContextCreated) return;
-        if (ctx.RenderContextHandle == IntPtr.Zero) return;
+        if (!_renderContextCreated || ctx.RenderContextHandle == IntPtr.Zero)
+        {
+            // Render context creation failed (or was released between
+            // the check above and now). Don't paint; the next MPV signal
+            // or layout pass will retry.
+            return;
+        }
 
         var size = GetPixelSize();
         try
         {
-            ctx.Render(fbo, size.Width, size.Height);
+            if (ctx.RenderFrame(fbo, size.Width, size.Height))
+            {
+                // Avalonia's shared OpenGL composition texture is consumed
+                // from another context. Its normal BeginDraw teardown calls
+                // glFlush(), which submits work but does not guarantee that
+                // libmpv has finished writing before the compositor samples
+                // the texture. A completion barrier prevents partially drawn
+                // or stale buffers from appearing as full-frame flashes.
+                gl.Finish();
+
+                long renders = Interlocked.Increment(ref _renderCount);
+                if (renders % 300 == 0)
+                {
+                    long callbacks = Interlocked.Read(ref _updateCallbackCount);
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[MpvView] renders={renders}, callbacks={callbacks}, fbo={fbo}, size={size.Width}x{size.Height}.");
+                }
+            }
         }
         catch (AccessViolationException)
         {
@@ -120,8 +178,22 @@ public class MpvView : OpenGlControlBase
 
     protected override void OnOpenGlDeinit(GlInterface gl)
     {
+        // A libmpv render context is tied to the OpenGL context used to
+        // create it. Release it before Avalonia destroys that GL context;
+        // otherwise a later audio→video switch sees a non-zero but invalid
+        // handle and renders a permanent black surface.
+        ReleaseOwnedRenderContext();
+        Interlocked.Exchange(ref _boundsRetryPending, 0);
+    }
+
+    private void ReleaseOwnedRenderContext()
+    {
+        _renderContextOwner?.ReleaseRenderContext();
+        _renderContextOwner = null;
         _renderContextCreated = false;
         _updateCallback = null;
+        Interlocked.Exchange(ref _renderCount, 0);
+        Interlocked.Exchange(ref _updateCallbackCount, 0);
     }
 
     private void CreateRenderContext(GlInterface gl, MpvContext ctx)
@@ -168,8 +240,11 @@ public class MpvView : OpenGlControlBase
                     return;
                 }
 
-                ctx.SetRenderContext(renderCtx);
+                if (!ctx.TrySetRenderContext(renderCtx))
+                    return;
+
                 _renderContextCreated = true;
+                _renderContextOwner = ctx;
 
                 // Set the update callback — MPV calls this when a new frame
                 // is ready. The callback must NOT call any mpv API; it just
@@ -195,6 +270,7 @@ public class MpvView : OpenGlControlBase
         }
         catch (Exception ex)
         {
+            ReleaseOwnedRenderContext();
             System.Diagnostics.Debug.WriteLine($"[MpvView] CreateRenderContext failed: {ex.Message}");
         }
     }
@@ -205,7 +281,17 @@ public class MpvView : OpenGlControlBase
     /// </summary>
     private void OnRenderUpdate(IntPtr ctx)
     {
-        Dispatcher.UIThread.Post(() => RequestNextFrameRendering());
+        Interlocked.Increment(ref _updateCallbackCount);
+        // Do not add a second coalescing state machine here.
+        // OpenGlControlBase already coalesces frame requests, while libmpv's
+        // contract requires update() to be serviced again if a callback
+        // arrives during rendering. Posting every notification guarantees
+        // that a request cannot remain permanently suppressed.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_renderContextCreated)
+                RequestNextFrameRendering();
+        });
     }
 
     private PixelSize GetPixelSize()

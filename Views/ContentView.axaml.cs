@@ -225,8 +225,10 @@ public partial class ContentView : UserControl
         if (!_isSuppressingNativeRender)
         {
             _isSuppressingNativeRender = true;
-            // Hide the active control during resize to prevent per-frame
-            // GL surface resizes (stutter).
+            // ProjectM benefits from being hidden during rapid resize. Do
+            // not hide MpvView: making the video control invisible is itself
+            // a guaranteed black flash, and libmpv supports target-size
+            // changes on each render call.
             if (_visualizerControl != null
                 && _currentViewModel is { IsVisualizerVisible: true, IsVisualizerAvailable: true })
             {

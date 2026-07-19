@@ -33,7 +33,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="10,2,4,4" RowDefinitions="Auto,Auto,*,Auto">
+    <Grid Margin="10,2,10,4" RowDefinitions="Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
                 <TextBlock Classes="media-eyebrow" Text="UP NEXT"/>

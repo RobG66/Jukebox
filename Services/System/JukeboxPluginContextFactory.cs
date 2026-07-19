@@ -88,9 +88,12 @@ public sealed class JukeboxPluginContextFactory : IJukeboxMediaBrowserContextFac
                     new[] { track },
                     _jukeboxViewModel.CurrentTrack);
 
-                if (_jukeboxViewModel.PlayTrackCommand.CanExecute(track))
+                // Insertion ignores duplicates, so play the existing queued
+                // instance when this request is already in the queue.
+                var queuedTrack = _playlistViewModel.FindPlayQueueTrack(track) ?? track;
+                if (_jukeboxViewModel.PlayTrackCommand.CanExecute(queuedTrack))
                 {
-                    _jukeboxViewModel.PlayTrackCommand.Execute(track);
+                    _jukeboxViewModel.PlayTrackCommand.Execute(queuedTrack);
                 }
             });
         }

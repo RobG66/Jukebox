@@ -70,4 +70,9 @@ public static class Constants
     // signal arrives within this window, the connection is treated as
     // failed, playback is aborted, and the user is shown an error dialog.
     public const int StreamConnectionTimeoutMs = 15000;
+
+    // Seekable remote video often needs longer than a live audio stream to
+    // follow CDN redirects and probe container indexes before MPV raises its
+    // file-loaded signal. Keep this separate so radio failures remain fast.
+    public const int RemoteVideoConnectionTimeoutMs = 20000;
 }
