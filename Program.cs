@@ -14,7 +14,7 @@ class Program
             .UsePlatformDetect()
             .With(new Win32PlatformOptions { RenderingMode = new[] { Win32RenderingMode.Wgl } })
 #if DEBUG
-            .WithDeveloperTools()
+            
 #endif
             .WithInterFont()
             .LogToTrace();

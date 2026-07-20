@@ -482,3 +482,6 @@ plugins/
 
 *.ps1
 *.sh
+AGENTS.md
+Jukebox_refactor_plan_current_status.md
+PROJECT_CONTEXT.md
