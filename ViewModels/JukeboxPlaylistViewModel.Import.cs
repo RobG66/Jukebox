@@ -24,6 +24,33 @@ public partial class JukeboxPlaylistViewModel
     {
         ArgumentNullException.ThrowIfNull(paths);
 
+        bool isQueueImport = target == PlaylistTarget.PlayQueue;
+        if (isQueueImport)
+        {
+            // File discovery runs off the UI thread. Serialize queue imports
+            // so a later drop cannot finish discovery first and appear ahead
+            // of an earlier drop in the queue.
+            await _playQueueImportGate.WaitAsync();
+        }
+
+        try
+        {
+            return await ProcessAndAddFilesCoreAsync(paths, target, noRecurse);
+        }
+        finally
+        {
+            if (isQueueImport)
+            {
+                _playQueueImportGate.Release();
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<JukeboxTrack>> ProcessAndAddFilesCoreAsync(
+        IEnumerable<string> paths,
+        PlaylistTarget target,
+        bool noRecurse)
+    {
         int version = _playlistVersion;
         if (target == PlaylistTarget.SelectedSavedPlaylist)
         {

@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading;
 using Avalonia.Collections;
 using System.Linq;
 using System.Threading.Tasks;
@@ -41,6 +42,7 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     private int _pendingLast = Constants.TagBatchSize - 1;
 
     private readonly IUserDialogService _dialogService;
+    private readonly SemaphoreSlim _playQueueImportGate = new(1, 1);
     #endregion
 
     #region Observable Properties
@@ -205,8 +207,8 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Adds tracks to the end of the runtime play queue, ignoring tracks that
-    /// are already queued.
+    /// Adds new tracks to the end of the runtime play queue, ignoring tracks
+    /// that are already queued.
     /// </summary>
     public void AppendToPlayQueue(IEnumerable<JukeboxTrack> tracks)
     {
