@@ -123,3 +123,9 @@ Jukebox can be embedded in other Avalonia applications as a user control. If you
 - [Radio Browser API](https://www.radio-browser.info/) — Radio station directory
 - [Internet Archive](https://archive.org/) — Digital library of free audio & media
 - [TagLib#](https://github.com/mono/taglib-sharp) — Metadata reading
+
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+
+For details on third-party libraries, native dependencies (BASS, libmpv, libvgm, projectM), and their respective licenses, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
