@@ -31,7 +31,22 @@ public partial class PlayQueueView : UserControl
     {
         bool hasSelection = PlayQueueDataGrid.SelectedItems.Count > 0;
         PlayQueuePlayNowMenuItem.IsEnabled = PlayQueueDataGrid.SelectedItem is JukeboxTrack;
+        PlayQueueRenameMenuItem.IsEnabled = PlayQueueDataGrid.SelectedItem is JukeboxTrack;
         PlayQueueRemoveMenuItem.IsEnabled = hasSelection;
+    }
+
+    private void PlayQueueRename_Click(object? sender, RoutedEventArgs e)
+    {
+        RenamePlayQueueSelected_Click(sender, e);
+    }
+
+    private void RenamePlayQueueSelected_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.RenamePlayQueueSelectedCommand.CanExecute(PlayQueueDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.RenamePlayQueueSelectedCommand.Execute(PlayQueueDataGrid.SelectedItems);
+        }
     }
 
     private void PlayQueuePlayNow_Click(object? sender, RoutedEventArgs e)

@@ -59,6 +59,7 @@ public partial class SavedPlaylistsView : UserControl
 
         LibraryPlayNowMenuItem.IsEnabled = hasCurrent;
         LibraryPlayPlaylistMenuItem.IsEnabled = hasCurrent;
+        LibraryRenameMenuItem.IsEnabled = hasCurrent;
         LibraryQueueNextMenuItem.IsEnabled = hasSelection;
         LibraryQueueLastMenuItem.IsEnabled = hasSelection;
         LibraryRemoveMenuItem.IsEnabled = hasSelection;
@@ -99,6 +100,20 @@ public partial class SavedPlaylistsView : UserControl
             vm.PlayTrackCommand.CanExecute(track))
         {
             vm.PlayTrackCommand.Execute(track);
+        }
+    }
+
+    private void LibraryRename_Click(object? sender, RoutedEventArgs e)
+    {
+        RenameLibrarySelected_Click(sender, e);
+    }
+
+    private void RenameLibrarySelected_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is JukeboxViewModel vm &&
+            vm.PlaylistViewModel.RenameLibrarySelectedCommand.CanExecute(LibraryDataGrid.SelectedItems))
+        {
+            vm.PlaylistViewModel.RenameLibrarySelectedCommand.Execute(LibraryDataGrid.SelectedItems);
         }
     }
 

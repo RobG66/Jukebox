@@ -215,6 +215,27 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
         AppendNewToPlayQueue(tracks);
     }
 
+    /// <summary>
+    /// Appends a track to the end of the runtime play queue. If a matching track
+    /// already exists in the queue, it is retained at its current position.
+    /// Returns the queued track instance.
+    /// </summary>
+    public JukeboxTrack AppendOrMoveToPlayQueueEnd(JukeboxTrack track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+
+        var existingTrack = FindPlayQueueTrack(track);
+        if (existingTrack != null)
+        {
+            return existingTrack;
+        }
+
+        track.IsPlaying = false;
+        PlayQueue.Add(track);
+        UpdatePlaylistSummary();
+        return track;
+    }
+
     private IReadOnlyList<JukeboxTrack> AppendNewToPlayQueue(IEnumerable<JukeboxTrack> tracks)
     {
         ArgumentNullException.ThrowIfNull(tracks);
@@ -292,6 +313,32 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     {
         if (selectedItems == null) return;
         RemoveFromPlayQueue(selectedItems.Cast<JukeboxTrack>().ToList());
+    }
+
+    [RelayCommand]
+    private async Task RenamePlayQueueSelectedAsync(System.Collections.IList? selectedItems)
+    {
+        var track = selectedItems?.Cast<JukeboxTrack>().FirstOrDefault() ?? PlayQueue.FirstOrDefault(t => t.IsSelected);
+        if (track == null) return;
+
+        await RenameTrackAsync(track);
+    }
+
+    public async Task RenameTrackAsync(JukeboxTrack track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+
+        string? newName = await _dialogService.ShowRenameAsync(
+            track.DisplayName,
+            title: "Rename Track",
+            prompt: "Enter new title for this track:",
+            isFileName: false);
+
+        if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(newName, track.DisplayName, StringComparison.Ordinal))
+        {
+            track.DisplayName = newName.Trim();
+            UpdatePlaylistSummary();
+        }
     }
 
     /// <summary>

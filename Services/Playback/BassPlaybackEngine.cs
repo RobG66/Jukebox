@@ -31,6 +31,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     private int _eqFxHandle;
 
     private BassNative.BassDspProcedure? _dspProcedure;
+
     private BassNative.BassSyncProcedure? _endSyncProcedure;
     private int _dspHandle;
     private int _endSyncHandle;
@@ -308,8 +309,10 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         Stop();
 
         BassNative.BassErrors error = BassNative.BassErrors.OK;
+        CancellationToken localCt = _externalStreamCt;
         try
         {
+            localCt.ThrowIfCancellationRequested();
             string urlToPlay = track.FilePath;
 
             if (urlToPlay.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -334,27 +337,27 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 {
                     // Use native BASS StreamCreateURL for static files.
                     // This supports duration detection and seeking natively.
-                    _bassStream = await Task.Run(() => {
+                    int createdHandle = await Task.Run(() => {
                         int handle = BassNative.CreateUrlStream(urlToPlay);
                         if (handle == 0) error = BassNative.GetLastError();
                         return handle;
-                    });
+                    }).ConfigureAwait(false);
+
+                    if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
+                    {
+                        if (createdHandle != 0)
+                        {
+                            BassNative.StreamFree(createdHandle);
+                        }
+                        throw new OperationCanceledException(localCt);
+                    }
+
+                    _bassStream = createdHandle;
                 }
                 else
                 {
                     // Use HttpClient + BASS_StreamCreateFileUser for live URL streams (radio).
-                    //
-                    // BASS's built-in HTTP client (Bass.CreateStream(url, ...)) has a
-                    // quirk where it stops reading after ~32KB when the server sends
-                    // "Connection: close" — which StreamTheWorld/Triton MediaGateway
-                    // and some other CDNs do. HttpClient handles Connection: close
-                    // correctly (keeps reading until the socket actually closes).
-                    //
-                    // We open the HTTP connection, then hand the response stream to
-                    // BASS via BASS_StreamCreateFileUser. BASS detects the audio
-                    // format (AAC, MP3, Opus, HLS) and decodes through its normal
-                    // pipeline — EQ, visualizations, and ICY metadata all work.
-                    _bassStream = await OpenUrlStreamAsync(urlToPlay);
+                    _bassStream = await OpenUrlStreamAsync(urlToPlay).ConfigureAwait(false);
                     if (_bassStream == 0)
                     {
                         error = BassNative.GetLastError();
@@ -363,12 +366,42 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             }
             else
             {
-                _bassStream = await Task.Run(() => {
+                int createdHandle = await Task.Run(() => {
                     int handle = BassNative.CreateStream(urlToPlay, BassNative.BassFlags.Default);
                     if (handle == 0) error = BassNative.GetLastError();
                     return handle;
-                });
+                }).ConfigureAwait(false);
+
+                if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
+                {
+                    if (createdHandle != 0)
+                    {
+                        BassNative.StreamFree(createdHandle);
+                    }
+                    throw new OperationCanceledException(localCt);
+                }
+
+                _bassStream = createdHandle;
             }
+
+            if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
+            {
+                if (_bassStream != 0)
+                {
+                    BassNative.StreamFree(_bassStream);
+                    _bassStream = 0;
+                }
+                throw new OperationCanceledException(localCt);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (_bassStream != 0)
+            {
+                BassNative.StreamFree(_bassStream);
+                _bassStream = 0;
+            }
+            throw;
         }
         catch (Exception ex)
         {
@@ -380,6 +413,13 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         {
             Debug.WriteLine($"[BASS Engine] CreateStream failed for '{track.FilePath}'. Error: {error}");
             throw new InvalidOperationException($"Could not open audio stream:\n{track.FilePath}\n\nReason: {error}");
+        }
+
+        if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
+        {
+            BassNative.StreamFree(_bassStream);
+            _bassStream = 0;
+            throw new OperationCanceledException(localCt);
         }
 
         long byteLength = BassNative.ChannelGetLength(_bassStream);
@@ -399,17 +439,14 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
 
         _dspHandle = BassNative.ChannelSetDSP(_bassStream, _dspProcedure!, IntPtr.Zero, 0);
         _endSyncHandle = BassNative.ChannelSetSync(_bassStream, BassNative.BassSyncFlags.End, 0, _endSyncProcedure!, IntPtr.Zero);
-        // NOTE: This sync will never fire for URL streams — those are all
-        // created via BASS_StreamCreateFileUser (see OpenUrlStreamAsync),
-        // which has no native ICY awareness. "Now Playing" title updates
-        // for URL streams are handled manually in ReadAudioBytes/
-        // ConsumeIcyMetadataBlock, which fire MetadataChanged directly.
-        // This sync is only meaningful if something ever creates a stream
-        // via BassNative.CreateStream directly again — currently nothing
-        // does (the local-file branch below never passes a URL). Left in
-        // place as a harmless no-op rather than removed, since it costs
-        // nothing and is one less thing to re-add if that ever changes.
         _metaSyncHandle = BassNative.ChannelSetSync(_bassStream, BassNative.BassSyncFlags.MetadataReceived, 0, _metaSyncProcedure!, IntPtr.Zero);
+
+        if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
+        {
+            BassNative.StreamFree(_bassStream);
+            _bassStream = 0;
+            throw new OperationCanceledException(localCt);
+        }
 
         BassNative.ChannelPlay(_bassStream);
     }
@@ -565,6 +602,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             Marshal.FreeHGlobal(ptr);
         }
     }
+
+
 
     // Detects whether a URL is an HLS playlist (.m3u8 or .m3u extension).
     // Used to route the stream through BASS's native URL client instead of
@@ -1145,7 +1184,11 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     // Cleans up the HttpClient response and network stream.
     private void CleanupHttpStream()
     {
-        _streamCts?.Cancel();
+        if (_streamCts != null)
+        {
+            try { _streamCts.Cancel(); _streamCts.Dispose(); } catch { }
+            _streamCts = null;
+        }
         if (_networkStream != null)
         {
             try { _networkStream.Dispose(); } catch { }
@@ -1204,6 +1247,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         Marshal.Copy(buffer, pcm, 0, count);
         handler.Invoke(this, pcm);
     }
+
+
 
     private void OnBassEndSync(int handle, int channel, int data, IntPtr user)
     {

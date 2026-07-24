@@ -80,17 +80,10 @@ public sealed class JukeboxPluginContextFactory : IJukeboxMediaBrowserContextFac
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                // A plugin is a discovery surface, so playing one of its items
-                // must not erase work the user already put in the host queue.
-                // Inserting after the current row also lets natural playback
-                // resume with the following queued item when this track ends.
-                _playlistViewModel.InsertNextInPlayQueue(
-                    new[] { track },
-                    _jukeboxViewModel.CurrentTrack);
+                // Appends or moves the double-clicked item to the end of the play queue
+                // so newly played tracks always appear at the end of the queue list.
+                var queuedTrack = _playlistViewModel.AppendOrMoveToPlayQueueEnd(track);
 
-                // Insertion ignores duplicates, so play the existing queued
-                // instance when this request is already in the queue.
-                var queuedTrack = _playlistViewModel.FindPlayQueueTrack(track) ?? track;
                 if (_jukeboxViewModel.PlayTrackCommand.CanExecute(queuedTrack))
                 {
                     _jukeboxViewModel.PlayTrackCommand.Execute(queuedTrack);

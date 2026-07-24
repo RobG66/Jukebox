@@ -9,14 +9,22 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="MinHeight" Value="0"/>
         <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Padding" Value="4,2"/>
         <Setter Property="ToolTip.Placement" Value="Bottom"/>
         <Setter Property="ToolTip.VerticalOffset" Value="6"/>
     </Style>
 
-    <Style Selector="Button.rounded /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Padding" Value="4,2"/>
+    <!-- Avalonia centers the TextBlock's full line box (ascent+descent), not the visible
+         glyphs. Button labels like "Search"/"Reset" have no descenders (no g/y/p/q/j), so the
+         space reserved for one sits empty below the text and the label reads as shifted up —
+         worse the shorter the button is. LineHeight isn't a Button property, so it has to target
+         the TextBlock the ContentPresenter generates for a plain string Content. Pinning it close
+         to FontSize removes the reserved slack so Center alignment lands on the visible text. -->
+    <Style Selector="Button.rounded /template/ ContentPresenter#PART_ContentPresenter TextBlock">
+        <Setter Property="LineHeight" Value="14"/>
     </Style>
 
     <!-- Prevent the default theme from changing button text color on pointer-over -->
@@ -140,36 +148,6 @@
             <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
                 <GradientStop Color="#FFCCCC00" Offset="0"/>
                 <GradientStop Color="#FF999900" Offset="1"/>
-            </LinearGradientBrush>
-        </Setter>
-    </Style>
-
-    <!-- Grey Button -->
-    <Style Selector="Button.rounded.grey">
-        <Setter Property="Background">
-            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-                <GradientStop Color="#FFF0F0F0" Offset="0"/>
-                <GradientStop Color="#FFD3D3D3" Offset="1"/>
-            </LinearGradientBrush>
-        </Setter>
-        <Setter Property="BorderBrush" Value="#D3D3D3"/>
-        <Setter Property="Foreground" Value="Black"/>
-    </Style>
-    
-    <Style Selector="Button.rounded.grey:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background">
-            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-                <GradientStop Color="#FFFFFFFF" Offset="0"/>
-                <GradientStop Color="#FFE0E0E0" Offset="1"/>
-            </LinearGradientBrush>
-        </Setter>
-    </Style>
-    
-    <Style Selector="Button.rounded.grey:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background">
-            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-                <GradientStop Color="#FFD3D3D3" Offset="0"/>
-                <GradientStop Color="#FFB0B0B0" Offset="1"/>
             </LinearGradientBrush>
         </Setter>
     </Style>

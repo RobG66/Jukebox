@@ -4,7 +4,6 @@ using Jukebox.Extensions;
 using Jukebox.Models;
 using Jukebox.Services;
 using Jukebox.Plugin.Abstractions;
-using Avalonia.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -115,7 +114,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
     [ObservableProperty] private bool _isRepeatEnabled = false;
     [ObservableProperty] private bool _isRandomPlayback = false;
     [ObservableProperty] private bool _isAutoHideEnabled = false;
-    [ObservableProperty] private WindowState _windowState = WindowState.Normal;
+    private Avalonia.Controls.WindowState _previousWindowState = Avalonia.Controls.WindowState.Normal;
+    [ObservableProperty] private Avalonia.Controls.WindowState _windowState = Avalonia.Controls.WindowState.Normal;
     [ObservableProperty] private bool _isFullScreen = false;
 
     /// <summary>
@@ -133,9 +133,9 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
     /// </summary>
     [ObservableProperty] private string _connectingMessage = "";
 
-    partial void OnWindowStateChanged(WindowState value)
+    partial void OnWindowStateChanged(Avalonia.Controls.WindowState value)
     {
-        var targetFullScreen = (value == WindowState.FullScreen);
+        var targetFullScreen = (value == Avalonia.Controls.WindowState.FullScreen);
         if (IsFullScreen != targetFullScreen)
         {
             IsFullScreen = targetFullScreen;
@@ -144,10 +144,22 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
 
     partial void OnIsFullScreenChanged(bool value)
     {
-        var targetState = value ? WindowState.FullScreen : WindowState.Normal;
-        if (WindowState != targetState)
+        if (value)
         {
-            WindowState = targetState;
+            if (WindowState != Avalonia.Controls.WindowState.FullScreen)
+            {
+                _previousWindowState = WindowState;
+                WindowState = Avalonia.Controls.WindowState.FullScreen;
+            }
+        }
+        else
+        {
+            if (WindowState == Avalonia.Controls.WindowState.FullScreen)
+            {
+                WindowState = _previousWindowState != Avalonia.Controls.WindowState.FullScreen
+                    ? _previousWindowState
+                    : Avalonia.Controls.WindowState.Normal;
+            }
         }
     }
     [ObservableProperty] private double _controlBarHeight = Constants.DefaultControlBarHeight;
@@ -515,5 +527,6 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
         }
         _showPlayingService.Hide();
         VisualizerViewModel?.Dispose();
+        VgmEngine?.Dispose();
     }
 }

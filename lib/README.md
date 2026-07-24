@@ -9,8 +9,6 @@ This folder is intentionally empty in the repository. You must
 populate it manually before running Jukebox. The Jukebox checks at
 startup and will show a clear error dialog listing what's missing.
 
----
-
 ## Required libraries (audio + video — always needed)
 
 ### Windows
@@ -24,6 +22,8 @@ startup and will show a clear error dialog listing what's missing.
 |------|--------|---------|
 | `libbass.so` | https://www.un4seen.com/ (download `bass24-linux.zip`) | Proprietary, non-commercial |
 | `libmpv.so.2` | `sudo apt install libmpv-dev` (places it in `/usr/lib/x86_64-linux-gnu/`), OR download from https://github.com/mpv-player/mpv releases | GPL v2+ (or LGPL if built with `--enable-lgpl`) |
+
+---
 
 > **Linux alternative:** if you install `libmpv-dev` via apt, the Jukebox
 > will find `libmpv.so.2` on the system library path even if it's not in

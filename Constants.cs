@@ -7,10 +7,10 @@ namespace Jukebox;
 public static class Constants
 {
     // ── Media file extensions ──
-    public static readonly string[] AudioExtensions = { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".wma", ".vgz", ".vgm", ".vgx", ".zip" };
+    public static readonly string[] AudioExtensions = { ".mp3", ".flac", ".wav", ".ogg", ".opus", ".m4a", ".aac", ".wma", ".aiff", ".aif", ".shn", ".ape", ".vgz", ".vgm", ".vgx", ".zip" };
 
     public static readonly string[] VideoExtensions =
-        { ".mp4", ".m4v", ".mkv", ".avi", ".webm", ".ogv", ".mpeg", ".mpg", ".mov" };
+        { ".mp4", ".m4v", ".mkv", ".avi", ".webm", ".ogv", ".mpeg", ".mpg", ".mov", ".wmv", ".flv", ".m2ts", ".mts", ".ts", ".3gp" };
 
     public static readonly HashSet<string> SupportedMediaExtensions =
         new HashSet<string>(AudioExtensions.Concat(VideoExtensions), System.StringComparer.OrdinalIgnoreCase);

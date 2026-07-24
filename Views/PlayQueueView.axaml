@@ -18,6 +18,9 @@
                     Command="{Binding PlaylistViewModel.ClearPlayQueueCommand}"/>
         <KeyBinding Gesture="Ctrl+S"
                     Command="{Binding PlaylistViewModel.SavePlayQueueAsPlaylistCommand}"/>
+        <KeyBinding Gesture="F2"
+                    Command="{Binding PlaylistViewModel.RenamePlayQueueSelectedCommand}"
+                    CommandParameter="{Binding #PlayQueueDataGrid.SelectedItems}"/>
         <KeyBinding Gesture="Enter"
                     Command="{Binding PlayTrackCommand}"
                     CommandParameter="{Binding #PlayQueueDataGrid.SelectedItem}"/>
@@ -48,8 +51,8 @@
 
         <Grid Grid.Row="1"
               ColumnDefinitions="*,Auto,Auto"
-              ColumnSpacing="6"
-              Margin="0,0,0,10">
+              ColumnSpacing="4"
+              Margin="0,0,0,8">
             <Button Grid.Column="0"
                     Classes="media-primarybutton"
                     HorizontalAlignment="Left"
@@ -98,6 +101,10 @@
                     <MenuItem x:Name="PlayQueuePlayNowMenuItem"
                               Header="Play now"
                               Click="PlayQueuePlayNow_Click"/>
+                    <MenuItem x:Name="PlayQueueRenameMenuItem"
+                              Header="Rename track"
+                              InputGesture="F2"
+                              Click="PlayQueueRename_Click"/>
                     <Separator/>
                     <MenuItem x:Name="PlayQueueRemoveMenuItem"
                               Header="Remove from queue"
@@ -134,6 +141,13 @@
                             Orientation="Horizontal"
                             Spacing="4"
                             Margin="8,0,0,0">
+                    <Button Classes="media-iconbutton"
+                            Width="30" Height="30"
+                            ToolTip.Tip="Rename selected track (F2)"
+                            Click="RenamePlayQueueSelected_Click">
+                        <PathIcon Classes="media-vector"
+                                  Data="{StaticResource MediaIconEdit}"/>
+                    </Button>
                     <Button Classes="media-iconbutton"
                             Width="30" Height="30"
                             ToolTip.Tip="Move selected track(s) up"

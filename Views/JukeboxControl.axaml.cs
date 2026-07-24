@@ -163,10 +163,19 @@ public partial class JukeboxControl : UserControl
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || DataContext is not JukeboxViewModel vm) return;
+        if (DataContext is not JukeboxViewModel vm) return;
 
         // When -nocontrols is active, keyboard shortcuts are disabled too.
         if (vm.IsControlsDisabled) return;
+
+        if (e.Key == Key.F11 || (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
+        {
+            vm.IsFullScreen = !vm.IsFullScreen;
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Escape) return;
 
         bool handled = false;
         if (vm.IsPlaylistVisible)

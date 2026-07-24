@@ -32,6 +32,9 @@
         <KeyBinding Gesture="Ctrl+Shift+End"
                     Command="{Binding QueueSelectedLastCommand}"
                     CommandParameter="{Binding #LibraryDataGrid.SelectedItems}"/>
+        <KeyBinding Gesture="F2"
+                    Command="{Binding PlaylistViewModel.RenameLibrarySelectedCommand}"
+                    CommandParameter="{Binding #LibraryDataGrid.SelectedItems}"/>
     </UserControl.KeyBindings>
 
     <Design.DataContext>
@@ -44,7 +47,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="10,2,4,4"
+    <Grid Margin="10,2,10,4"
           RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
@@ -86,32 +89,32 @@
         </Grid>
 
         <Grid Grid.Row="2"
-              ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+              ColumnDefinitions="*,Auto,Auto"
               ColumnSpacing="4"
               Margin="0,0,0,8">
-            <Button Grid.Column="0"
-                    Classes="media-secondarybutton"
-                    ToolTip.Tip="Add Files (Ctrl+O)"
-                    Command="{Binding AddFilesCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <PathIcon Classes="media-vector"
-                              Data="{StaticResource MediaIconAdd}"
-                              Width="16" Height="16"/>
-                    <TextBlock Text="Files" VerticalAlignment="Center"/>
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                <Button Classes="media-secondarybutton"
+                        ToolTip.Tip="Add Files (Ctrl+O)"
+                        Command="{Binding AddFilesCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <PathIcon Classes="media-vector"
+                                  Data="{StaticResource MediaIconAdd}"
+                                  Width="16" Height="16"/>
+                        <TextBlock Text="Files" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Classes="media-secondarybutton"
+                        ToolTip.Tip="Add Folder (Ctrl+Shift+O)"
+                        Command="{Binding AddFolderCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <PathIcon Classes="media-vector"
+                                  Data="{StaticResource MediaIconAddFolder}"
+                                  Width="16" Height="16"/>
+                        <TextBlock Text="Folder" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
             <Button Grid.Column="1"
-                    Classes="media-secondarybutton"
-                    ToolTip.Tip="Add Folder (Ctrl+Shift+O)"
-                    Command="{Binding AddFolderCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <PathIcon Classes="media-vector"
-                              Data="{StaticResource MediaIconAddFolder}"
-                              Width="16" Height="16"/>
-                    <TextBlock Text="Folder" VerticalAlignment="Center"/>
-                </StackPanel>
-            </Button>
-            <Button Grid.Column="3"
                     Classes="media-iconbutton"
                     ToolTip.Tip="Remove Selected (Delete)"
                     Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
@@ -119,7 +122,7 @@
                 <PathIcon Classes="media-vector"
                           Data="{StaticResource MediaIconRemove}"/>
             </Button>
-            <Button Grid.Column="4"
+            <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
                     ToolTip.Tip="Clear Playlist (Ctrl+Shift+L)"
                     Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}">
@@ -132,6 +135,7 @@
             <TextBox Classes="media-input"
                      Text="{Binding PlaylistViewModel.SearchLibraryText}"
                      PlaceholderText="Search this playlist..."
+                     VerticalContentAlignment="Center"
                      Padding="34,0,10,0"/>
             <PathIcon Classes="media-vector muted"
                       Data="{StaticResource MediaIconSearch}"
@@ -166,6 +170,10 @@
                               Header="Play this playlist"
                               InputGesture="Enter"
                               Click="LibraryPlayPlaylist_Click"/>
+                    <MenuItem x:Name="LibraryRenameMenuItem"
+                              Header="Rename track"
+                              InputGesture="F2"
+                              Click="LibraryRename_Click"/>
                     <Separator/>
                     <MenuItem x:Name="LibraryQueueNextMenuItem"
                               Header="Queue next"
@@ -208,6 +216,13 @@
                             Orientation="Horizontal"
                             Spacing="4"
                             Margin="8,0,0,0">
+                    <Button Classes="media-iconbutton"
+                            Width="30" Height="30"
+                            ToolTip.Tip="Rename selected track (F2)"
+                            Click="RenameLibrarySelected_Click">
+                        <PathIcon Classes="media-vector"
+                                  Data="{StaticResource MediaIconEdit}"/>
+                    </Button>
                     <Button Classes="media-iconbutton"
                             Width="30" Height="30"
                             ToolTip.Tip="Move selected track(s) up"

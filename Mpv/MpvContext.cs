@@ -496,11 +496,8 @@ public sealed class MpvContext : IDisposable
 
             if (evt.EventId == MpvEventId.FileLoaded)
             {
-                Task.Run(() =>
-                {
-                    try { FileLoaded?.Invoke(); }
-                    catch (Exception ex) { Debug.WriteLine($"[MPV] FileLoaded callback error: {ex.Message}"); }
-                });
+                try { FileLoaded?.Invoke(); }
+                catch (Exception ex) { Debug.WriteLine($"[MPV] FileLoaded callback error: {ex.Message}"); }
             }
             else if (evt.EventId == MpvEventId.LogMessage)
             {
@@ -540,25 +537,13 @@ public sealed class MpvContext : IDisposable
 
                 if (name != null)
                 {
-                    // Marshal to UI thread via Task.Run. The subscriber
-                    // (MpvPlaybackEngine.OnMpvPropertyChanged) forwards
-                    // to DurationChanged, and JukeboxViewModel.OnEngineDurationChanged
-                    // dispatches to the UI thread via Dispatcher.UIThread.Post.
-                    // So this is double-dispatched, but that's safe — the
-                    // extra Task.Run just decouples from the MPV event thread.
-                    Task.Run(() =>
-                    {
-                        try { PropertyChanged?.Invoke(name, value); }
-                        catch (Exception ex) { Debug.WriteLine($"[MPV] PropertyChanged callback error: {ex.Message}"); }
-                    });
+                    try { PropertyChanged?.Invoke(name, value); }
+                    catch (Exception ex) { Debug.WriteLine($"[MPV] PropertyChanged callback error: {ex.Message}"); }
 
                     if (name == "eof-reached" && value is bool b && b)
                     {
-                        Task.Run(() =>
-                        {
-                            try { EndReached?.Invoke(); }
-                            catch (Exception ex) { Debug.WriteLine($"[MPV] EndReached callback error: {ex.Message}"); }
-                        });
+                        try { EndReached?.Invoke(); }
+                        catch (Exception ex) { Debug.WriteLine($"[MPV] EndReached callback error: {ex.Message}"); }
                     }
                 }
             }

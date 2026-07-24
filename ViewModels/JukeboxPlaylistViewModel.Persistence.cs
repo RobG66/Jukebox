@@ -186,7 +186,7 @@ public partial class JukeboxPlaylistViewModel
             placeholder: "",
             validator: ValidatePlaylistName,
             okButtonText: "Save",
-            showDefaultCheckbox: false
+            showDefaultCheckbox: true
         );
 
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -291,6 +291,27 @@ public partial class JukeboxPlaylistViewModel
         TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
 
         await AutoSaveCurrentPlaylistAsync();
+    }
+
+    [RelayCommand]
+    private async Task RenameLibrarySelectedAsync(System.Collections.IList? selectedItems)
+    {
+        var track = selectedItems?.Cast<JukeboxTrack>().FirstOrDefault() ?? LibraryPlaylist.FirstOrDefault(t => t.IsSelected);
+        if (track == null) return;
+
+        string? newName = await _dialogService.ShowRenameAsync(
+            track.DisplayName,
+            title: "Rename Track",
+            prompt: "Enter new title for this track:",
+            isFileName: false);
+
+        if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(newName, track.DisplayName, StringComparison.Ordinal))
+        {
+            track.DisplayName = newName.Trim();
+            InvalidatePlaylist();
+            UpdatePlaylistSummary();
+            await AutoSaveCurrentPlaylistAsync();
+        }
     }
 
     [RelayCommand]

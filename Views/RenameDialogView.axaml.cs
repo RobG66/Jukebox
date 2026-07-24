@@ -10,25 +10,40 @@ namespace Jukebox.Views
 {
     public partial class RenameDialogView : Window
     {
-        public static async Task<string?> ShowAsync(string currentName, Window? owner = null, Func<string, (bool IsValid, string ErrorMessage)>? validator = null)
+        public static async Task<string?> ShowAsync(
+            string currentName,
+            Window? owner = null,
+            Func<string, (bool IsValid, string ErrorMessage)>? validator = null,
+            string title = "Rename Profile",
+            string prompt = "Enter new name for the profile:",
+            bool isFileName = true)
         {
             owner ??= (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
             if (owner == null) return null;
 
-            var dialog = new RenameDialogView(currentName, validator);
+            var dialog = new RenameDialogView(currentName, validator, title, prompt, isFileName);
             return await dialog.ShowDialog<string?>(owner);
         }
 
         private readonly string _currentName;
         private readonly Func<string, (bool IsValid, string ErrorMessage)>? _validator;
+        private readonly bool _isFileName;
 
         public RenameDialogView() : this(string.Empty, null) { }
 
-        public RenameDialogView(string currentName, Func<string, (bool IsValid, string ErrorMessage)>? validator = null)
+        public RenameDialogView(
+            string currentName,
+            Func<string, (bool IsValid, string ErrorMessage)>? validator = null,
+            string title = "Rename Profile",
+            string prompt = "Enter new name for the profile:",
+            bool isFileName = true)
         {
             InitializeComponent();
             _currentName = currentName;
             _validator = validator;
+            _isFileName = isFileName;
+            Title = title;
+            PromptTextBlock.Text = prompt;
             NewNameTextBox.Text = currentName;
 
             Loaded += (s, e) =>
@@ -101,11 +116,14 @@ namespace Jukebox.Views
                 return false;
             }
 
-            char[] invalidChars = Path.GetInvalidFileNameChars();
-            if (name.IndexOfAny(invalidChars) >= 0)
+            if (_isFileName)
             {
-                errorMessage = "Name contains invalid characters.";
-                return false;
+                char[] invalidChars = Path.GetInvalidFileNameChars();
+                if (name.IndexOfAny(invalidChars) >= 0)
+                {
+                    errorMessage = "Name contains invalid characters.";
+                    return false;
+                }
             }
 
             if (string.Equals(name, _currentName, StringComparison.OrdinalIgnoreCase))

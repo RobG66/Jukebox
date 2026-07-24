@@ -19,6 +19,7 @@
         <StreamGeometry x:Key="MediaIconShuffle">M16,3H21V8H19V6.41L5.41,20 4,18.59 17.59,5H16V3 M4.27,5.68L9.35,10.76 10.76,9.35 5.68,4.27 4.27,5.68 M14.5,14.5L13.09,15.91 17.17,20H16V22H21V17H19V18.59L14.5,14.5Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconFocus">M7,3H3V7H5V5H7V3 M17,3V5H19V7H21V3H17 M7,21V19H5V17H3V21H7 M17,21H21V17H19V19H17V21 M12,8A4,4 0 1 0 12,16A4,4 0 0 0 12,8Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconMusic">M12,3V13.55A4,4 0 1 0 14,17V7H18V3H12Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconEdit">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
 
         <!-- Shared Title-column cell template for track DataGrids (PlayQueueView,
              SavedPlaylistsView). One line: playing icon, title (elastic, ellipsis),

@@ -46,6 +46,9 @@ public sealed class UserDialogService : IUserDialogService
 
     public Task<string?> ShowRenameAsync(
         string currentName,
-        Func<string, (bool IsValid, string ErrorMessage)>? validator = null)
-        => RenameDialogView.ShowAsync(currentName, validator: validator);
+        Func<string, (bool IsValid, string ErrorMessage)>? validator = null,
+        string title = "Rename Profile",
+        string prompt = "Enter new name for the profile:",
+        bool isFileName = true)
+        => RenameDialogView.ShowAsync(currentName, validator: validator, title: title, prompt: prompt, isFileName: isFileName);
 }

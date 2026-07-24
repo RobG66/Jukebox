@@ -45,7 +45,7 @@ public partial class App : Application
             try
             {
                 var factory = new Jukebox.Services.JukeboxPluginContextFactory(vm.PlaylistViewModel, vm);
-                loadedPlugins = Task.Run(() => Jukebox.Services.PluginLoader.LoadAllAsync(factory)).GetAwaiter().GetResult();
+                loadedPlugins = Jukebox.Services.PluginLoader.LoadAllAsync(factory).GetAwaiter().GetResult();
                 Console.WriteLine($"[Plugin] Loader found {loadedPlugins.MediaBrowsers.Count} browser(s).");
                 foreach (var browser in loadedPlugins.MediaBrowsers)
                 {

@@ -73,7 +73,13 @@ public interface IUserDialogService
     /// </summary>
     /// <param name="currentName">The name to pre-populate and select.</param>
     /// <param name="validator">Optional validator; returns (IsValid, ErrorMessage).</param>
+    /// <param name="title">Optional dialog title.</param>
+    /// <param name="prompt">Optional prompt label text.</param>
+    /// <param name="isFileName">If true, enforces invalid file name character checks.</param>
     Task<string?> ShowRenameAsync(
         string currentName,
-        Func<string, (bool IsValid, string ErrorMessage)>? validator = null);
+        Func<string, (bool IsValid, string ErrorMessage)>? validator = null,
+        string title = "Rename Profile",
+        string prompt = "Enter new name for the profile:",
+        bool isFileName = true);
 }

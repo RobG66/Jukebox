@@ -317,19 +317,25 @@ public partial class JukeboxViewModel
     {
         Interlocked.Increment(ref _playGeneration);
         _playbackTimer?.Stop();
-        if (_activeEngine != null)
+
+        // Stop all playback engines unconditionally so no native backend
+        // is left running audio/video in the background.
+        DetachEngineHandlers(_bassEngine);
+        _bassEngine.Stop();
+
+        DetachEngineHandlers(_mpvEngine);
+        _mpvEngine.Stop();
+
+        if (VgmEngine != null)
         {
-            // A user/queue stop must never be interpreted as natural end of
-            // media. Some native engines can raise their end callback while
-            // resources are being freed, so suppress auto-advance first.
-            DetachEngineHandlers(_activeEngine);
-            _activeEngine.Stop();
+            DetachEngineHandlers(VgmEngine);
+            VgmEngine.Stop();
         }
 
+        _activeEngine = null;
+
         // Cancel any in-flight URL-stream connection attempt — covers the
-        // user pressing Stop while a stream is still connecting. The
-        // StartTrackAsync await will throw OperationCanceledException and
-        // bail out silently.
+        // user pressing Stop while a stream is still connecting.
         _streamConnectCts?.Cancel();
         _streamConnectCts?.Dispose();
         _streamConnectCts = null;
@@ -338,18 +344,8 @@ public partial class JukeboxViewModel
         _urlResolutionCts?.Dispose();
         _urlResolutionCts = null;
 
-        // Clear any external token we handed to the BASS engine so it
-        // doesn't leak into a subsequent local-file playback.
-        if (_activeEngine is BassPlaybackEngine bassForClear)
-        {
-            bassForClear.SetStreamCancellationToken(CancellationToken.None);
-        }
+        _bassEngine.SetStreamCancellationToken(CancellationToken.None);
 
-        // Make sure the connecting overlay is cleared whenever playback is
-        // stopped — covers the user pressing Stop while a connection is in
-        // progress (the StartTrackAsync try/finally will also clear it, but
-        // this is a belt-and-suspenders guard against any future code path
-        // that bypasses that cleanup).
         IsConnecting = false;
         ConnectingMessage = "";
 
@@ -399,17 +395,6 @@ public partial class JukeboxViewModel
         var trackToStart = CurrentTrack;
         long playGeneration = Interlocked.Increment(ref _playGeneration);
 
-        // Cancel any in-flight URL-stream connection attempt from a previous
-        // StartTrackAsync call. This covers:
-        //   - User picks radio station B while station A is still connecting.
-        //   - User picks a local file while a radio station is still connecting.
-        // The cancelled previous call's PlayAsync await will throw
-        // OperationCanceledException, which its catch block recognizes and
-        // silently bails on (no error dialog, no transport reset).
-        //
-        // We do this BEFORE the engine.Stop() call below so the engine's
-        // HTTP send aborts at the same time as the engine's internal state
-        // is being torn down — no race between the two cleanups.
         _streamConnectCts?.Cancel();
         _streamConnectCts?.Dispose();
         _streamConnectCts = null;
@@ -418,22 +403,25 @@ public partial class JukeboxViewModel
         _urlResolutionCts?.Dispose();
         _urlResolutionCts = null;
 
-        // A superseded request deliberately leaves its overlay alone. The new
-        // request therefore owns clearing or replacing that state immediately.
         IsConnecting = false;
         ConnectingMessage = "";
 
-        // Clear the BASS engine's external token so the engine doesn't
-        // observe a stale cancelled token on the next local-file PlayAsync.
-        // (If the new track is itself a URL stream, we'll set a fresh token
-        // further below.)
         _bassEngine.SetStreamCancellationToken(CancellationToken.None);
 
-        if (_activeEngine != null)
+        // Stop all engines before opening a new track to prevent overlapping playback.
+        DetachEngineHandlers(_bassEngine);
+        _bassEngine.Stop();
+
+        DetachEngineHandlers(_mpvEngine);
+        _mpvEngine.Stop();
+
+        if (VgmEngine != null)
         {
-            DetachEngineHandlers(_activeEngine);
-            _activeEngine.Stop();
+            DetachEngineHandlers(VgmEngine);
+            VgmEngine.Stop();
         }
+
+        _activeEngine = null;
 
         // Show connection feedback before plugin URL resolution as well as
         // before the media engine opens the resolved URL. Archive.org sources

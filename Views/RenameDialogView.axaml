@@ -14,7 +14,8 @@
     
     <StackPanel Margin="20" Spacing="16">
         <StackPanel Spacing="8">
-            <TextBlock Text="Enter new name for the profile:"
+            <TextBlock x:Name="PromptTextBlock"
+                       Text="Enter new name for the profile:"
                        FontSize="{DynamicResource GlobalFontSize}"
                        FontWeight="Medium"/>
             <TextBox x:Name="NewNameTextBox"
@@ -37,7 +38,7 @@
             <Button x:Name="CancelButton"
                     Content="Cancel"
                     Click="CancelButton_Click"
-                    Classes="rounded grey"
+                    Classes="rounded blue"
                     FontSize="{DynamicResource GlobalFontSize}"/>
             <Button x:Name="RenameButton"
                     Content="Rename"

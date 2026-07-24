@@ -44,7 +44,7 @@
             <Button x:Name="CancelButton"
                     Content="Cancel"
                     Click="CancelButton_Click"
-                    Classes="rounded grey"
+                    Classes="rounded blue"
                     FontSize="{DynamicResource GlobalFontSize}"/>
             <Button x:Name="OkButton"
                     Content="Add"
