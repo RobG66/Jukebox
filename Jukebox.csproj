@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -16,6 +16,7 @@
     <AvaloniaResource Include="Assets\**" />
     <AvaloniaResource Remove="plugins\**" />
     <AvaloniaResource Remove="publish\**" />
+    <AvaloniaResource Remove="_cinderwing_staging\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,17 +38,9 @@
     </None>
     <None Remove="plugins\**" />
     <None Remove="publish\**" />
+    <None Remove="_cinderwing_staging\**" />
     <None Remove="Jukebox_refactor_plan_current_status.md" />
     <None Remove="PROJECT_CONTEXT.md" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="plugins\**\*" Condition="Exists('plugins\')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="plugins\Avalonia.ProjectM\ProjectM\**\*">
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -84,21 +77,25 @@
     <ProjectReference Include="Jukebox.Plugin.Abstractions\Jukebox.Plugin.Abstractions.csproj" />
     <Compile Remove="plugins\**" />
     <Compile Remove="publish\**" />
+    <Compile Remove="_cinderwing_staging\**" />
   </ItemGroup>
 
   <ItemGroup>
     <AvaloniaXaml Remove="plugins\**" />
     <AvaloniaXaml Remove="publish\**" />
+    <AvaloniaXaml Remove="_cinderwing_staging\**" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Remove="plugins\**" />
     <EmbeddedResource Remove="publish\**" />
+    <EmbeddedResource Remove="_cinderwing_staging\**" />
   </ItemGroup>
 
   <ItemGroup>
     <AdditionalFiles Remove="plugins\**" />
     <AdditionalFiles Remove="publish\**" />
+    <AdditionalFiles Remove="_cinderwing_staging\**" />
   </ItemGroup>
 
   <ItemGroup>

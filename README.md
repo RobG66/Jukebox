@@ -6,6 +6,11 @@ A simple, capable cross-platform media and radio player. Built with Avalonia UI.
 
 Jukebox is designed to be straightforward — play your music, watch videos, listen to online radio, and enjoy visualizations, all in one clean interface. It also works as an embeddable component for developers who want to add media playback to their own applications.
 
+If you find this program useful, please consider supporting its continued development.
+
+[![GitHub](https://img.shields.io/badge/GitHub-RobG66-181717?style=for-the-badge&logo=github)](https://github.com/RobG66)
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/robg66)
+
 **Note: Jukebox is a work in progress.  Documentation may be incomplete, incorrect or missing.**
 
 ## Features
@@ -14,8 +19,10 @@ Jukebox is designed to be straightforward — play your music, watch videos, lis
 - **Video Playback** — Plays MP4, MKV, AVI, and WEBM formats.
 - **ZIP Archives** — Play audio files directly from `.zip` archives without extraction.
 - **Online Radio** — Search and stream thousands of global radio stations.
+- **Internet Archive** — Search and stream audio collections and live music recordings from Archive.org.
 - **Equalizer** — 10-band equalizer with saved presets.
 - **Visualizations** — Optional music visualizations with thousands of presets.
+- **Plugins** — Extensible architecture supporting drop-in media browser and visualizer plugins.
 - **Drag & Drop** — Drop files or folders onto the window to add them to your playlist.
 
 ## Installation
@@ -114,4 +121,5 @@ Jukebox can be embedded in other Avalonia applications as a user control. If you
 - [libvgm](https://github.com/RobG66/libvgm) — Video game music emulation
 - [projectM](https://github.com/projectM-visualizer/projectm) — Music visualizations
 - [Radio Browser API](https://www.radio-browser.info/) — Radio station directory
+- [Internet Archive](https://archive.org/) — Digital library of free audio & media
 - [TagLib#](https://github.com/mono/taglib-sharp) — Metadata reading
