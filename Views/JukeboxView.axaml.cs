@@ -21,9 +21,9 @@ public partial class JukeboxView : Window
     // minimum. Plugins without an explicit minimum retain the wider fallback.
     private const double CompactMinimumWidth = 760;
     private const double CompactMinimumHeight = 600;
-    private const double BrowserHostChromeWidth = 339;
+    private const double BrowserHostChromeWidth = 340;
     private const double DefaultBrowserContentMinimumWidth = 800;
-    private const double BrowserMinimumHeight = 680;
+    private const double BrowserMinimumHeight = 640;
 
     private bool _isClosing = false;
     private JukeboxPlaylistViewModel? _playlistViewModel;

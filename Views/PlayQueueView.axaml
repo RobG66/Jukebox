@@ -36,7 +36,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="10,2,10,4" RowDefinitions="Auto,Auto,*,Auto">
+    <Grid Margin="0" RowDefinitions="Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
                 <TextBlock Classes="media-eyebrow" Text="UP NEXT"/>
@@ -70,24 +70,27 @@
                     ToolTip.Tip="Remove Selected (Delete)"
                     Command="{Binding PlaylistViewModel.RemovePlayQueueSelectedCommand}"
                     CommandParameter="{Binding #PlayQueueDataGrid.SelectedItems}">
-                <PathIcon Classes="media-vector"
-                          Data="{StaticResource MediaIconRemove}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/minus.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
             <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
                     ToolTip.Tip="Clear Play Queue (Ctrl+Shift+L)"
                     Command="{Binding PlaylistViewModel.ClearPlayQueueCommand}">
-                <PathIcon Classes="media-vector danger"
-                          Data="{StaticResource MediaIconDelete}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/clean.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
         </Grid>
 
-        <Border Grid.Row="2" Classes="media-card">
+        <Border Grid.Row="2" Classes="media-card" MinHeight="0">
         <DataGrid x:Name="PlayQueueDataGrid"
                   Classes="media-grid"
                   ItemsSource="{Binding PlaylistViewModel.PlayQueueView}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
+                  MinHeight="0"
                   SelectionMode="Extended"
                   HeadersVisibility="Column"
                   CanUserReorderColumns="False"
@@ -145,8 +148,9 @@
                             Width="30" Height="30"
                             ToolTip.Tip="Rename selected track (F2)"
                             Click="RenamePlayQueueSelected_Click">
-                        <PathIcon Classes="media-vector"
-                                  Data="{StaticResource MediaIconEdit}"/>
+                        <Image Source="avares://Jukebox/Assets/Icons/edit.png"
+                               Width="17" Height="17"
+                               Stretch="Uniform"/>
                     </Button>
                     <Button Classes="media-iconbutton"
                             Width="30" Height="30"

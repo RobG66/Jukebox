@@ -113,16 +113,17 @@
                 Background="{DynamicResource MediaDrawerOverlayBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,1,0"
-                ClipToBounds="True">
+                Padding="10"
+                ClipToBounds="False">
             <Grid RowDefinitions="*,Auto">
-                <Grid Grid.Row="0" Margin="0,8,0,4">
+                <Grid Grid.Row="0" Margin="0">
                     <views:PlayQueueView x:Name="QueueView"/>
                     <views:SavedPlaylistsView x:Name="PlaylistsView" IsVisible="False"/>
                 </Grid>
 
                 <Border Grid.Row="1"
                         Classes="media-card"
-                        Margin="10,4,10,10"
+                        Margin="0,10,0,0"
                         Padding="7,4">
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <TextBlock Grid.Column="0"
@@ -173,8 +174,9 @@
                 Background="{DynamicResource WindowBackground}"
                 BorderBrush="{DynamicResource PanelBorder}"
                 BorderThickness="0,0,0,0"
+                Padding="10"
                 IsVisible="False"
-                ClipToBounds="True">
+                ClipToBounds="False">
             <ContentControl x:Name="BrowserContentPresenter"
                             HorizontalContentAlignment="Stretch"
                             VerticalContentAlignment="Stretch"/>

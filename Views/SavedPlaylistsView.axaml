@@ -47,7 +47,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="10,2,10,4"
+    <Grid Margin="0"
           RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
@@ -76,15 +76,17 @@
                     Classes="media-iconbutton"
                     ToolTip.Tip="New Playlist"
                     Command="{Binding PlaylistViewModel.NewLibraryPlaylistCommand}">
-                <PathIcon Classes="media-vector"
-                          Data="{StaticResource MediaIconAdd}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/playlist.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
             <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
                     ToolTip.Tip="Delete Selected Playlist (Ctrl+Shift+D)"
                     Command="{Binding PlaylistViewModel.DeleteLibraryPlaylistCommand}">
-                <PathIcon Classes="media-vector danger"
-                          Data="{StaticResource MediaIconDelete}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/delete.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
         </Grid>
 
@@ -97,9 +99,9 @@
                         ToolTip.Tip="Add Files (Ctrl+O)"
                         Command="{Binding AddFilesCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <PathIcon Classes="media-vector"
-                                  Data="{StaticResource MediaIconAdd}"
-                                  Width="16" Height="16"/>
+                        <Image Source="avares://Jukebox/Assets/Icons/add.png"
+                               Width="16" Height="16"
+                               Stretch="Uniform"/>
                         <TextBlock Text="Files" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
@@ -107,9 +109,9 @@
                         ToolTip.Tip="Add Folder (Ctrl+Shift+O)"
                         Command="{Binding AddFolderCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <PathIcon Classes="media-vector"
-                                  Data="{StaticResource MediaIconAddFolder}"
-                                  Width="16" Height="16"/>
+                        <Image Source="avares://Jukebox/Assets/Icons/folder.png"
+                               Width="16" Height="16"
+                               Stretch="Uniform"/>
                         <TextBlock Text="Folder" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
@@ -119,15 +121,17 @@
                     ToolTip.Tip="Remove Selected (Delete)"
                     Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
                     CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
-                <PathIcon Classes="media-vector"
-                          Data="{StaticResource MediaIconRemove}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/minus.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
             <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
                     ToolTip.Tip="Clear Playlist (Ctrl+Shift+L)"
                     Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}">
-                <PathIcon Classes="media-vector danger"
-                          Data="{StaticResource MediaIconDelete}"/>
+                <Image Source="avares://Jukebox/Assets/Icons/clean.png"
+                       Width="17" Height="17"
+                       Stretch="Uniform"/>
             </Button>
         </Grid>
 
@@ -146,12 +150,13 @@
                       IsHitTestVisible="False"/>
         </Grid>
 
-        <Border Grid.Row="4" Classes="media-card">
+        <Border Grid.Row="4" Classes="media-card" MinHeight="0">
         <DataGrid x:Name="LibraryDataGrid"
                   Classes="media-grid"
                   ItemsSource="{Binding PlaylistViewModel.FilteredLibraryPlaylist}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
+                  MinHeight="0"
                   SelectionMode="Extended"
                   HeadersVisibility="Column"
                   CanUserReorderColumns="False"
@@ -220,8 +225,9 @@
                             Width="30" Height="30"
                             ToolTip.Tip="Rename selected track (F2)"
                             Click="RenameLibrarySelected_Click">
-                        <PathIcon Classes="media-vector"
-                                  Data="{StaticResource MediaIconEdit}"/>
+                        <Image Source="avares://Jukebox/Assets/Icons/edit.png"
+                               Width="17" Height="17"
+                               Stretch="Uniform"/>
                     </Button>
                     <Button Classes="media-iconbutton"
                             Width="30" Height="30"
