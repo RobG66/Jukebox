@@ -17,11 +17,12 @@ public partial class JukeboxView : Window
 {
     // The compact host surface only needs the original 760x600 viewport.
     // Browser sizing combines the persistent 64-DIP navigation rail and
-    // 275-DIP queue/playlist panel with the active plugin view's requested
+    // 340-DIP queue/playlist/history panel with the active plugin view's requested
     // minimum. Plugins without an explicit minimum retain the wider fallback.
     private const double CompactMinimumWidth = 760;
     private const double CompactMinimumHeight = 600;
-    private const double BrowserHostChromeWidth = 340;
+    // 64-DIP rail + 340-DIP host panel + 20-DIP browser padding + boundary.
+    private const double BrowserHostChromeWidth = 425;
     private const double DefaultBrowserContentMinimumWidth = 800;
     private const double BrowserMinimumHeight = 640;
 
@@ -47,7 +48,6 @@ public partial class JukeboxView : Window
             // Perform asynchronous initialization for visualizer and equalizer,
             // keeping synchronous I/O off the UI thread.
             // Visualizer initialization is a no-op when no visualizer plugin is installed.
-            vm.VisualizerViewModel.LoadVisualizersAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.LoadVisualizersAsync));
             vm.VisualizerViewModel.InitializeAsync().SafeFireAndForget(nameof(vm.VisualizerViewModel.InitializeAsync));
             vm.EqViewModel.LoadAsync().SafeFireAndForget(nameof(vm.EqViewModel.LoadAsync));
         }
@@ -100,7 +100,7 @@ public partial class JukeboxView : Window
             return null;
         }
 
-        int pluginIndex = _playlistViewModel.ActiveTabIndex - 2;
+        int pluginIndex = _playlistViewModel.ActiveTabIndex - 3;
         return pluginIndex >= 0 && pluginIndex < _playlistViewModel.MediaBrowserTabs.Count
             ? _playlistViewModel.MediaBrowserTabs[pluginIndex].View
             : null;
@@ -145,17 +145,72 @@ public partial class JukeboxView : Window
             : DefaultBrowserContentMinimumWidth;
         double browserMinimumWidth = BrowserHostChromeWidth + browserContentMinimum;
 
-        MinWidth = browserIsActive ? browserMinimumWidth : CompactMinimumWidth;
-        MinHeight = browserIsActive ? BrowserMinimumHeight : CompactMinimumHeight;
+        var screen = Screens.ScreenFromWindow(this);
+        double screenScale = screen?.Scaling > 0 ? screen.Scaling : 1;
+        var frameOverhead = FrameSize is { } frame
+            ? new Size(Math.Max(0, frame.Width - ClientSize.Width),
+                Math.Max(0, frame.Height - ClientSize.Height))
+            : default;
+        double availableWidth = screen == null
+            ? double.PositiveInfinity
+            : Math.Max(1, screen.WorkingArea.Width / screenScale - frameOverhead.Width);
+        double availableHeight = screen == null
+            ? double.PositiveInfinity
+            : Math.Max(1, screen.WorkingArea.Height / screenScale - frameOverhead.Height);
+
+        MinWidth = browserIsActive
+            ? Math.Min(browserMinimumWidth, availableWidth)
+            : CompactMinimumWidth;
+        MinHeight = browserIsActive
+            ? Math.Min(BrowserMinimumHeight, availableHeight)
+            : CompactMinimumHeight;
 
         // Applying a larger minimum does not consistently resize an already
         // shown native window on every platform. Grow a normal standalone
         // window explicitly, while leaving maximized/full-screen sizing alone.
         if (browserIsActive && WindowState == WindowState.Normal)
         {
-            Width = Math.Max(Width, browserMinimumWidth);
-            Height = Math.Max(Height, BrowserMinimumHeight);
+            double targetWidth = Math.Min(
+                Math.Max(Width, browserMinimumWidth),
+                availableWidth);
+            double targetHeight = Math.Min(
+                Math.Max(Height, BrowserMinimumHeight),
+                availableHeight);
+
+            if (screen != null)
+            {
+                var placement = ConstrainToWorkingArea(
+                    new Size(targetWidth, targetHeight), frameOverhead,
+                    screen.WorkingArea, screenScale, Position);
+                Width = placement.ClientSize.Width;
+                Height = placement.ClientSize.Height;
+                Position = placement.Position;
+            }
+            else
+            {
+                Width = targetWidth;
+                Height = targetHeight;
+            }
         }
+    }
+
+    internal static (Size ClientSize, PixelPoint Position) ConstrainToWorkingArea(
+        Size requestedClientSize, Size frameOverhead, PixelRect workingArea,
+        double scaling, PixelPoint position)
+    {
+        // Layout dimensions are DIPs. Position and monitor bounds are pixels;
+        // include the system title bar and borders in the outer pixel bounds.
+        double width = Math.Min(requestedClientSize.Width,
+            Math.Max(1, workingArea.Width / scaling - frameOverhead.Width));
+        double height = Math.Min(requestedClientSize.Height,
+            Math.Max(1, workingArea.Height / scaling - frameOverhead.Height));
+        int outerWidth = (int)Math.Ceiling((width + frameOverhead.Width) * scaling);
+        int outerHeight = (int)Math.Ceiling((height + frameOverhead.Height) * scaling);
+        int maxX = Math.Max(workingArea.X, workingArea.Right - outerWidth);
+        int maxY = Math.Max(workingArea.Y, workingArea.Bottom - outerHeight);
+        return (new Size(width, height), new PixelPoint(
+            Math.Clamp(position.X, workingArea.X, maxX),
+            Math.Clamp(position.Y, workingArea.Y, maxY)));
     }
 
     // We override OnClosing to prevent async void issues on window close.

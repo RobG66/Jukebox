@@ -24,15 +24,21 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     private List<string> _allVisualizerPaths = new();
     private DispatcherTimer _randomizerTimer;
     private readonly Random _random = new();
-    private bool _isLoadingVisualizers = false;
+    private Task? _loadVisualizersTask;
+    private Task _presetSaveTask = Task.CompletedTask;
+    private bool _isDisposed;
     private ObservableCollection<VisualizerNodeViewModel> _rootNodes = new();
 
     private readonly IPathProvider _pathProvider;
     private readonly IUserDialogService _dialogService;
+    private readonly VisualizerPresetStore _presetStore;
     #endregion
 
     #region Observable Properties
-    [ObservableProperty] private string? _selectedVisualizerPath;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CurrentVisualizerName))]
+    [NotifyPropertyChangedFor(nameof(HasCurrentVisualizer))]
+    private string? _selectedVisualizerPath;
     [ObservableProperty] private bool _isVisualizerRandomizerEnabled;
     [ObservableProperty] private int _visualizerRandomizerIntervalSeconds = 10;
     [ObservableProperty] private bool _hasPresets;
@@ -47,6 +53,27 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
     #region Public Properties
     public ObservableCollection<VisualizerNodeViewModel> RootNodes => _rootNodes;
+    public string? CurrentVisualizerName => Path.GetFileNameWithoutExtension(SelectedVisualizerPath);
+    public bool HasCurrentVisualizer => !string.IsNullOrEmpty(SelectedVisualizerPath);
+
+    public IReadOnlyList<int>? GetCurrentVisualizerIndexPath()
+    {
+        return Find(_rootNodes, new List<int>());
+
+        IReadOnlyList<int>? Find(IList<VisualizerNodeViewModel> nodes, List<int> ancestors)
+        {
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                var indexes = new List<int>(ancestors) { i };
+                if (nodes[i] is VisualizerFileViewModel file &&
+                    string.Equals(file.Path, SelectedVisualizerPath, StringComparison.OrdinalIgnoreCase))
+                    return indexes;
+                if (nodes[i] is VisualizerFolderViewModel folder && Find(folder.Children, indexes) is { } found)
+                    return found;
+            }
+            return null;
+        }
+    }
 
     private JukeboxViewModel? _host;
     public void SetHost(JukeboxViewModel host)
@@ -66,6 +93,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
             if (_host != null && _host.ActiveVisualizer != value)
             {
                 _host.ActiveVisualizer = value;
+                SelectedVisualizerPath = null;
                 OnPropertyChanged(nameof(ActiveVisualizer));
                 // Reload visualizer presets/tree!
                 LoadVisualizersAsync().SafeFireAndForget(nameof(LoadVisualizersAsync));
@@ -82,6 +110,7 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     {
         _pathProvider = pathProvider ?? throw new ArgumentNullException(nameof(pathProvider));
         _dialogService = dialogService ?? new UserDialogService();
+        _presetStore = new VisualizerPresetStore(_pathProvider);
 
         _randomizerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(VisualizerRandomizerIntervalSeconds) };
         _randomizerTimer.Tick += RandomizerTimer_Tick;
@@ -91,25 +120,10 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Restores the last-used visualizer preset from the current_preset directory.
+    /// Loads the preset tree and restores the last-used original preset path.
     /// Should be called from the View's Loaded handler (or tests' setup phase).
     /// </summary>
-    public async Task InitializeAsync()
-    {
-        var currentPresetDir = ActiveVisualizer?.CurrentPresetDirectory;
-        if (string.IsNullOrEmpty(currentPresetDir)) return;
-        var savedPath = await Task.Run(() =>
-        {
-            if (!Directory.Exists(currentPresetDir)) return null;
-            try { return Directory.GetFiles(currentPresetDir, "*.milk").FirstOrDefault(); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Visualizer] Failed scanning current_preset directory: {ex.Message}"); return null; }
-        });
-
-        if (!string.IsNullOrEmpty(savedPath) && await Task.Run(() => File.Exists(savedPath)))
-        {
-            SelectedVisualizerPath = savedPath;
-        }
-    }
+    public Task InitializeAsync() => LoadVisualizersAsync();
     #endregion
 
     #region Public Methods
@@ -121,48 +135,47 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         public List<(string Name, string Path)> Files { get; } = new();
     }
 
-    public async Task LoadVisualizersAsync()
+    public Task LoadVisualizersAsync()
     {
-        if (_isLoadingVisualizers) return;
-        _isLoadingVisualizers = true;
+        if (_isDisposed) return Task.CompletedTask;
+        return _loadVisualizersTask is { IsCompleted: false }
+            ? _loadVisualizersTask
+            : _loadVisualizersTask = LoadVisualizersLoopAsync();
+    }
+
+    private async Task LoadVisualizersLoopAsync()
+    {
+        IJukeboxVisualizerPlugin? active;
+        do
+        {
+            active = ActiveVisualizer;
+            await LoadVisualizersCoreAsync(active);
+        }
+        while (!_isDisposed && !ReferenceEquals(active, ActiveVisualizer));
+    }
+
+    private async Task LoadVisualizersCoreAsync(IJukeboxVisualizerPlugin? active)
+    {
+        string? selectionAtStart = SelectedVisualizerPath;
 
         try
         {
-            var active = ActiveVisualizer;
             if (active == null)
             {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _rootNodes.Clear();
-                    lock (_allVisualizerPaths) { _allVisualizerPaths.Clear(); }
-                    HasPresets = false;
-                    PresetsPathMessage = "No active visualizer plugin.";
-                });
+                await ClearVisualizersAsync(active, "No active visualizer plugin.");
                 return;
             }
 
             if (!active.SupportsPresets)
             {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _rootNodes.Clear();
-                    lock (_allVisualizerPaths) { _allVisualizerPaths.Clear(); }
-                    HasPresets = false;
-                    PresetsPathMessage = "Active visualizer does not support preset files.";
-                });
+                await ClearVisualizersAsync(active, "Active visualizer does not support preset files.");
                 return;
             }
 
             var rootFolder = active.PresetsDirectory;
-            if (string.IsNullOrEmpty(rootFolder) || !Directory.Exists(rootFolder))
+            if (string.IsNullOrEmpty(rootFolder) || !await Task.Run(() => Directory.Exists(rootFolder)))
             {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _rootNodes.Clear();
-                    lock (_allVisualizerPaths) { _allVisualizerPaths.Clear(); }
-                    HasPresets = false;
-                    PresetsPathMessage = $"No presets folder found at:\n{rootFolder}";
-                });
+                await ClearVisualizersAsync(active, $"No presets folder found at:\n{rootFolder}");
                 return;
             }
 
@@ -216,8 +229,11 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            Dispatcher.UIThread.Post(() =>
+            string? savedPath = await _presetStore.RestoreAsync(active.Id, active.CurrentPresetDirectory, allPaths);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (_isDisposed || !ReferenceEquals(active, ActiveVisualizer)) return;
                 lock (_allVisualizerPaths)
                 {
                     _allVisualizerPaths.Clear();
@@ -234,9 +250,9 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
 
                 lock (_allVisualizerPaths)
                 {
-                    if (string.IsNullOrEmpty(SelectedVisualizerPath) && _allVisualizerPaths.Count > 0)
+                    if (SelectedVisualizerPath == selectionAtStart && string.IsNullOrEmpty(SelectedVisualizerPath))
                     {
-                        SelectedVisualizerPath = _allVisualizerPaths[0];
+                        SelectedVisualizerPath = savedPath ?? _allVisualizerPaths.FirstOrDefault();
                     }
                 }
 
@@ -251,14 +267,23 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
         {
             System.Diagnostics.Debug.WriteLine($"[Visualizer] LoadVisualizersAsync failed: {ex.Message}");
         }
-        finally
-        {
-            _isLoadingVisualizers = false;
-        }
     }
     #endregion
 
     #region Private Methods
+    private async Task ClearVisualizersAsync(IJukeboxVisualizerPlugin? active, string message)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_isDisposed || !ReferenceEquals(active, ActiveVisualizer)) return;
+            _rootNodes.Clear();
+            lock (_allVisualizerPaths) { _allVisualizerPaths.Clear(); }
+            SelectedVisualizerPath = null;
+            HasPresets = false;
+            PresetsPathMessage = message;
+        });
+    }
+
     private TempFolderNode ScanFolder(string name, string path, List<string> allPaths)
     {
         var node = new TempFolderNode { Name = name, Path = path };
@@ -310,7 +335,11 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #region Property Change Callbacks
     partial void OnSelectedVisualizerPathChanged(string? value)
     {
-        // Preset persistence is owned by the active visualizer plugin.
+        if (!_isDisposed && !string.IsNullOrEmpty(value) && ActiveVisualizer is { } active)
+        {
+            _presetSaveTask = _presetStore.SaveAsync(active.Id, value);
+            _presetSaveTask.SafeFireAndForget("Save current visualization");
+        }
     }
 
     partial void OnIsVisualizerRandomizerEnabledChanged(bool value)
@@ -403,7 +432,17 @@ public partial class JukeboxVisualizerViewModel : ViewModelBase, IDisposable
     #region Dispose
     public void Dispose()
     {
-        _randomizerTimer?.Stop();
+        if (_isDisposed) return;
+        _isDisposed = true;
+        _randomizerTimer.Stop();
+        _randomizerTimer.Tick -= RandomizerTimer_Tick;
+    }
+
+    public async Task FlushPresetAsync()
+    {
+        _randomizerTimer.Stop();
+        if (_loadVisualizersTask is { } pending) await pending;
+        await _presetSaveTask;
     }
     #endregion
 }

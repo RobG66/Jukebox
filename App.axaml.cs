@@ -64,6 +64,13 @@ public partial class App : Application
                         var msg = $"[Plugin] {browser.Id}: CreateView failed: {ex.Message}";
                         System.Diagnostics.Debug.WriteLine(msg);
                         Console.WriteLine(msg);
+
+                        try { browser.Dispose(); }
+                        catch (Exception disposeEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"[Plugin] {browser.Id}: cleanup after CreateView failure also failed: {disposeEx.Message}");
+                        }
                     }
                 }
             }

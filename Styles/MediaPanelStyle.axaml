@@ -20,6 +20,7 @@
         <StreamGeometry x:Key="MediaIconFocus">M7,3H3V7H5V5H7V3 M17,3V5H19V7H21V3H17 M7,21V19H5V17H3V21H7 M17,21H21V17H19V19H17V21 M12,8A4,4 0 1 0 12,16A4,4 0 0 0 12,8Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconMusic">M12,3V13.55A4,4 0 1 0 14,17V7H18V3H12Z</StreamGeometry>
         <StreamGeometry x:Key="MediaIconEdit">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
+        <StreamGeometry x:Key="MediaIconHistory">M13.5,3A9,9 0 0 0 4.5,12H1L5.5,16.5 10,12H6.5A7,7 0 1 1 8.55,16.95L7.15,18.35A9,9 0 1 0 13.5,3M12.5,7V13L17.5,16 18.5,14.36 14.5,12V7H12.5Z</StreamGeometry>
 
         <!-- Shared Title-column cell template for track DataGrids (PlayQueueView,
              SavedPlaylistsView). One line: playing icon, title (elastic, ellipsis),
@@ -27,13 +28,12 @@
              DisplayMetadata (bitrate + location) for anything the row itself omits. -->
         <DataTemplate x:Key="TrackTitleCellTemplate" x:DataType="models:JukeboxTrack">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
-                <PathIcon Grid.Column="0"
-                          Classes="media-vector"
-                          Data="{StaticResource MediaIconMusic}"
-                          Width="12" Height="12"
-                          Margin="4,0,5,0"
-                          VerticalAlignment="Center"
-                          IsVisible="{Binding IsPlaying}"/>
+                <Image Grid.Column="0"
+                       Source="avares://Jukebox/Assets/Icons/nowplaying.png"
+                       Width="12" Height="12"
+                       Margin="4,0,5,0"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsPlaying}"/>
                 <controls:MarqueeTextBlock Grid.Column="1"
                                            IsPlaying="{Binding IsPlaying}"
                                            Text="{Binding DisplayName}"

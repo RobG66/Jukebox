@@ -144,8 +144,8 @@ Jukebox/
 │   ├── ViewModelBase.cs
 │   ├── JukeboxViewModel.cs              # Main VM (state, OSD, dispose)
 │   ├── JukeboxViewModel.Playback.cs     # Playback engine coordination + URL stream lifecycle
-│   ├── JukeboxPlaylistViewModel.cs      # Playlist state + filtering
-│   ├── JukeboxPlaylistViewModel.Persistence.cs  # Save/load/clear/switch
+│   ├── JukeboxPlaylistViewModel.cs      # Queue, saved-playlist, and history state
+│   ├── JukeboxPlaylistViewModel.Persistence.cs  # Playlist/history save and load
 │   ├── JukeboxPlaylistViewModel.Import.cs       # Add tracks, tag reading
 │   ├── JukeboxVisualizerViewModel.cs    # Visualizer preset tree
 │   ├── JukeboxVisualizerViewModel.Favorites.cs # Visualizer favorites
@@ -160,7 +160,10 @@ Jukebox/
     ├── JukeboxControl.axaml(.cs)        # Embeddable UserControl: 12 StyledProperties + drag/drop + auto-hide + Escape
     ├── ContentView.axaml(.cs)           # Media host (swaps MpvView/ProjectM)
     ├── MpvView.cs                       # OpenGL control for libmpv
-    ├── PlaylistView.axaml(.cs)          # Playlist DataGrids
+    ├── PlaylistView.axaml(.cs)          # Queue/playlists/history navigation
+    ├── PlayQueueView.axaml(.cs)         # Runtime playback order
+    ├── SavedPlaylistsView.axaml(.cs)    # Selected persisted playlist
+    ├── RecentlyPlayedView.axaml(.cs)    # Successful playback history
     ├── TransportBarView.axaml(.cs)      # Play/pause/seek controls
     ├── VisualizerPickerView.axaml(.cs)  # Preset tree picker
     ├── RadioBrowserView.axaml(.cs)      # Radio station search dialog
@@ -173,41 +176,38 @@ Jukebox/
 
 ## 2. Playlist Model
 
-The playlist system uses two separate `ObservableCollection<JukeboxTrack>` instances:
+The media panel keeps three concepts separate:
 
-- **`LibraryPlaylist`** — audio and video files (local paths, ZIP entries, VGM files)
-- **`RadioPlaylist`** — online radio stations (URL streams)
+- **`PlayQueue`** — the transient runtime playback order used by Previous, Next, repeat, and shuffle.
+- **`LibraryPlaylist`** — the currently selected persisted playlist being edited.
+- **`RecentlyPlayed`** — a newest-first, timestamped history of sources that successfully reached the playing state.
 
-Each raw collection is wrapped by a `DataGridCollectionView` (`FilteredLibraryPlaylist`, `FilteredRadioPlaylist`) that applies the current search filter, and the filtered views — not the raw collections — are bound to the DataGrids in `PlaylistView.axaml`. There is no shared collection and no URL-type discriminator — tracks are in the right collection by construction. Track transitions (`Next`/`Previous`) are scoped to the active collection: playing the last library track and hitting Next stops (or loops if enabled) rather than jumping to radio.
+The queue intentionally retains the full playback order so Previous and explicit row selection remain predictable. The UI therefore calls it "Playback Order" rather than implying that every row is still "Up Next," and pins the current track above the grid. Saved-playlist rows are copied before entering the queue so later playlist edits cannot mutate active playback.
 
 ### Saved Playlists
 
-Playlists are persisted as JSON files under `<PlaylistsDirectory>/Library/` and `<PlaylistsDirectory>/Radio/`. The filename (without extension) is the playlist name.
+Playlists are persisted as JSON files under `<PlaylistsDirectory>/Library/`. The filename (without extension) is the playlist name. Writes use a temporary file followed by replacement so an interrupted save cannot leave a partially written playlist.
 
 **Startup behavior:**
 - If `Default.json` exists in the Library folder, it is loaded automatically and "Default" is selected in the combobox.
-- If no `Default.json` exists, the app starts in a transient state: the combobox shows "Select A Playlist" placeholder text (italic), nothing is selected, and nothing is persisted.
-- The same applies to the Radio folder independently.
-- The legacy `ActiveLibraryPlaylist.txt` / `ActiveRadioPlaylist.txt` files are no longer read — startup selection is determined solely by whether `Default.json` exists.
+- If no saved playlist exists, an empty `Default.json` is created and selected.
+- Otherwise `Default.json` is preferred; if it is absent, the first discovered playlist is selected.
 
-**Auto-save:** Changes to a selected playlist (add, remove, clear) are auto-saved to the corresponding JSON file. If no playlist is selected (transient state), nothing is saved — the tracks exist only in memory until the user explicitly saves via "Save As". Users may delete all saved playlists, falling back to the transient state.
+**Auto-save:** Changes to the selected playlist (add, remove, rename, reorder, or clear) are saved to its JSON file. Deleting the final saved playlist creates a new empty `Default` playlist so the editor is never left in an invalid state.
 
 **Save As:** The save dialog has an optional "Save as default startup playlist" checkbox. When checked, the text input disables and the name is forced to "Default". Saving as Default makes that playlist load on next startup. Overwrite confirmation is shown if the target file already exists.
 
-### Transient Radio Slots
+### Recently Played
 
-When a user plays a radio station from the browser without adding it to the playlist, a transient slot is inserted at the top of `RadioPlaylist`. This slot:
-- Has `IsTransient = true` (rendered in italic via `BoolToFontStyleConverter`, never persisted to disk)
-- Can be promoted to a permanent entry via the "Add to Playlist" pill button
-- Is replaced when another station is played from the browser
+History is written to `<CacheDirectory>/PlaybackHistory.json` and capped at 100 unique sources. A source is recorded only after the playback backend confirms a successful start; failed URL resolutions and connection attempts do not appear. Replaying an existing source moves it to the top with a new timestamp rather than adding a duplicate. Playing from History preserves the existing queue and appends the source only when it is not already present. Local files and URLs both wait for `PlaybackStarted`. History writes form an ordered task chain that shutdown awaits.
 
 ### Display Behavior
 
-Long track titles in either DataGrid show an ellipsis (`…`) with a tooltip showing the full name. The now-playing speaker icon only indents the currently playing row; other rows use the full column width.
+Long track titles show an ellipsis (`…`) with a tooltip containing the full name. Empty queue, playlist, and history pages show task-specific guidance instead of an unexplained blank grid. Commands that require content or a selection are disabled until they can succeed. The host reserves browser padding in its width calculation. Radio Browser moves its status above pagination/actions at narrow widths; Internet Archive reflows track actions and constrains long headings to its panel.
 
 ### Version Tracking
 
-Background tag-reading tasks use `_playlistVersion` and `_scrollVersion` counters to detect stale results. Any structural change (`InvalidatePlaylist()`) or scroll-range change increments the counters. Background tasks capture the version at entry and reject their results if the version has changed by the time they complete. `SwitchLibraryPlaylistAsync` and `SwitchRadioPlaylistAsync` both call `InvalidatePlaylist()` to cancel in-flight background tagging tasks when switching playlists. `InitializeAsync` wraps `_isSwitchingPlaylist` in `try/finally` so an exception during init cannot permanently disable playlist switching.
+Background tag-reading tasks use `_playlistVersion` and `_scrollVersion` counters to detect stale results. Any structural change (`InvalidatePlaylist()`) or scroll-range change increments the counters. Background tasks capture the version at entry and reject their results if the version has changed by the time they complete. Playlist switches, edits, imports, and disk-targeted copy/save operations share a gate. The loaded playlist name is tracked independently of requested selection, and the editor is disabled during operations. Stale grid edits are rejected while switching; explicit copy/save destinations wait for the gate. History writes are ordered independently.
 
 ---
 
@@ -237,7 +237,7 @@ Interfacing with native unmanaged libraries (`libmpv`, `bass.dll`, `bass_fx.dll`
 
 - **Native loading:** `Native/BassNative.cs::EnsureLoaded()` is the single entry point. It is idempotent (guarded by `_loadAttempted` + `_loadLock`) and is invoked by `NativeDependencyResolver` the first time any `[DllImport("bass")]` or `[DllImport("bass_fx")]` call executes. It builds `libDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib")` (hard-coded; not routed through `IPathProvider`), then uses `NativeLibrary.TryLoad` with per-OS filenames produced by `NativeFileName("bass", "libbass")` and `NativeFileName("bass_fx", "libbass_fx")`. The handles are cached as `internal static IntPtr BassHandle` / `BassFxHandle` and returned to the resolver. **Note:** `BassNative.cs` does **not** register a `DllImportResolver` itself — that is done by `NativeDependencyResolver`. The file header comment explains the single-resolver-per-assembly constraint.
 - **DSP threading:** BASS processes audio streams and runs DSP procedures (`OnDsp`) on its own unmanaged internal audio thread. The `PcmDataAvailable` event fires on this thread — subscribers must handle thread safety. The DSP callback rate is platform-tuned (see "Platform-specific buffer tuning" below).
-- **Race protection:** The BASS stream handle (`_bassStream`) is read by the UI-thread `PlaybackTimer_Tick` (via `Bass.ChannelGetPosition`) and freed by `Dispose()` on the close path. Both run on the UI thread — `PlaybackTimer_Tick` fires from a `DispatcherTimer`, and `DisposePlaybackAsync` runs on the UI thread during window close. The timer is stopped before `Dispose()` is called.
+- **Race protection:** The BASS stream handle (`_bassStream`) is read by the UI-thread `PlaybackTimer_Tick` (via `Bass.ChannelGetPosition`). Shutdown first stops and unhooks that timer on the UI thread, detaches engine events, and only then moves native engine disposal to a worker thread. VGM is disposed before BASS because its push stream depends on the shared BASS device.
 - **DSP callback race:** During shutdown, `PcmDataAvailable` is nulled on the UI thread. To prevent a `NullReferenceException` if the field is nulled between the null-check and the `Invoke` call, `OnDsp` uses the local-copy pattern: `var handler = PcmDataAvailable; if (handler != null) handler.Invoke(...)`. `Dispose()` also calls `Bass.ChannelRemoveDSP` and `Bass.ChannelRemoveSync` (end-sync + ICY-meta sync) before `Bass.StreamFree` to drain in-flight callbacks. `BassNative.Free()` is only called when `_ownsBassContext` is true.
 - **Equalizer:** Uses BASS_FX `PeakEQ` (cross-platform, requires `bass_fx.dll` / `libbass_fx.so` / `libbass_fx.dylib` in `lib/`). A single FX handle is attached to the active stream; 10 bands are multiplexed via the `lBand` field. `InitializeEqBands(double[] gains, float[] centerFrequencies)` must be called after `PlayAsync` creates the stream — it guards on `_bassStream != 0`. `UpdateEqBand(int index, double gain, float centerFrequency)` updates one band's `fGain`/`fCenter` via `BASS_FXSetParameters`.
 - **Stream creation failure:** If `Bass.CreateStream` returns `0`, `Bass.LastError` is read and surfaced via `ThreeButtonDialogView.ShowErrorAsync`. The same dialog is used to report missing-plugin errors (e.g. `basshls.dll` / `libbasshls.so` is absent and the user tries to play an `.m3u8` stream).
@@ -273,19 +273,11 @@ Interfacing with native unmanaged libraries (`libmpv`, `bass.dll`, `bass_fx.dll`
   6. **Build compiled `Expression` delegates** — NOT `MethodInfo.Invoke`, NOT `Delegate.CreateDelegate`. The code comments why: *Delegate.CreateDelegate fails because `Control` is a base type of `ProjectMControl`, which violates delegate parameter covariance/type safety. Using `Expression.Lambda<Action<...>>().Compile()` allows the control parameter to be cast and produces direct-call typed delegates.* This avoids per-call boxing/array-allocation on the real-time audio thread. Stored as `_startEngineAction`, `_loadPresetAction`, `_loadPresetDataAction`, `_feedPcmAction`.
 - **GL thread affinity:** `ProjectMControl` inherits from `OpenGlControlBase`. Preset loading (`projectm_load_preset_data`) and rendering (`projectm_opengl_render_frame`) must only occur on the OpenGL render thread inside `OnOpenGlRender`.
 - **PCM queueing:** PCM data from BASS's audio thread is passed to the GL render thread via a `ConcurrentQueue<short[]>` inside `ProjectMControl`. `FeedPcm(Control, short[])` invokes the cached delegate; errors are logged only once per session via `_feedPcmErrorLogged` to avoid log spam at ~33 Hz.
-- **Preset loading (`LoadPreset(Control, string presetPath)`):** Heavy implementation:
-  - Cancels any in-flight load via `_presetLoadCts` (SemaphoreSlim serialization).
-  - Runs on `Task.Run` to keep file IO off the UI thread.
-  - Creates `CurrentPresetDirectory` if missing.
-  - Detects if preset is already in `current_preset/` (skips self-copy).
-  - Cleans stale files from `current_preset/` if loading from elsewhere.
-  - Reads file, normalizes `\r\n` → `\n` for libprojectM's Linux parser.
-  - Writes normalized content to `current_preset/<filename>` for restore-on-next-launch.
-  - Copies referenced textures (jpg/png/bmp/tga) — detected via static compiled `TextureFileRegex`.
-  - Posts to UI thread: prefers `LoadPresetData(content, smooth)` (avoids duplicate file read inside `ProjectMControl`); falls back to `LoadPreset(path, smooth)`.
-  - Multiple nested fallbacks with `Debug.WriteLine` logging.
+- **Preset loading:** `Jukebox.Plugin.ProjectM` passes the original preset path to `ProjectMControl.LoadPreset`. The control queues the load for its OpenGL thread, normalizes line endings, and searches the preset's directory plus the shared texture pack for textures. It locks ProjectM's automatic transitions; explicit selections and Jukebox's randomizer can still load another preset.
+- **Preset persistence:** `VisualizerPresetStore` saves the last original path per plugin in `Settings/visualizer-presets.json`, relative to the application directory. Writes are serialized and flushed during shutdown. Startup restores that path before choosing a fallback. Existing `current_preset` copies are read only for migration and matched to originals by filename and contents; new playback never stages presets or textures there. Adding to Favorites still copies presets and referenced textures into Favorites.
+- **Current preset navigation:** The Visualizations panel displays the current preset name as a link. Clicking it expands its ancestors, selects the preset, and scrolls its tree row into view without reloading it.
 - **FBO hooking:** libprojectM natively targets FBO 0 (the default window backbuffer). Avalonia renders custom controls into private non-zero FBOs. The wrapper hooks `__glewBindFramebuffer` in `glew32.dll` and redirects FBO 0 bindings to Avalonia's offscreen FBO during `projectm_opengl_render_frame`.
-- **No unload mechanism:** The loaded `Assembly` stays loaded for the process lifetime — there is no `AssemblyLoadContext`-based unload. Only the `Control` instance is `TryDispose`'d when `ContentView.OnUnloaded` fires. `TryDispose` defensively checks `is IDisposable` before calling `Dispose()` (ProjectMControl currently does NOT implement IDisposable, but the wrapper future-proofs).
+- **No assembly unload mechanism:** Plugin assemblies stay loaded for the process lifetime. Rendering controls are disposed through their creating plugin when the active visualizer changes, the media host is detached, or `ContentView` unloads. Plugin-level `Dispose()` runs during view-model shutdown.
 - **Window-resize suppression:** `JukeboxControl` subscribes to the host window's `Width`/`Height` property changes. On resize, `ContentView.NotifyWindowResizing()` calls `SuppressNativeRenderDuringLayoutTransition()` which sets `_projectMControl.IsVisible = false` to prevent per-frame GL surface resizes (stutter fix). A 250 ms `DispatcherTimer` restores visibility on settle.
 
 ### 3.5. Single OpenGL Control
@@ -371,7 +363,7 @@ When directories with thousands of tracks are loaded, parsing metadata for all f
 `TaskExtensions.SafeFireAndForget(this Task, string operationName)` captures and logs exceptions from fire-and-forget async work via `Debug.WriteLine`:
 
 ```csharp
-DisposePlaybackAsync().SafeFireAndForget(nameof(DisposePlaybackAsync));
+InitializeBackendAsync().SafeFireAndForget(nameof(InitializeBackendAsync));
 ```
 
 The method uses `ContinueWith` with `TaskContinuationOptions.None` and logs via `Debug.WriteLine("[SafeFireAndForget] {operationName} failed: {exception.Flatten().Message}")`. It returns `void` (not `Task`), so it must be called as a statement — never assigned to `_ =`.
@@ -432,19 +424,21 @@ The close sequence is designed to never block the UI thread on native teardown, 
 [JukeboxView.OnClosing] (synchronous — sets e.Cancel = true, flags _isClosing)
        │
        ▼
-[CloseAsync()] (private async Task, runs on UI thread)
+[CloseAsync()] (private async Task, starts on UI thread)
        │
        ├─► ContentView.DetachMediaHost()
        │       └─► MediaHost.Content = null → removes MpvView/ProjectMControl
        │           └─► Triggers OnOpenGlDeinit → GL context cleanup
        │
-       ├─► await vm.DisposePlaybackAsync()
+       ├─► await vm.DisposeAsync()
        │       .WaitAsync(TimeSpan.FromMilliseconds(Constants.DisposeTimeoutMs))
-       │       ├─► Stop playback timer
-       │       ├─► Unsubscribe events
-       │       ├─► _bassEngine.Dispose()  (synchronous)
-       │       ├─► _mpvEngine.Dispose()   (synchronous)
-       │       └─► VgmEngine?.Dispose()   (synchronous)
+       │       ├─► Cancel and await any in-progress backend initialization
+       │       ├─► Stop playback timer, cancel work, unsubscribe events
+       │       ├─► Await active playback opens/stops and pending history writes
+       │       └─► Task.Run(native teardown)
+       │               ├─► VgmEngine?.Dispose()
+       │               ├─► _bassEngine.Dispose()
+       │               └─► _mpvEngine.Dispose()
        │
        ├─► catch (TimeoutException) { log; close anyway }
        ├─► catch (Exception)        { log; close anyway }
@@ -455,8 +449,11 @@ The close sequence is designed to never block the UI thread on native teardown, 
 
 **Key invariants:**
 - `OnClosing` is synchronous — it cannot throw exceptions that escape to `async void`
-- `DisposePlaybackAsync` is awaited with a 3-second timeout (`Constants.DisposeTimeoutMs`)
-- The playback timer is stopped before engine disposal (both run on the UI thread, serialized by the message pump)
+- `DisposeAsync` is awaited with a 3-second timeout (`Constants.DisposeTimeoutMs`)
+- Initialization and playback operations are canceled and joined before teardown, preventing backends from being created after disposal
+- Starts and stops share a gate, and disposed hosts reject new playback commands
+- Browser window growth includes native decorations when clamping to a monitor working area
+- The playback timer is stopped on the UI thread before native engine disposal moves to a worker thread
 - `ContentView` is located by name (`ContentViewChild`) or by visual-tree walk if the named lookup fails
 
 ---
@@ -474,7 +471,8 @@ Single source of truth for all canonical filesystem paths. `PathProvider.Current
 | `ProjectMRoot` | `<appdir>/ProjectM` | Visualizer data root |
 | `ProjectMPresetsDirectory` | `<ProjectM>/presets` | `.milk` preset files; `IsAvailable` checks this exists |
 | `ProjectMFavoritesDirectory` | `<ProjectM>/presets/Favorites` | User's favorited presets |
-| `CurrentPresetDirectory` | `<ProjectM>/current_preset` | Copy of currently-loaded preset for restore-on-next-launch |
+| `CurrentPresetDirectory` | `<ProjectM>/current_preset` | Legacy copies, read only to migrate startup state |
+| Visualizer preset settings | `<Settings>/visualizer-presets.json` | Last original preset path per plugin |
 | `JukeboxVisualizationsDllPath` | `<lib>/JukeboxVisualizations.dll` | Path probed by `VisualizerRuntime.Probe()` |
 | `SettingsDirectory` | `<appdir>/Settings` | User settings root |
 | `EqSettingsFile` | `<Settings>/EqSettings.json` | EQ band gains + active preset |
@@ -631,3 +629,7 @@ The `Styles/` directory contains 18 `.axaml` files that define the Jukebox visua
 - Per-control style overrides: `ButtonStyle`, `TransparentButtonStyle`, `TileButtonStyle`, `MenuButtonStyle`, `NavigationButtonStyle`, `CheckboxStyle`, `RadioButtonStyle`, `ComboBoxStyle`, `TextBoxStyle`, `DescriptionTextBoxStyle`, `NumericUpDownStyle`, `SliderStyle`, `GridSplitterStyle`, `DataGridStyle`, `ContextMenuStyle`, `CardBorderStyle`
 
 `Services/UI/ThemeService.cs` applies runtime theme changes (light/dark, accent color) by swapping the `dropicon-white.png` / `dropicon-black.png` drag-drop overlay and reloading theme resources.
+
+## Regression checks
+
+Run `dotnet test Tests/Jukebox.Tests.csproj`. The tests use isolated temporary data and zero-handle MPV contexts to cover playlist transition safety, confirmed playback history, cancellation, shutdown ordering, history flushes, frame-aware window positioning, and actual headless browser layouts without loading native playback libraries.

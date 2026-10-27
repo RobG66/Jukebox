@@ -27,6 +27,17 @@ public partial class PlayQueueView : UserControl
         }
     }
 
+    private void PlayQueueDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        bool hasSelection = PlayQueueDataGrid.SelectedItems.Count > 0;
+        bool hasSingleSelection = PlayQueueDataGrid.SelectedItems.Count == 1;
+
+        RemoveQueueSelectionButton.IsEnabled = hasSelection;
+        RenameQueueSelectionButton.IsEnabled = hasSingleSelection;
+        MoveQueueSelectionUpButton.IsEnabled = hasSelection;
+        MoveQueueSelectionDownButton.IsEnabled = hasSelection;
+    }
+
     private void PlayQueueContextMenu_Opened(object? sender, RoutedEventArgs e)
     {
         bool hasSelection = PlayQueueDataGrid.SelectedItems.Count > 0;

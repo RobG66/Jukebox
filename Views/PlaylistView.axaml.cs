@@ -92,6 +92,11 @@ public partial class PlaylistView : UserControl
         SelectHostDestination(1);
     }
 
+    private void HistoryNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        SelectHostDestination(2);
+    }
+
     private void SelectHostDestination(int index)
     {
         if (_viewModel == null)
@@ -122,7 +127,7 @@ public partial class PlaylistView : UserControl
         int pluginIndex = _viewModel.PlaylistViewModel.MediaBrowserTabs.IndexOf(pluginTab);
         if (pluginIndex >= 0)
         {
-            SelectDestination(pluginIndex + 2);
+            SelectDestination(pluginIndex + 3);
         }
     }
 
@@ -176,15 +181,16 @@ public partial class PlaylistView : UserControl
         }
 
         int index = _viewModel.PlaylistViewModel.ActiveTabIndex;
-        int pluginIndex = index - 2;
+        int pluginIndex = index - 3;
         bool isPlugin = pluginIndex >= 0 &&
                         pluginIndex < _viewModel.PlaylistViewModel.MediaBrowserTabs.Count;
-        int hostIndex = index is 0 or 1
+        int hostIndex = index is >= 0 and <= 2
             ? index
             : _viewModel.PlaylistViewModel.LastHostTabIndex;
 
         QueueNavButton.IsChecked = hostIndex == 0;
         PlaylistsNavButton.IsChecked = hostIndex == 1;
+        HistoryNavButton.IsChecked = hostIndex == 2;
         for (int i = 0; i < _pluginButtons.Count; i++)
         {
             _pluginButtons[i].IsChecked = isPlugin && i == pluginIndex;
@@ -194,6 +200,7 @@ public partial class PlaylistView : UserControl
         BrowserPanel.IsVisible = isPlugin;
         QueueView.IsVisible = hostIndex == 0;
         PlaylistsView.IsVisible = hostIndex == 1;
+        HistoryView.IsVisible = hostIndex == 2;
 
         BrowserContentPresenter.Content = isPlugin
             ? _viewModel.PlaylistViewModel.MediaBrowserTabs[pluginIndex].View

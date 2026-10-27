@@ -224,6 +224,8 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
     };
 
     private bool _isDisposed;
+    private readonly object _disposeLock = new();
+    private Task? _disposeTask;
     #endregion
 
     public JukeboxViewModel() : this(new ShowPlayingService(), null)
@@ -485,26 +487,68 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
 
     public void Dispose()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
-
-        DisposeSyncInternal();
-
-        // Trigger fire-and-forget disposal only because we are not disposing asynchronously
-        DisposePlaybackAsync().SafeFireAndForget(nameof(DisposePlaybackAsync));
+        EnsureDisposeTask().SafeFireAndForget(nameof(DisposeAsync));
         GC.SuppressFinalize(this);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
+        return new ValueTask(EnsureDisposeTask());
+    }
 
-        DisposeSyncInternal();
+    private Task EnsureDisposeTask()
+    {
+        lock (_disposeLock)
+        {
+            if (_disposeTask != null)
+            {
+                return _disposeTask;
+            }
 
-        // Safely await the playback engine disposal
-        await DisposePlaybackAsync();
-        GC.SuppressFinalize(this);
+            _isDisposed = true;
+            _lifetimeCts.Cancel();
+            _backendReadyTcs.TrySetCanceled(_lifetimeCts.Token);
+            _disposeTask = DisposeCoreAsync();
+            return _disposeTask;
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        Task? initializationTask;
+        lock (_backendInitializationLock)
+        {
+            initializationTask = _backendInitializationTask;
+        }
+
+        if (initializationTask != null)
+        {
+            try
+            {
+                await initializationTask;
+            }
+            catch (OperationCanceledException) when (_lifetimeCts.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Dispose] Backend initialization failed during shutdown: {ex.Message}");
+            }
+        }
+
+        try
+        {
+            // Start the flush before native teardown so a slow backend cannot
+            // prevent an already requested history write from completing.
+            await Task.WhenAll(PlaylistViewModel.FlushPlaybackHistoryAsync(),
+                VisualizerViewModel.FlushPresetAsync(), DisposePlaybackAsync());
+        }
+        finally
+        {
+            DisposeSyncInternal();
+            _lifetimeCts.Dispose();
+            GC.SuppressFinalize(this);
+        }
     }
 
     private void DisposeSyncInternal()
@@ -527,6 +571,14 @@ public partial class JukeboxViewModel : ViewModelBase, IDisposable, IAsyncDispos
         }
         _showPlayingService.Hide();
         VisualizerViewModel?.Dispose();
-        VgmEngine?.Dispose();
+
+        foreach (var visualizer in VisualizerPlugins)
+        {
+            try { visualizer.Dispose(); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Plugin] Dispose failed for visualizer {visualizer.Id}: {ex.Message}");
+            }
+        }
     }
 }

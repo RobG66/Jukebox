@@ -71,6 +71,19 @@
                 </Button>
             </Grid>
 
+            <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding VisualizerViewModel.HasCurrentVisualizer}">
+                <TextBlock Text="Current: " VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource SubtleTextBrush}"/>
+                <Button x:Name="CurrentVisualizerLink" Grid.Column="1" Classes="transparentbutton"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                        Click="CurrentVisualizerLink_Click"
+                        ToolTip.Tip="{Binding VisualizerViewModel.SelectedVisualizerPath}">
+                    <TextBlock Text="{Binding VisualizerViewModel.CurrentVisualizerName}"
+                               TextTrimming="CharacterEllipsis" TextDecorations="Underline"
+                               Foreground="{DynamicResource AccentTextBrush}" FontSize="12"/>
+                </Button>
+            </Grid>
+
             <!-- Engine Selector (Visible only if there's more than one engine) -->
             <Grid ColumnDefinitions="Auto,*" Margin="0,5,0,5" IsVisible="{Binding VisualizerViewModel.ShowEngineSelector}">
                 <TextBlock Text="Engine: " VerticalAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" Margin="0,0,10,0" FontSize="12"/>
@@ -208,9 +221,9 @@
                 VerticalAlignment="Top"
                 IsVisible="{Binding !VisualizerViewModel.HasPresets}">
             <StackPanel Spacing="10">
-                <PathIcon Data="M12,2L1,21H23L12,2M12,6L19.53,19H4.47L12,6M11,9V13H13V9H11M11,15V17H13V15H11Z"
-                          Width="24" Height="24" Foreground="{DynamicResource SubtleTextBrush}"
-                          HorizontalAlignment="Center"/>
+                <Image Source="avares://Jukebox/Assets/Icons/warning-triangle.png"
+                       Width="24" Height="24"
+                       HorizontalAlignment="Center"/>
                 <TextBlock Text="{Binding VisualizerViewModel.PresetsPathMessage}"
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"

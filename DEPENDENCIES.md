@@ -59,7 +59,7 @@ Audio playback, DSP, and PCM data extraction.
 
 - `bass.dll` / `libbass.so` — the core BASS library (64-bit version)
 - `bass_fx.dll` / `libbass_fx.so` — the BASS FX add-on, used for the 10-band peaking equalizer
-- `bassflac.dll` / `libbassflac.so` — FLAC format plugin, required for playing local `.flac` files
+- `bassflac.dll` / `libbassflac.so` — FLAC format plugin, required for local FLAC files and FLAC radio streams, including Ogg FLAC (which servers may advertise as `audio/ogg`). Download [BASSFLAC for Windows](https://www.un4seen.com/files/bassflac24.zip) or [BASSFLAC for Linux](https://www.un4seen.com/files/bassflac24-linux.zip). For 64-bit Windows, copy `x64/bassflac.dll` from the archive into `lib/` before building or publishing, then restart the application.
 - `bass_aac.dll` / `libbass_aac.so` — AAC format plugin, required for playing AAC files/streams
 - `bassopus.dll` / `libbassopus.so` — OPUS format plugin, required for playing OPUS files/streams
 - `basshls.dll` / `libbasshls.so` — HLS stream plugin, required for HTTP Live Streaming (e.g. `.m3u8` radio streams)

@@ -3,6 +3,7 @@ using Jukebox.Mpv;
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace Jukebox.Services;
 
@@ -74,8 +75,11 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
         }
     }
 
-    public async Task PlayAsync(JukeboxTrack track)
+    public Task PlayAsync(JukeboxTrack track) => PlayAsync(track, CancellationToken.None);
+
+    public async Task PlayAsync(JukeboxTrack track, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!IsAvailable || _mpv == null)
         {
             throw new InvalidOperationException("Video playback is unavailable. MPV (libmpv) failed to initialize. " +
@@ -90,7 +94,8 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
 
         Stop();
 
-        await _mpv.WaitForRenderContextReadyAsync();
+        await _mpv.WaitForRenderContextReadyAsync(3000, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         _mpv.LoadFile(track.FilePath);
         _mpv.SetVolume(_volume);
@@ -172,37 +177,17 @@ public sealed class MpvPlaybackEngine : IMediaPlayerEngine
     #endregion
 
     #region Dispose
-    // Dispose is synchronous instead of fire-and-forget.
-    //
-    // The previous implementation did:
-    //     Task.Run(() => { try { mpv.Dispose(); } catch ... });
-    //
-    // This allowed the window to close (and potentially the process to exit)
-    // while MpvContext.Dispose was still running. MpvContext.Dispose does
-    // serious native work — nulls the update callback, sleeps 50ms for
-    // callback drainage, calls mpv_render_context_free, calls
-    // mpv_terminate_destroy. If this is still in flight when the process
-    // exits, the OS forcefully reclaims native resources, which can crash
-    // cleanup routines or leave GPU state dirty.
-    //
-    // It also raced with MpvView.OnOpenGlRender — if a render callback was
-    // still in flight when mpv_render_context_free ran, AccessViolation.
-    //
-    // The synchronous call blocks for ~50-100ms during close (MpvContext.Dispose
-    // includes a 50ms sleep). This is acceptable: DisposePlaybackAsync is
-    // awaited on the UI thread during close and has a 3-second timeout
-    // (Constants.DisposeTimeoutMs). Blocking for 100ms during window close
-    // is invisible to the user.
+    // MpvContext teardown remains synchronous so its native operations finish
+    // before this method returns. The owning view-model invokes engine disposal
+    // on a worker thread and awaits it with the window's shutdown timeout.
     public void Dispose()
     {
         var mpv = _mpv;
         _mpv = null;
 
-        // Only dispose the MpvContext if Initialize() fully succeeded (IsAvailable == true).
-        // If libmpv was not found, MpvNative's static constructor failed permanently —
-        // any further call into it re-throws TypeInitializationException. Skipping Dispose
-        // is safe: if IsAvailable is false, no native mpv handle was ever created.
-        if (mpv != null && IsAvailable)
+        // Dispose any context that was created, including a partially initialized
+        // one. MpvContext.Dispose is idempotent and safely ignores zero handles.
+        if (mpv != null)
         {
             mpv.PropertyChanged -= OnMpvPropertyChanged;
             mpv.FileLoaded -= OnMpvFileLoaded;

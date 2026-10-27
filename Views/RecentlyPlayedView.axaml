@@ -1,0 +1,139 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Jukebox.ViewModels"
+             xmlns:models="using:Jukebox.Models"
+             mc:Ignorable="d"
+             d:DesignWidth="340"
+             d:DesignHeight="620"
+             x:Class="Jukebox.Views.RecentlyPlayedView"
+             x:DataType="vm:JukeboxViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Enter" Command="{Binding PlayHistoryEntryCommand}"
+                    CommandParameter="{Binding #HistoryDataGrid.SelectedItem}"/>
+        <KeyBinding Gesture="Ctrl+Shift+End" Command="{Binding QueueHistoryEntryCommand}"
+                    CommandParameter="{Binding #HistoryDataGrid.SelectedItem}"/>
+    </UserControl.KeyBindings>
+
+    <Design.DataContext>
+        <vm:JukeboxViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <Style Selector="DataGrid.media-grid DataGridRow">
+            <Setter Property="Height" Value="NaN"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,8">
+            <StackPanel Spacing="2">
+                <TextBlock Classes="media-eyebrow" Text="HISTORY"/>
+                <TextBlock Classes="media-page-title" Text="Recently Played"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Classes="media-muted"
+                       Text="{Binding PlaylistViewModel.RecentlyPlayed.Count, StringFormat='{}{0} recent'}"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+        </Grid>
+
+        <Button Grid.Row="1"
+                Classes="media-secondarybutton"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,8"
+                IsEnabled="{Binding PlaylistViewModel.HasPlaybackHistory}"
+                Command="{Binding PlaylistViewModel.ClearPlaybackHistoryCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Image
+                       Source="avares://Jukebox/Assets/Icons/clean.png"
+                       Width="15" Height="15"/>
+                <TextBlock Text="Clear history" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Border Grid.Row="2" Classes="media-card" MinHeight="0">
+            <Grid>
+                <DataGrid x:Name="HistoryDataGrid"
+                          Classes="media-grid"
+                          ItemsSource="{Binding PlaylistViewModel.RecentlyPlayed}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          MinHeight="0"
+                          SelectionMode="Single"
+                          HeadersVisibility="None"
+                          CanUserReorderColumns="False"
+                          CanUserResizeColumns="False"
+                          CanUserSortColumns="False"
+                          GridLinesVisibility="Horizontal"
+                          DoubleTapped="HistoryDataGrid_DoubleTapped">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu x:Name="HistoryContextMenu"
+                                     Opened="HistoryContextMenu_Opened">
+                            <MenuItem x:Name="HistoryPlayNowMenuItem"
+                                      Header="Play now"
+                                      Click="HistoryPlayNow_Click"/>
+                            <MenuItem x:Name="HistoryAddToQueueMenuItem"
+                                      Header="Add to queue"
+                                      Click="HistoryAddToQueue_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="*" x:DataType="models:PlaybackHistoryEntry">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:PlaybackHistoryEntry">
+                                    <Grid ColumnDefinitions="*,Auto"
+                                          RowDefinitions="Auto,Auto"
+                                          Margin="6,5">
+                                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                                   Text="{Binding Track.DisplayName}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding Track.DisplayName}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                                   Classes="media-muted"
+                                                   Text="{Binding PlayedAtText}"
+                                                   Margin="8,0,0,0"/>
+                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                                   Classes="media-muted"
+                                                   Text="{Binding Track.DisplayMetadata}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            Margin="20"
+                            IsHitTestVisible="False"
+                            IsVisible="{Binding !PlaylistViewModel.HasPlaybackHistory}">
+                    <PathIcon Classes="media-vector muted"
+                              Data="{StaticResource MediaIconHistory}"
+                              Width="30" Height="30"/>
+                    <TextBlock Text="Nothing played yet"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Classes="media-muted"
+                               Text="Tracks appear here after playback starts successfully."
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               MaxWidth="250"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3"
+                Classes="media-card"
+                Margin="0,8,0,0"
+                Padding="10,8">
+            <TextBlock Text="{Binding PlaylistViewModel.PlaybackHistorySummary}"
+                       Classes="media-muted"/>
+        </Border>
+    </Grid>
+</UserControl>

@@ -142,9 +142,10 @@ public static class PluginLoader
 
             foreach (var pluginType in pluginTypes)
             {
+                object? plugin = null;
                 try
                 {
-                    var plugin = Activator.CreateInstance(pluginType);
+                    plugin = Activator.CreateInstance(pluginType);
                     if (plugin is IJukeboxMediaBrowser browser)
                     {
                         Debug.WriteLine($"[PluginLoader] Initializing browser: {browser.Id}");
@@ -166,11 +167,36 @@ public static class PluginLoader
                                 $"[PluginLoader] Loaded visualizer: {visualizer.DisplayName} ({visualizer.Id}) " +
                                 $"in {assemblyStopwatch.ElapsedMilliseconds}ms.");
                         }
+                        else
+                        {
+                            visualizer.Dispose();
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"[PluginLoader] Failed to initialize {pluginType.Name} in {folderName}: {ex.Message}");
+
+                    try
+                    {
+                        if (plugin is IJukeboxMediaBrowser browser)
+                        {
+                            browser.Dispose();
+                        }
+                        else if (plugin is IJukeboxVisualizerPlugin visualizer)
+                        {
+                            visualizer.Dispose();
+                        }
+                        else if (plugin is IDisposable disposable)
+                        {
+                            disposable.Dispose();
+                        }
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        Debug.WriteLine(
+                            $"[PluginLoader] Cleanup failed for {pluginType.Name} in {folderName}: {disposeEx.Message}");
+                    }
                 }
             }
         }

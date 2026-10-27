@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Threading;
 using Jukebox.Models;
 
 namespace Jukebox.Services;
@@ -27,6 +28,11 @@ public interface IMediaPlayerEngine : IDisposable
 
     #region Public Methods
     Task PlayAsync(JukeboxTrack track);
+    Task PlayAsync(JukeboxTrack track, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return PlayAsync(track);
+    }
     void Pause();
     void Stop();
     void Resume();

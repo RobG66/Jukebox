@@ -161,11 +161,14 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
     #endregion
 
     #region IMediaPlayerEngine Methods
-    public async Task PlayAsync(JukeboxTrack track)
+    public Task PlayAsync(JukeboxTrack track) => PlayAsync(track, CancellationToken.None);
+
+    public async Task PlayAsync(JukeboxTrack track, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!IsAvailable)
         {
-            await Task.Run(() => Initialize()).ConfigureAwait(true);
+            await Task.Run(() => Initialize(), cancellationToken).ConfigureAwait(true);
         }
 
         if (!IsAvailable)
@@ -175,6 +178,7 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                 "See Patches/BUILD-LIBVGM.md for build instructions.");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         Stop();
 
         _seekOffsetMs = 0;
@@ -193,8 +197,9 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
             byte[] vgzBytes;
             if (vgmUrl.Contains('|'))
             {
-                vgzBytes = await Task.Run(() =>
+                vgzBytes = await Task.Run(async () =>
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var parts = vgmUrl.Split('|', 2);
                     var zipPath = parts[0];
                     var entryName = parts[1];
@@ -204,15 +209,16 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
                         throw new FileNotFoundException($"Entry '{entryName}' not found in zip archive.");
                     using var entryStream = entry.Open();
                     using var memoryStream = new MemoryStream();
-                    entryStream.CopyTo(memoryStream);
+                    await entryStream.CopyToAsync(memoryStream, cancellationToken);
                     return memoryStream.ToArray();
-                }).ConfigureAwait(true);
+                }, cancellationToken).ConfigureAwait(true);
             }
             else
             {
-                vgzBytes = await Task.Run(() => File.ReadAllBytes(vgmUrl)).ConfigureAwait(true);
+                vgzBytes = await File.ReadAllBytesAsync(vgmUrl, cancellationToken).ConfigureAwait(true);
             }
-            var vgmBytes = Gunzip(vgzBytes);
+            var vgmBytes = await Task.Run(() => Gunzip(vgzBytes), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             Debug.WriteLine($"[VGM Engine] Loaded {vgmBytes.Length} bytes of VGM data.");
 
             // 2. Create a new PlayerA handle (one per track — cheap to create/destroy).
@@ -295,6 +301,11 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         catch (Exception ex)
         {
             Debug.WriteLine($"[VGM Engine] PlayAsync failed: {ex.Message}");
+            try { Stop(); }
+            catch (Exception cleanupEx)
+            {
+                Debug.WriteLine($"[VGM Engine] Partial-start cleanup failed: {cleanupEx.Message}");
+            }
             throw;
         }
     }
@@ -322,13 +333,24 @@ public sealed class VgmPlaybackEngine : IMediaPlayerEngine
         Interlocked.Exchange(ref _playbackStartedFired, 0);
 
         _isPlaying = false;
-        _renderCts?.Cancel();
-        _renderCts?.Dispose();
-        _renderCts = null;
+        var renderCts = _renderCts;
+        renderCts?.Cancel();
 
-        if (_renderThread is not null && _renderThread.IsAlive)
-            _renderThread.Join(TimeSpan.FromMilliseconds(500));
+        var renderThread = _renderThread;
+        if (renderThread is { IsAlive: true } &&
+            !ReferenceEquals(Thread.CurrentThread, renderThread) &&
+            !renderThread.Join(TimeSpan.FromMilliseconds(Constants.DisposeTimeoutMs)))
+        {
+            // Never free the player or BASS stream while the render thread may
+            // still be inside native code. The caller can retry disposal after
+            // the thread exits; leaking until process exit is safer than a
+            // native use-after-free.
+            throw new TimeoutException("The libvgm render thread did not stop before teardown.");
+        }
+
         _renderThread = null;
+        _renderCts = null;
+        renderCts?.Dispose();
 
         if (_player is not null)
         {

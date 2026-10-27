@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Interactivity;
 using Jukebox.Services;
+using Jukebox.Plugin.Abstractions;
 using Jukebox.ViewModels;
 using System;
 using System.ComponentModel;
@@ -19,6 +20,7 @@ public partial class ContentView : UserControl
     /// visualizer plugin contract.
     /// </summary>
     private Control? _visualizerControl;
+    private IJukeboxVisualizerPlugin? _visualizerPlugin;
     private bool _hasAttachedVisualizer;
 
     // ── Layout-transition suppression (window resize only) ──
@@ -55,6 +57,9 @@ public partial class ContentView : UserControl
             _currentViewModel.PcmDataAvailable -= OnPcmDataAvailable;
         }
 
+        MediaHost.Content = null;
+        DisposeVisualizerControl();
+
         _currentViewModel = DataContext as JukeboxViewModel;
         _hasAttachedVisualizer = false;
 
@@ -82,6 +87,7 @@ public partial class ContentView : UserControl
         // from the visual tree, triggering OnOpenGlDeinit and context
         // cleanup. This must happen before MpvContext.Dispose().
         MediaHost.Content = null;
+        DisposeVisualizerControl();
     }
 
     private void OnUnloaded(object? sender, RoutedEventArgs e)
@@ -89,32 +95,19 @@ public partial class ContentView : UserControl
         _layoutSettleTimer.Stop();
         _isSuppressingNativeRender = false;
 
-        if (_currentViewModel != null)
+        var currentViewModel = _currentViewModel;
+        if (currentViewModel != null)
         {
-            _currentViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            _currentViewModel.VisualizerViewModel.PropertyChanged -= OnVisualizerPropertyChanged;
-            _currentViewModel.PcmDataAvailable -= OnPcmDataAvailable;
-            _currentViewModel = null;
+            currentViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            currentViewModel.VisualizerViewModel.PropertyChanged -= OnVisualizerPropertyChanged;
+            currentViewModel.PcmDataAvailable -= OnPcmDataAvailable;
         }
 
         // Clear the MediaHost — removes the active OpenGlControlBase from
         // the visual tree, which triggers its OnOpenGlDeinit / DoCleanup.
         MediaHost.Content = null;
-
-        if (_visualizerControl != null)
-        {
-            var active = _currentViewModel?.ActiveVisualizer;
-            if (active != null)
-            {
-                active.TryDispose(_visualizerControl);
-            }
-            else if (_visualizerControl is IDisposable disposable)
-            {
-                try { disposable.Dispose(); } catch { }
-            }
-            _visualizerControl = null;
-            _hasAttachedVisualizer = false;
-        }
+        DisposeVisualizerControl();
+        _currentViewModel = null;
 
         // MpvView doesn't need explicit disposal — its render context is
         // owned by MpvContext (the VM), which disposes it separately.
@@ -141,6 +134,13 @@ public partial class ContentView : UserControl
         }
         else if (e.PropertyName == nameof(JukeboxViewModel.IsVisualizerEnabled))
         {
+            UpdateMediaHost();
+        }
+        else if (e.PropertyName == nameof(JukeboxViewModel.ActiveVisualizer))
+        {
+            MediaHost.Content = null;
+            DisposeVisualizerControl();
+            CheckAndAttachNativeControls();
             UpdateMediaHost();
         }
     }
@@ -275,23 +275,66 @@ public partial class ContentView : UserControl
         var active = _currentViewModel.ActiveVisualizer;
         if (active == null || !active.IsAvailable) return;
 
-        _hasAttachedVisualizer = true;
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Attaching visualizer plugin...");
 
-        _visualizerControl = active.CreateControl();
-        if (_visualizerControl == null)
+        Control? control = null;
+        try
         {
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Visualizer control creation returned null — visualizer disabled.");
-            return;
+            control = active.CreateControl();
+            if (control == null)
+            {
+                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Visualizer control creation returned null — visualizer disabled.");
+                return;
+            }
+
+            _visualizerControl = control;
+            _visualizerPlugin = active;
+            _hasAttachedVisualizer = true;
+
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Starting visualizer engine...");
+            active.StartEngine(control);
+
+            var currentPreset = _currentViewModel.VisualizerViewModel.SelectedVisualizerPath;
+            if (!string.IsNullOrEmpty(currentPreset))
+            {
+                active.LoadPreset(control, currentPreset);
+            }
         }
-
-        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Starting visualizer engine...");
-        active.StartEngine(_visualizerControl);
-
-        var currentPreset = _currentViewModel.VisualizerViewModel.SelectedVisualizerPath;
-        if (!string.IsNullOrEmpty(currentPreset))
+        catch (Exception ex)
         {
-            active.LoadPreset(_visualizerControl, currentPreset);
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [ContentView] Visualizer startup failed: {ex.Message}");
+            if (control != null)
+            {
+                try { active.TryDispose(control); } catch { }
+            }
+            _visualizerControl = null;
+            _visualizerPlugin = null;
+            _hasAttachedVisualizer = false;
+        }
+    }
+
+    private void DisposeVisualizerControl()
+    {
+        var control = _visualizerControl;
+        var plugin = _visualizerPlugin;
+
+        _visualizerControl = null;
+        _visualizerPlugin = null;
+        _hasAttachedVisualizer = false;
+
+        if (control == null) return;
+
+        if (plugin != null)
+        {
+            try { plugin.TryDispose(control); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ContentView] Visualizer cleanup failed: {ex.Message}");
+            }
+        }
+        else if (control is IDisposable disposable)
+        {
+            try { disposable.Dispose(); } catch { }
         }
     }
 

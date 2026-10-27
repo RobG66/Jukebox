@@ -169,7 +169,10 @@ public sealed class MpvContext : IDisposable
     /// on a normal system, short enough that a missing render surface
     /// fails fast instead of hanging the UI.
     /// </param>
-    public async Task WaitForRenderContextReadyAsync(int timeoutMs = 3000)
+    public Task WaitForRenderContextReadyAsync(int timeoutMs = 3000) =>
+        WaitForRenderContextReadyAsync(timeoutMs, CancellationToken.None);
+
+    public async Task WaitForRenderContextReadyAsync(int timeoutMs, CancellationToken cancellationToken)
     {
         Task readyTask;
         lock (_renderContextLock)
@@ -183,7 +186,7 @@ public sealed class MpvContext : IDisposable
 
         try
         {
-            await readyTask.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
+            await readyTask.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), cancellationToken);
         }
         catch (TimeoutException)
         {
@@ -651,8 +654,10 @@ public sealed class MpvContext : IDisposable
         if (_eventThread is { IsAlive: true }
             && !ReferenceEquals(Thread.CurrentThread, _eventThread))
         {
-            if (!_eventThread.Join(TimeSpan.FromSeconds(2)))
-                Trace.WriteLine("[MPV] Event thread did not stop within 2 seconds.");
+            // Do not destroy the core handle while mpv_wait_event may still be
+            // using it. The owning view-model performs this disposal on a
+            // worker thread and applies the user-facing shutdown timeout.
+            _eventThread.Join();
         }
 
         _eventThread = null;

@@ -21,10 +21,10 @@
         <KeyBinding Gesture="Ctrl+Shift+D"
                     Command="{Binding PlaylistViewModel.DeleteLibraryPlaylistCommand}"/>
         <KeyBinding Gesture="Enter"
-                    Command="{Binding PlayTrackCommand}"
+                    Command="{Binding PlaySavedTrackNowCommand}"
                     CommandParameter="{Binding #LibraryDataGrid.SelectedItem}"/>
         <KeyBinding Gesture="Ctrl+Enter"
-                    Command="{Binding PlaySavedTrackNowCommand}"
+                    Command="{Binding PlayTrackCommand}"
                     CommandParameter="{Binding #LibraryDataGrid.SelectedItem}"/>
         <KeyBinding Gesture="Ctrl+Shift+N"
                     Command="{Binding QueueSelectedNextCommand}"
@@ -47,7 +47,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="0"
+    <Grid IsEnabled="{Binding !PlaylistViewModel.IsLibraryPlaylistBusy}" Margin="0"
           RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
@@ -116,8 +116,10 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
-            <Button Grid.Column="1"
+            <Button x:Name="RemoveLibrarySelectionButton"
+                    Grid.Column="1"
                     Classes="media-iconbutton"
+                    IsEnabled="False"
                     ToolTip.Tip="Remove Selected (Delete)"
                     Command="{Binding PlaylistViewModel.RemoveLibrarySelectedCommand}"
                     CommandParameter="{Binding #LibraryDataGrid.SelectedItems}">
@@ -127,6 +129,7 @@
             </Button>
             <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
+                    IsEnabled="{Binding PlaylistViewModel.HasLibraryItems}"
                     ToolTip.Tip="Clear Playlist (Ctrl+Shift+L)"
                     Command="{Binding PlaylistViewModel.ClearLibraryPlaylistCommand}">
                 <Image Source="avares://Jukebox/Assets/Icons/clean.png"
@@ -151,6 +154,7 @@
         </Grid>
 
         <Border Grid.Row="4" Classes="media-card" MinHeight="0">
+        <Grid>
         <DataGrid x:Name="LibraryDataGrid"
                   Classes="media-grid"
                   ItemsSource="{Binding PlaylistViewModel.FilteredLibraryPlaylist}"
@@ -161,19 +165,20 @@
                   HeadersVisibility="Column"
                   CanUserReorderColumns="False"
                   CanUserResizeColumns="True"
-                  CanUserSortColumns="True"
+                  CanUserSortColumns="False"
                   GridLinesVisibility="Horizontal"
-                  DoubleTapped="LibraryDataGrid_DoubleTapped">
+                  DoubleTapped="LibraryDataGrid_DoubleTapped"
+                  SelectionChanged="LibraryDataGrid_SelectionChanged">
             <DataGrid.ContextMenu>
                 <ContextMenu x:Name="LibraryContextMenu"
                              Opened="LibraryContextMenu_Opened">
                     <MenuItem x:Name="LibraryPlayNowMenuItem"
                               Header="Play now"
-                              InputGesture="Ctrl+Enter"
+                               InputGesture="Enter"
                               Click="LibraryPlayNow_Click"/>
                     <MenuItem x:Name="LibraryPlayPlaylistMenuItem"
-                              Header="Play this playlist"
-                              InputGesture="Enter"
+                              Header="Play playlist from here"
+                              InputGesture="Ctrl+Enter"
                               Click="LibraryPlayPlaylist_Click"/>
                     <MenuItem x:Name="LibraryRenameMenuItem"
                               Header="Rename track"
@@ -205,6 +210,25 @@
                                         CellTemplate="{StaticResource TrackTitleCellTemplate}"/>
             </DataGrid.Columns>
         </DataGrid>
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8"
+                        Margin="20"
+                        IsHitTestVisible="False"
+                        IsVisible="{Binding !PlaylistViewModel.HasLibraryItems}">
+                <Image
+                       Source="avares://Jukebox/Assets/Icons/folder.png"
+                       Width="28" Height="28"/>
+                <TextBlock Text="This playlist is empty"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Classes="media-muted"
+                           Text="Add files, a folder, or tracks from a browser."
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="230"/>
+            </StackPanel>
+        </Grid>
         </Border>
 
         <Border Grid.Row="5"
@@ -221,24 +245,30 @@
                             Orientation="Horizontal"
                             Spacing="4"
                             Margin="8,0,0,0">
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="RenameLibrarySelectionButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Rename selected track (F2)"
                             Click="RenameLibrarySelected_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/edit.png"
                                Width="17" Height="17"
                                Stretch="Uniform"/>
                     </Button>
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="MoveLibrarySelectionUpButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Move selected track(s) up"
                             Click="MoveLibrarySelectedUp_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/uparrow.png"
                                Width="17" Height="17"
                                Stretch="Uniform"/>
                     </Button>
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="MoveLibrarySelectionDownButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Move selected track(s) down"
                             Click="MoveLibrarySelectedDown_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/downarrow.png"

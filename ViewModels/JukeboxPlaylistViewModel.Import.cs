@@ -24,6 +24,14 @@ public partial class JukeboxPlaylistViewModel
     {
         ArgumentNullException.ThrowIfNull(paths);
 
+        if (target == PlaylistTarget.SelectedSavedPlaylist)
+        {
+            IReadOnlyList<JukeboxTrack> imported = Array.Empty<JukeboxTrack>();
+            await RunLibraryPlaylistOperationAsync(async () =>
+                imported = await ProcessAndAddFilesCoreAsync(paths, target, noRecurse));
+            return imported;
+        }
+
         bool isQueueImport = target == PlaylistTarget.PlayQueue;
         if (isQueueImport)
         {
@@ -88,9 +96,9 @@ public partial class JukeboxPlaylistViewModel
 
         UpdatePlaylistSummary();
         int sv = ++_scrollVersion;
-        TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
+        await TagVisibleRangeAsync(_pendingFirst, _pendingLast, version, sv);
 
-        await AutoSaveCurrentPlaylistAsync();
+        await SaveLoadedLibraryPlaylistAsync();
         return additions;
     }
 

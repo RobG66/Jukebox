@@ -24,63 +24,72 @@ public partial class JukeboxPlaylistViewModel
     #region Startup & Auto-Save
     public async Task InitializeAsync()
     {
-        try
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            var libraryFolder = Path.Combine(PlaylistsDirectory, "Library");
-            if (!Directory.Exists(libraryFolder)) Directory.CreateDirectory(libraryFolder);
-
-            // Scan for saved library playlists.
-            SavedLibraryPlaylists.Clear();
-            foreach (var file in Directory.GetFiles(libraryFolder, "*.json"))
-            {
-                SavedLibraryPlaylists.Add(Path.GetFileNameWithoutExtension(file));
-            }
-
-            if (SavedLibraryPlaylists.Count == 0)
-            {
-                await SaveTracksToFileInternalAsync("Default", Array.Empty<JukeboxTrack>());
-                SavedLibraryPlaylists.Add("Default");
-            }
-
-            // Startup playlist: "Default" when available, otherwise the first
-            // persisted playlist. The saved-playlist page is never left in an
-            // invalid no-selection state.
-            _isSwitchingPlaylist = true;
             try
             {
-                SelectedLibraryPlaylist = SavedLibraryPlaylists.Contains("Default")
-                    ? "Default"
-                    : SavedLibraryPlaylists[0];
+                var libraryFolder = Path.Combine(PlaylistsDirectory, "Library");
+                if (!Directory.Exists(libraryFolder)) Directory.CreateDirectory(libraryFolder);
+
+                // Scan for saved library playlists.
+                SavedLibraryPlaylists.Clear();
+                foreach (var file in Directory.GetFiles(libraryFolder, "*.json"))
+                {
+                    SavedLibraryPlaylists.Add(Path.GetFileNameWithoutExtension(file));
+                }
+
+                if (SavedLibraryPlaylists.Count == 0)
+                {
+                    await SaveTracksToFileInternalAsync("Default", Array.Empty<JukeboxTrack>());
+                    SavedLibraryPlaylists.Add("Default");
+                }
+
+                // Startup playlist: "Default" when available, otherwise the first
+                // persisted playlist. The saved-playlist page is never left in an
+                // invalid no-selection state.
+                _isSwitchingPlaylist = true;
+                try
+                {
+                    SelectedLibraryPlaylist = SavedLibraryPlaylists.Contains("Default")
+                        ? "Default"
+                        : SavedLibraryPlaylists[0];
+                }
+                finally
+                {
+                    _isSwitchingPlaylist = false;
+                }
+
+                // Load the selected playlist (or leave empty if transient).
+                string? startupPlaylist = SelectedLibraryPlaylist;
+                LibraryPlaylist.Clear();
+
+                if (!string.IsNullOrEmpty(startupPlaylist))
+                {
+                    var libraryTracks = await LoadPlaylistFromFileInternalAsync(startupPlaylist);
+                    foreach (var track in libraryTracks) LibraryPlaylist.Add(track);
+                }
+
+                _loadedLibraryPlaylist = startupPlaylist;
+                UpdatePlaylistSummary();
+                await LoadPlaybackHistoryAsync();
             }
-            finally
+            catch (Exception ex)
             {
-                _isSwitchingPlaylist = false;
+                System.Diagnostics.Debug.WriteLine($"[Playlist] InitializeAsync failed: {ex.Message}");
             }
-
-            // Load the selected playlist (or leave empty if transient).
-            LibraryPlaylist.Clear();
-
-            if (!string.IsNullOrEmpty(SelectedLibraryPlaylist))
-            {
-                var libraryTracks = await LoadPlaylistFromFileInternalAsync(SelectedLibraryPlaylist);
-                foreach (var track in libraryTracks) LibraryPlaylist.Add(track);
-            }
-
-            UpdatePlaylistSummary();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[Playlist] InitializeAsync failed: {ex.Message}");
-        }
+        });
     }
 
-    public async Task AutoSaveCurrentPlaylistAsync()
-    {
-        if (!string.IsNullOrEmpty(SelectedLibraryPlaylist))
-        {
-            await SavePlaylistToFileInternalAsync(SelectedLibraryPlaylist);
-        }
-    }
+    public Task AutoSaveCurrentPlaylistAsync() =>
+        RunLibraryPlaylistOperationAsync(SaveLoadedLibraryPlaylistAsync);
+
+    private Task SaveLoadedLibraryPlaylistAsync() =>
+        string.IsNullOrEmpty(_loadedLibraryPlaylist)
+            ? Task.CompletedTask
+            : SavePlaylistToFileInternalAsync(_loadedLibraryPlaylist);
+
+    /// <summary>Waits for all history writes requested before shutdown.</summary>
+    public Task FlushPlaybackHistoryAsync() => _historySaveTask;
     #endregion
 
     #region Commands
@@ -102,329 +111,381 @@ public partial class JukeboxPlaylistViewModel
     [RelayCommand]
     private async Task SaveLibraryPlaylistAsAsync()
     {
-        var (name, _) = await _dialogService.ShowTextInputAsync(
-            "Save Library Playlist As",
-            "Enter playlist name:",
-            placeholder: SelectedLibraryPlaylist ?? "",
-            validator: ValidatePlaylistName,
-            okButtonText: "Save",
-            showDefaultCheckbox: true
-        );
-
-        if (string.IsNullOrWhiteSpace(name)) return;
-
-        var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
-        if (File.Exists(filePath))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            bool confirm = await _dialogService.ShowConfirmAsync(
-                "Overwrite Playlist",
-                $"A playlist named '{name}' already exists. Overwrite it?");
-            if (!confirm) return;
-        }
+            var (name, _) = await _dialogService.ShowTextInputAsync(
+                "Save Library Playlist As",
+                "Enter playlist name:",
+                placeholder: SelectedLibraryPlaylist ?? "",
+                validator: ValidatePlaylistName,
+                okButtonText: "Save",
+                showDefaultCheckbox: true
+            );
 
-        await SavePlaylistToFileInternalAsync(name);
+            if (string.IsNullOrWhiteSpace(name)) return;
 
-        if (!SavedLibraryPlaylists.Contains(name))
-            SavedLibraryPlaylists.Add(name);
+            var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
+            if (File.Exists(filePath))
+            {
+                bool confirm = await _dialogService.ShowConfirmAsync(
+                    "Overwrite Playlist",
+                    $"A playlist named '{name}' already exists. Overwrite it?");
+                if (!confirm) return;
+            }
 
-        SelectedLibraryPlaylist = name;
+            await SavePlaylistToFileInternalAsync(name);
+
+            if (!SavedLibraryPlaylists.Contains(name))
+                SavedLibraryPlaylists.Add(name);
+
+            SelectedLibraryPlaylist = name;
+        });
     }
 
     [RelayCommand]
     private async Task NewLibraryPlaylistAsync()
     {
-        var (name, _) = await _dialogService.ShowTextInputAsync(
-            "New Playlist",
-            "Enter playlist name:",
-            placeholder: "",
-            validator: ValidatePlaylistName,
-            okButtonText: "Create",
-            showDefaultCheckbox: false
-        );
-
-        if (string.IsNullOrWhiteSpace(name)) return;
-        name = name.Trim();
-
-        var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
-        if (File.Exists(filePath))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            bool loadExisting = await _dialogService.ShowConfirmAsync(
-                "Playlist Already Exists",
-                $"A playlist named '{name}' already exists. Load it instead?");
+            var (name, _) = await _dialogService.ShowTextInputAsync(
+                "New Playlist",
+                "Enter playlist name:",
+                placeholder: "",
+                validator: ValidatePlaylistName,
+                okButtonText: "Create",
+                showDefaultCheckbox: false
+            );
 
-            if (loadExisting)
+            if (string.IsNullOrWhiteSpace(name)) return;
+            name = name.Trim();
+
+            var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
+            if (File.Exists(filePath))
             {
-                SelectedLibraryPlaylist = name;
+                bool loadExisting = await _dialogService.ShowConfirmAsync(
+                    "Playlist Already Exists",
+                    $"A playlist named '{name}' already exists. Load it instead?");
+
+                if (loadExisting)
+                {
+                    SelectedLibraryPlaylist = name;
+                }
+
+                return;
             }
 
-            return;
-        }
+            await SaveTracksToFileInternalAsync(name, Array.Empty<JukeboxTrack>());
+            if (!SavedLibraryPlaylists.Contains(name))
+            {
+                SavedLibraryPlaylists.Add(name);
+            }
 
-        await SaveTracksToFileInternalAsync(name, Array.Empty<JukeboxTrack>());
-        if (!SavedLibraryPlaylists.Contains(name))
-        {
-            SavedLibraryPlaylists.Add(name);
-        }
-
-        SelectedLibraryPlaylist = name;
+            SelectedLibraryPlaylist = name;
+        });
     }
 
     [RelayCommand]
     private async Task SavePlayQueueAsPlaylistAsync()
     {
-        if (PlayQueue.Count == 0)
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            await _dialogService.ShowErrorAsync(
-                "Save Queue",
-                "The play queue is empty.");
-            return;
-        }
+            if (PlayQueue.Count == 0)
+            {
+                await _dialogService.ShowErrorAsync(
+                    "Save Queue",
+                    "The play queue is empty.");
+                return;
+            }
 
-        var (name, _) = await _dialogService.ShowTextInputAsync(
-            "Save Queue As Playlist",
-            "Enter playlist name:",
-            placeholder: "",
-            validator: ValidatePlaylistName,
-            okButtonText: "Save",
-            showDefaultCheckbox: true
-        );
+            var (name, _) = await _dialogService.ShowTextInputAsync(
+                "Save Queue As Playlist",
+                "Enter playlist name:",
+                placeholder: "",
+                validator: ValidatePlaylistName,
+                okButtonText: "Save",
+                showDefaultCheckbox: true
+            );
 
-        if (string.IsNullOrWhiteSpace(name)) return;
-        name = name.Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            name = name.Trim();
 
-        var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
-        if (File.Exists(filePath))
-        {
-            bool overwrite = await _dialogService.ShowConfirmAsync(
-                "Overwrite Playlist",
-                $"A playlist named '{name}' already exists. Overwrite it?");
-            if (!overwrite) return;
-        }
+            var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{name}.json");
+            if (File.Exists(filePath))
+            {
+                bool overwrite = await _dialogService.ShowConfirmAsync(
+                    "Overwrite Playlist",
+                    $"A playlist named '{name}' already exists. Overwrite it?");
+                if (!overwrite) return;
+            }
 
-        var tracks = PlayQueue.Select(CopyTrack).ToList();
+            var tracks = PlayQueue.Select(CopyTrack).ToList();
 
-        await SaveTracksToFileInternalAsync(name, tracks);
-        if (!SavedLibraryPlaylists.Contains(name))
-        {
-            SavedLibraryPlaylists.Add(name);
-        }
+            await SaveTracksToFileInternalAsync(name, tracks);
+            if (!SavedLibraryPlaylists.Contains(name))
+            {
+                SavedLibraryPlaylists.Add(name);
+            }
+        }, skipWhenBusy: false);
     }
 
     [RelayCommand]
     private async Task DeleteLibraryPlaylistAsync()
     {
-        if (string.IsNullOrEmpty(SelectedLibraryPlaylist)) return;
-
-        bool confirm = await _dialogService.ShowConfirmAsync(
-            "Delete Library Playlist",
-            $"Are you sure you want to delete the playlist '{SelectedLibraryPlaylist}'?");
-        if (!confirm) return;
-
-        try
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            var toRemove = SelectedLibraryPlaylist;
-            var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{toRemove}.json");
-            if (File.Exists(filePath)) File.Delete(filePath);
+            if (string.IsNullOrEmpty(_loadedLibraryPlaylist)) return;
 
-            _isSwitchingPlaylist = true;
+            bool confirm = await _dialogService.ShowConfirmAsync(
+                "Delete Library Playlist",
+                $"Are you sure you want to delete the playlist '{_loadedLibraryPlaylist}'?");
+            if (!confirm) return;
+
             try
             {
-                SavedLibraryPlaylists.Remove(toRemove);
+                var toRemove = _loadedLibraryPlaylist;
+                var filePath = Path.Combine(PlaylistsDirectory, "Library", $"{toRemove}.json");
+                if (File.Exists(filePath)) File.Delete(filePath);
 
-                if (SavedLibraryPlaylists.Count > 0)
-                {
-                    SelectedLibraryPlaylist = SavedLibraryPlaylists[0];
-                    var tracks = await LoadPlaylistFromFileInternalAsync(SelectedLibraryPlaylist);
-                    LibraryPlaylist.Clear();
-                    foreach (var track in tracks) LibraryPlaylist.Add(track);
-                }
-                else
-                {
-                    const string fallbackName = "Default";
-                    await SaveTracksToFileInternalAsync(fallbackName, Array.Empty<JukeboxTrack>());
-                    SavedLibraryPlaylists.Add(fallbackName);
-                    SelectedLibraryPlaylist = fallbackName;
-                    LibraryPlaylist.Clear();
-                }
+                string nextName = SelectedLibraryPlaylist != toRemove &&
+                    SelectedLibraryPlaylist != null && SavedLibraryPlaylists.Contains(SelectedLibraryPlaylist)
+                        ? SelectedLibraryPlaylist
+                        : SavedLibraryPlaylists.FirstOrDefault(name => name != toRemove) ?? "Default";
+                if (SavedLibraryPlaylists.Count == 1)
+                    await SaveTracksToFileInternalAsync(nextName, Array.Empty<JukeboxTrack>());
 
+                // Suppress only our synchronous selection change. Any later
+                // request must queue normally while the replacement is loading.
+                _isSwitchingPlaylist = true;
+                try
+                {
+                    SavedLibraryPlaylists.Remove(toRemove);
+                    if (!SavedLibraryPlaylists.Contains(nextName)) SavedLibraryPlaylists.Add(nextName);
+                    SelectedLibraryPlaylist = nextName;
+                }
+                finally { _isSwitchingPlaylist = false; }
+
+                var tracks = await LoadPlaylistFromFileInternalAsync(nextName);
+                LibraryPlaylist.Clear();
+                foreach (var track in tracks) LibraryPlaylist.Add(track);
+                _loadedLibraryPlaylist = nextName;
+                InvalidatePlaylist();
                 UpdatePlaylistSummary();
             }
-            finally
+            catch (Exception ex)
             {
-                _isSwitchingPlaylist = false;
+                await _dialogService.ShowErrorAsync("Delete Playlist Error", $"Could not delete playlist:\n{ex.Message}");
             }
-        }
-        catch (Exception ex)
-        {
-            await _dialogService.ShowErrorAsync("Delete Playlist Error", $"Could not delete playlist:\n{ex.Message}");
-        }
+        });
     }
 
     [RelayCommand]
     private async Task ClearLibraryPlaylistAsync()
     {
-        bool confirm = await _dialogService.ShowConfirmAsync(
-            "Clear Library Playlist",
-            "Are you sure you want to clear all tracks in the library playlist?");
-        if (!confirm) return;
+        await RunLibraryPlaylistOperationAsync(async () =>
+        {
+            bool confirm = await _dialogService.ShowConfirmAsync(
+                "Clear Library Playlist",
+                "Are you sure you want to clear all tracks in the library playlist?");
+            if (!confirm) return;
 
-        InvalidatePlaylist();
-        LibraryPlaylist.Clear();
-        UpdatePlaylistSummary();
+            InvalidatePlaylist();
+            LibraryPlaylist.Clear();
+            UpdatePlaylistSummary();
 
-        await AutoSaveCurrentPlaylistAsync();
+            await SaveLoadedLibraryPlaylistAsync();
+        });
     }
 
     [RelayCommand]
     private async Task RemoveLibrarySelectedAsync(System.Collections.IList? selectedItems)
     {
-        if (selectedItems == null) return;
-        InvalidatePlaylist();
-        foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            LibraryPlaylist.Remove(item);
-        }
+            if (selectedItems == null) return;
+            InvalidatePlaylist();
+            foreach (var item in selectedItems.Cast<JukeboxTrack>().ToList())
+            {
+                LibraryPlaylist.Remove(item);
+            }
 
-        UpdatePlaylistSummary();
+            UpdatePlaylistSummary();
 
-        int sv = ++_scrollVersion;
-        TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
+            int sv = ++_scrollVersion;
+            TagVisibleRangeAsync(_pendingFirst, _pendingLast, _playlistVersion, sv).SafeFireAndForget(nameof(TagVisibleRangeAsync));
 
-        await AutoSaveCurrentPlaylistAsync();
+            await SaveLoadedLibraryPlaylistAsync();
+        });
     }
 
     [RelayCommand]
     private async Task RenameLibrarySelectedAsync(System.Collections.IList? selectedItems)
     {
-        var track = selectedItems?.Cast<JukeboxTrack>().FirstOrDefault() ?? LibraryPlaylist.FirstOrDefault(t => t.IsSelected);
-        if (track == null) return;
-
-        string? newName = await _dialogService.ShowRenameAsync(
-            track.DisplayName,
-            title: "Rename Track",
-            prompt: "Enter new title for this track:",
-            isFileName: false);
-
-        if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(newName, track.DisplayName, StringComparison.Ordinal))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            track.DisplayName = newName.Trim();
-            InvalidatePlaylist();
-            UpdatePlaylistSummary();
-            await AutoSaveCurrentPlaylistAsync();
-        }
+            var track = selectedItems?.Cast<JukeboxTrack>().FirstOrDefault() ?? LibraryPlaylist.FirstOrDefault(t => t.IsSelected);
+            if (track == null) return;
+
+            string? newName = await _dialogService.ShowRenameAsync(
+                track.DisplayName,
+                title: "Rename Track",
+                prompt: "Enter new title for this track:",
+                isFileName: false);
+
+            if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(newName, track.DisplayName, StringComparison.Ordinal))
+            {
+                track.DisplayName = newName.Trim();
+                InvalidatePlaylist();
+                UpdatePlaylistSummary();
+                await SaveLoadedLibraryPlaylistAsync();
+            }
+        });
     }
 
     [RelayCommand]
     private async Task MoveLibrarySelectedUpAsync(System.Collections.IList? selectedItems)
     {
-        var selectedTracks = selectedItems?
-            .Cast<object>()
-            .OfType<JukeboxTrack>()
-            .Distinct()
-            .ToList()
-            ?? new List<JukeboxTrack>();
-
-        if (!MoveTracks(LibraryPlaylist, selectedTracks, -1))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            return;
-        }
+            var selectedTracks = selectedItems?
+                .Cast<object>()
+                .OfType<JukeboxTrack>()
+                .Distinct()
+                .ToList()
+                ?? new List<JukeboxTrack>();
 
-        InvalidatePlaylist();
-        FilteredLibraryPlaylist.Refresh();
-        UpdatePlaylistSummary();
-        await AutoSaveCurrentPlaylistAsync();
+            if (!MoveTracks(LibraryPlaylist, selectedTracks, -1))
+            {
+                return;
+            }
+
+            InvalidatePlaylist();
+            FilteredLibraryPlaylist.Refresh();
+            UpdatePlaylistSummary();
+            await SaveLoadedLibraryPlaylistAsync();
+        });
     }
 
     [RelayCommand]
     private async Task MoveLibrarySelectedDownAsync(System.Collections.IList? selectedItems)
     {
-        var selectedTracks = selectedItems?
-            .Cast<object>()
-            .OfType<JukeboxTrack>()
-            .Distinct()
-            .ToList()
-            ?? new List<JukeboxTrack>();
-
-        if (!MoveTracks(LibraryPlaylist, selectedTracks, 1))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            return;
-        }
+            var selectedTracks = selectedItems?
+                .Cast<object>()
+                .OfType<JukeboxTrack>()
+                .Distinct()
+                .ToList()
+                ?? new List<JukeboxTrack>();
 
-        InvalidatePlaylist();
-        FilteredLibraryPlaylist.Refresh();
-        UpdatePlaylistSummary();
-        await AutoSaveCurrentPlaylistAsync();
+            if (!MoveTracks(LibraryPlaylist, selectedTracks, 1))
+            {
+                return;
+            }
+
+            InvalidatePlaylist();
+            FilteredLibraryPlaylist.Refresh();
+            UpdatePlaylistSummary();
+            await SaveLoadedLibraryPlaylistAsync();
+        });
     }
 
     [RelayCommand]
     private async Task CopySelectedToPlaylistAsync(CopyToPlaylistRequest? request)
     {
-        if (request is null ||
-            string.IsNullOrWhiteSpace(request.TargetPlaylist) ||
-            request.Tracks.Count == 0 ||
-            !SavedLibraryPlaylists.Contains(request.TargetPlaylist))
+        await RunLibraryPlaylistOperationAsync(async () =>
         {
-            return;
-        }
-
-        var copies = request.Tracks.Select(CopyTrack).ToList();
-
-        if (copies.Count == 0)
-        {
-            return;
-        }
-
-        if (string.Equals(
-                request.TargetPlaylist,
-                SelectedLibraryPlaylist,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            InvalidatePlaylist();
-            foreach (var copy in copies)
+            if (request is null ||
+                string.IsNullOrWhiteSpace(request.TargetPlaylist) ||
+                request.Tracks.Count == 0 ||
+                !SavedLibraryPlaylists.Contains(request.TargetPlaylist))
             {
-                LibraryPlaylist.Add(copy);
+                return;
             }
 
-            UpdatePlaylistSummary();
-            await AutoSaveCurrentPlaylistAsync();
-            return;
-        }
+            var copies = request.Tracks.Select(CopyTrack).ToList();
 
-        var targetTracks = await LoadPlaylistFromFileInternalAsync(request.TargetPlaylist);
-        targetTracks.AddRange(copies);
-        await SaveTracksToFileInternalAsync(request.TargetPlaylist, targetTracks);
+            if (copies.Count == 0)
+            {
+                return;
+            }
+
+            if (string.Equals(
+                    request.TargetPlaylist,
+                    _loadedLibraryPlaylist,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                InvalidatePlaylist();
+                foreach (var copy in copies)
+                {
+                    LibraryPlaylist.Add(copy);
+                }
+
+                UpdatePlaylistSummary();
+                await SaveLoadedLibraryPlaylistAsync();
+                return;
+            }
+
+            var targetTracks = await LoadPlaylistFromFileInternalAsync(request.TargetPlaylist);
+            targetTracks.AddRange(copies);
+            await SaveTracksToFileInternalAsync(request.TargetPlaylist, targetTracks);
+        }, skipWhenBusy: false);
     }
     #endregion
 
     #region Switch Active Playlist
-    private async Task SwitchLibraryPlaylistAsync(string? oldName, string? newName)
+    private async Task RunLibraryPlaylistOperationAsync(Func<Task> operation, bool skipWhenBusy = true)
     {
-        _isSwitchingPlaylist = true;
+        // Ignore stale edit commands from a grid whose destination is changing.
+        if (skipWhenBusy && IsLibraryPlaylistBusy) return;
+
+        BeginLibraryPlaylistOperation();
+        await _libraryPlaylistSwitchGate.WaitAsync();
         try
         {
-            InvalidatePlaylist();
+            await operation();
+        }
+        finally
+        {
+            _libraryPlaylistSwitchGate.Release();
+            EndLibraryPlaylistOperation();
+        }
+    }
 
-            if (!string.IsNullOrEmpty(oldName))
-            {
-                await SavePlaylistToFileInternalAsync(oldName);
-            }
+    private void BeginLibraryPlaylistOperation()
+    {
+        _libraryPlaylistOperationCount++;
+        IsLibraryPlaylistBusy = true;
+    }
+
+    private void EndLibraryPlaylistOperation()
+    {
+        IsLibraryPlaylistBusy = --_libraryPlaylistOperationCount > 0;
+    }
+
+    private async Task SwitchLibraryPlaylistAsync(string? newName)
+    {
+        BeginLibraryPlaylistOperation();
+        await _libraryPlaylistSwitchGate.WaitAsync();
+        try
+        {
+            // Skip requests superseded while another operation owned the gate.
+            if (!string.Equals(newName, SelectedLibraryPlaylist, StringComparison.Ordinal)) return;
+
+            InvalidatePlaylist();
+            await SaveLoadedLibraryPlaylistAsync();
+            var tracks = string.IsNullOrEmpty(newName)
+                ? new List<JukeboxTrack>()
+                : await LoadPlaylistFromFileInternalAsync(newName);
 
             LibraryPlaylist.Clear();
-
-            if (!string.IsNullOrEmpty(newName))
-            {
-                var tracks = await LoadPlaylistFromFileInternalAsync(newName);
-                foreach (var track in tracks)
-                {
-                    LibraryPlaylist.Add(track);
-                }
-            }
-
+            foreach (var track in tracks) LibraryPlaylist.Add(track);
+            _loadedLibraryPlaylist = newName;
             UpdatePlaylistSummary();
         }
         finally
         {
-            _isSwitchingPlaylist = false;
+            _libraryPlaylistSwitchGate.Release();
+            EndLibraryPlaylistOperation();
         }
     }
     #endregion
@@ -467,11 +528,130 @@ public partial class JukeboxPlaylistViewModel
             };
 
             var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(filePath, json);
+            await WriteTextAtomicallyAsync(filePath, json);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Playlist] Save failed: {ex.Message}");
+        }
+    }
+
+    private string PlaybackHistoryFile =>
+        Path.Combine(Jukebox.Services.PathProvider.Current.CacheDirectory, "PlaybackHistory.json");
+
+    private async Task LoadPlaybackHistoryAsync()
+    {
+        RecentlyPlayed.Clear();
+
+        try
+        {
+            if (!File.Exists(PlaybackHistoryFile))
+            {
+                UpdatePlaybackHistorySummary();
+                return;
+            }
+
+            string json = await File.ReadAllTextAsync(PlaybackHistoryFile);
+            var dto = JsonSerializer.Deserialize<PlaybackHistoryDto>(json);
+            foreach (var entry in dto?.Entries.Take(MaxPlaybackHistoryEntries)
+                         ?? Enumerable.Empty<PlaybackHistoryEntryDto>())
+            {
+                RecentlyPlayed.Add(new PlaybackHistoryEntry
+                {
+                    PlayedAt = entry.PlayedAt,
+                    Track = FromSavedTrackDto(entry.Track)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[History] Load failed: {ex.Message}");
+        }
+
+        UpdatePlaybackHistorySummary();
+    }
+
+    private async Task SavePlaybackHistoryAfterAsync(Task previousSave)
+    {
+        await previousSave;
+        await SavePlaybackHistoryAsync();
+    }
+
+    private async Task SavePlaybackHistoryAsync()
+    {
+        await _historySaveGate.WaitAsync();
+        try
+        {
+            var dto = new PlaybackHistoryDto
+            {
+                Entries = RecentlyPlayed.Select(entry => new PlaybackHistoryEntryDto
+                {
+                    PlayedAt = entry.PlayedAt,
+                    Track = ToSavedTrackDto(entry.Track)
+                }).ToList()
+            };
+
+            string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
+            await WriteTextAtomicallyAsync(PlaybackHistoryFile, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[History] Save failed: {ex.Message}");
+        }
+        finally
+        {
+            _historySaveGate.Release();
+        }
+    }
+
+    private static SavedTrackDto ToSavedTrackDto(JukeboxTrack track) => new()
+    {
+        DisplayName = track.DisplayName,
+        FilePath = track.FilePath,
+        OriginalUrl = track.OriginalUrl,
+        SourcePluginId = track.SourcePluginId,
+        Length = track.Length,
+        Bitrate = track.Bitrate,
+        Genre = track.Genre,
+        Country = track.Country,
+        Location = track.Location,
+        IsTagged = track.IsTagged
+    };
+
+    private static JukeboxTrack FromSavedTrackDto(SavedTrackDto track) => new()
+    {
+        DisplayName = track.DisplayName,
+        FilePath = track.FilePath,
+        OriginalUrl = track.OriginalUrl,
+        SourcePluginId = track.SourcePluginId,
+        Length = track.Length,
+        Bitrate = track.Bitrate,
+        Genre = track.Genre,
+        Country = track.Country ?? "—",
+        Location = track.Location ?? "—",
+        IsTagged = track.IsTagged
+    };
+
+    private static async Task WriteTextAtomicallyAsync(string filePath, string text)
+    {
+        string? directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string temporaryPath = $"{filePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, text);
+            File.Move(temporaryPath, filePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
         }
     }
 

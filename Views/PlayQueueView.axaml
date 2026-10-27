@@ -36,11 +36,11 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Margin="0" RowDefinitions="Auto,Auto,*,Auto">
+    <Grid Margin="0" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,2,2,4">
             <StackPanel Spacing="2">
-                <TextBlock Classes="media-eyebrow" Text="UP NEXT"/>
-                <TextBlock Classes="media-page-title" Text="Play Queue"/>
+                <TextBlock Classes="media-eyebrow" Text="PLAYBACK ORDER"/>
+                <TextBlock Classes="media-page-title" Text="Queue"/>
             </StackPanel>
             <TextBlock Grid.Column="1"
                        Classes="media-muted"
@@ -49,24 +49,46 @@
                        VerticalAlignment="Center"/>
         </Grid>
 
-        <Grid Grid.Row="1"
+        <Border Grid.Row="1"
+                Classes="media-card"
+                Margin="0,0,0,8"
+                Padding="10,8"
+                IsVisible="{Binding CanStop}">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                <Image Grid.Column="0"
+                       Source="avares://Jukebox/Assets/Icons/nowplaying.png"
+                       Width="17" Height="17"
+                       VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Classes="media-eyebrow" Text="NOW PLAYING"/>
+                    <TextBlock Text="{Binding CurrentTrack.DisplayName}"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding CurrentTrack.DisplayName}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2"
               ColumnDefinitions="*,Auto,Auto"
               ColumnSpacing="4"
               Margin="0,0,0,8">
             <Button Grid.Column="0"
                     Classes="media-primarybutton"
                     HorizontalAlignment="Left"
+                    IsEnabled="{Binding PlaylistViewModel.HasPlayQueueItems}"
                     ToolTip.Tip="Save Queue As Playlist (Ctrl+S)"
                     Command="{Binding PlaylistViewModel.SavePlayQueueAsPlaylistCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="7">
-                    <PathIcon Data="{StaticResource MediaIconSave}"
-                              Width="16" Height="16"
-                              Foreground="White"/>
+                    <Image Source="avares://Jukebox/Assets/Icons/save.png"
+                           Width="16" Height="16"/>
                     <TextBlock Text="Save queue" VerticalAlignment="Center"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="1"
+            <Button x:Name="RemoveQueueSelectionButton"
+                    Grid.Column="1"
                     Classes="media-iconbutton"
+                    IsEnabled="False"
                     ToolTip.Tip="Remove Selected (Delete)"
                     Command="{Binding PlaylistViewModel.RemovePlayQueueSelectedCommand}"
                     CommandParameter="{Binding #PlayQueueDataGrid.SelectedItems}">
@@ -76,6 +98,7 @@
             </Button>
             <Button Grid.Column="2"
                     Classes="media-iconbutton danger"
+                    IsEnabled="{Binding PlaylistViewModel.HasPlayQueueItems}"
                     ToolTip.Tip="Clear Play Queue (Ctrl+Shift+L)"
                     Command="{Binding PlaylistViewModel.ClearPlayQueueCommand}">
                 <Image Source="avares://Jukebox/Assets/Icons/clean.png"
@@ -84,7 +107,8 @@
             </Button>
         </Grid>
 
-        <Border Grid.Row="2" Classes="media-card" MinHeight="0">
+        <Border Grid.Row="3" Classes="media-card" MinHeight="0">
+        <Grid>
         <DataGrid x:Name="PlayQueueDataGrid"
                   Classes="media-grid"
                   ItemsSource="{Binding PlaylistViewModel.PlayQueueView}"
@@ -97,7 +121,8 @@
                   CanUserResizeColumns="True"
                   CanUserSortColumns="False"
                   GridLinesVisibility="Horizontal"
-                  DoubleTapped="PlayQueueDataGrid_DoubleTapped">
+                  DoubleTapped="PlayQueueDataGrid_DoubleTapped"
+                  SelectionChanged="PlayQueueDataGrid_SelectionChanged">
             <DataGrid.ContextMenu>
                 <ContextMenu x:Name="PlayQueueContextMenu"
                              Opened="PlayQueueContextMenu_Opened">
@@ -128,9 +153,28 @@
                                         CellTemplate="{StaticResource TrackTitleCellTemplate}"/>
             </DataGrid.Columns>
         </DataGrid>
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8"
+                        Margin="20"
+                        IsHitTestVisible="False"
+                        IsVisible="{Binding !PlaylistViewModel.HasPlayQueueItems}">
+                <Image
+                       Source="avares://Jukebox/Assets/Icons/music.png"
+                       Width="28" Height="28"/>
+                <TextBlock Text="Your queue is empty"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Classes="media-muted"
+                           Text="Drop files here or add music from a browser."
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="230"/>
+            </StackPanel>
+        </Grid>
         </Border>
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="4"
                 Classes="media-card"
                 Margin="0,8,0,0"
                 Padding="10,7">
@@ -144,24 +188,30 @@
                             Orientation="Horizontal"
                             Spacing="4"
                             Margin="8,0,0,0">
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="RenameQueueSelectionButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Rename selected track (F2)"
                             Click="RenamePlayQueueSelected_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/edit.png"
                                Width="17" Height="17"
                                Stretch="Uniform"/>
                     </Button>
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="MoveQueueSelectionUpButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Move selected track(s) up"
                             Click="MovePlayQueueSelectedUp_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/uparrow.png"
                                Width="17" Height="17"
                                Stretch="Uniform"/>
                     </Button>
-                    <Button Classes="media-iconbutton"
+                    <Button x:Name="MoveQueueSelectionDownButton"
+                            Classes="media-iconbutton"
                             Width="30" Height="30"
+                            IsEnabled="False"
                             ToolTip.Tip="Move selected track(s) down"
                             Click="MovePlayQueueSelectedDown_Click">
                         <Image Source="avares://Jukebox/Assets/Icons/downarrow.png"

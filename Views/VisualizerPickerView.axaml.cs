@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Jukebox.ViewModels;
 using System;
@@ -59,6 +60,29 @@ public partial class VisualizerPickerView : UserControl
             {
                 vm.VisualizerViewModel.SelectedVisualizerPath = fileVm.Path;
             }
+        }
+    }
+
+    private void CurrentVisualizerLink_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not JukeboxViewModel vm ||
+            VisualizerTreeDataGrid.Source is not HierarchicalTreeDataGridSource<VisualizerNodeViewModel> source ||
+            vm.VisualizerViewModel.GetCurrentVisualizerIndexPath() is not { } indexes)
+            return;
+
+        var index = IndexPath.Unselected;
+        for (int i = 0; i < indexes.Count; i++)
+        {
+            index = index.Append(indexes[i]);
+            if (i < indexes.Count - 1) source.Expand(index);
+        }
+
+        source.RowSelection!.SelectedIndex = index;
+        int rowIndex = source.Rows.ModelIndexToRowIndex(index);
+        if (rowIndex >= 0)
+        {
+            VisualizerTreeDataGrid.RowsPresenter?.BringIntoView(rowIndex);
+            VisualizerTreeDataGrid.TryGetRow(rowIndex)?.Focus();
         }
     }
 

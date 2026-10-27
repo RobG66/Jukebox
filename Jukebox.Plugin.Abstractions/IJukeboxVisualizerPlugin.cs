@@ -51,6 +51,13 @@ public interface IJukeboxVisualizerPlugin
     void TryDispose(Control? control);
 
     /// <summary>
+    /// Releases plugin-level resources that are not owned by an individual
+    /// rendering control. The default preserves compatibility with existing
+    /// visualizer plugins that only need <see cref="TryDispose"/>.
+    /// </summary>
+    void Dispose() { }
+
+    /// <summary>
     /// True if the plugin supports selectable preset files.
     /// When true, the host renders the randomizer + preset tree UI.
     /// </summary>
@@ -61,6 +68,10 @@ public interface IJukeboxVisualizerPlugin
     /// </summary>
     string? PresetsDirectory { get; }
     string? FavoritesDirectory { get; }
+    /// <summary>
+    /// Legacy preset-copy directory, used only to migrate older startup state.
+    /// New selections are saved as original paths in the host settings.
+    /// </summary>
     string? CurrentPresetDirectory { get; }
 
     /// <summary>

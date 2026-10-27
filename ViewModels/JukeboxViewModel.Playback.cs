@@ -21,12 +21,19 @@ public partial class JukeboxViewModel
     private readonly HashSet<JukeboxTrack> _playedTracks = new();
     private readonly Random _random = new();
     private long _playGeneration;
+    private readonly SemaphoreSlim _playbackStartGate = new(1, 1);
+    private readonly HashSet<Task> _pendingPlaybackOperations = new();
+    private CancellationTokenSource? _playbackAttemptCts;
     private DispatcherTimer? _playbackTimer;
     private bool _isTimerUpdating;
     private readonly TaskCompletionSource _backendReadyTcs = new();
+    private readonly CancellationTokenSource _lifetimeCts = new();
+    private readonly object _backendInitializationLock = new();
+    private Task? _backendInitializationTask;
 
     private JukeboxTrack? _subscribedTrack;
     private bool _isPlaybackDisposed;
+    private Task? _playbackDisposeTask;
 
     private readonly BassPlaybackEngine _bassEngine = new();
     private readonly MpvPlaybackEngine _mpvEngine = new();
@@ -113,7 +120,21 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Initialization
-    public async Task InitializeBackendAsync()
+    public Task InitializeBackendAsync()
+    {
+        lock (_backendInitializationLock)
+        {
+            if (_isDisposed)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _backendInitializationTask ??=
+                InitializeBackendCoreAsync(_lifetimeCts.Token);
+        }
+    }
+
+    private async Task InitializeBackendCoreAsync(CancellationToken cancellationToken)
     {
         Dispatcher.UIThread.Post(() => IsInitializing = true);
         var sw = Stopwatch.StartNew();
@@ -128,12 +149,17 @@ public partial class JukeboxViewModel
         _playbackTimer.Tick += PlaybackTimer_Tick;
 
         await PlaylistViewModel.InitializeAsync();
+        cancellationToken.ThrowIfCancellationRequested();
 
         await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _bassEngine.Initialize();
+            cancellationToken.ThrowIfCancellationRequested();
             _mpvEngine.Initialize();
-        });
+        }, cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INIT] Backend Initialization completed in {sw.ElapsedMilliseconds}ms overall.");
 
@@ -146,6 +172,12 @@ public partial class JukeboxViewModel
 
         Dispatcher.UIThread.Post(() =>
         {
+            if (_isDisposed || cancellationToken.IsCancellationRequested)
+            {
+                IsInitializing = false;
+                return;
+            }
+
             IsBassAvailable = _bassEngine.IsAvailable;
             IsMpvAvailable = _mpvEngine.IsAvailable;
             IsVisualizerAvailable = visualizerAvailable;
@@ -184,6 +216,7 @@ public partial class JukeboxViewModel
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlayAsync()
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         if (!CanPlay) return;
 
         if (CanStop && CurrentTrack != null)
@@ -209,6 +242,7 @@ public partial class JukeboxViewModel
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlayTrackAsync(JukeboxTrack? track)
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         if (track is null)
         {
             return;
@@ -223,11 +257,12 @@ public partial class JukeboxViewModel
             if (libraryIndex >= 0)
             {
                 var queueCopies = PlaylistViewModel.LibraryPlaylist
+                    .Skip(libraryIndex)
                     .Select(JukeboxPlaylistViewModel.CopyTrack)
                     .ToList();
 
                 PlaylistViewModel.ReplacePlayQueue(queueCopies);
-                track = queueCopies[libraryIndex];
+                track = queueCopies[0];
             }
             else
             {
@@ -241,22 +276,61 @@ public partial class JukeboxViewModel
     }
 
     /// <summary>
-    /// Plays one saved-library row without loading the rest of its playlist.
-    /// The queue receives an independent copy so subsequent library edits
-    /// cannot mutate active playback.
+    /// Plays one saved-library row without discarding the existing playback
+    /// order. The track is appended only when it is not already queued.
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PlaySavedTrackNowAsync(JukeboxTrack? track)
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         if (track is null)
         {
             return;
         }
 
-        var queueTrack = JukeboxPlaylistViewModel.CopyTrack(track);
-        PlaylistViewModel.ReplacePlayQueue(new[] { queueTrack });
+        var queueTrack = PlaylistViewModel.FindPlayQueueTrack(track);
+        if (queueTrack == null)
+        {
+            queueTrack = JukeboxPlaylistViewModel.CopyTrack(track);
+            PlaylistViewModel.AppendToPlayQueue(new[] { queueTrack });
+        }
+
         CurrentTrack = queueTrack;
         await StartTrackAsync();
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task PlayHistoryEntryAsync(PlaybackHistoryEntry? entry)
+    {
+        if (_isDisposed || _isPlaybackDisposed) return;
+        if (entry == null)
+        {
+            return;
+        }
+
+        var queueTrack = PlaylistViewModel.FindPlayQueueTrack(entry.Track);
+        if (queueTrack == null)
+        {
+            queueTrack = JukeboxPlaylistViewModel.CopyTrack(entry.Track);
+            PlaylistViewModel.AppendToPlayQueue(new[] { queueTrack });
+        }
+
+        CurrentTrack = queueTrack;
+        await StartTrackAsync();
+    }
+
+    [RelayCommand]
+    private void QueueHistoryEntry(PlaybackHistoryEntry? entry)
+    {
+        if (entry == null)
+        {
+            return;
+        }
+
+        PlaylistViewModel.AppendToPlayQueue(new[]
+        {
+            JukeboxPlaylistViewModel.CopyTrack(entry.Track)
+        });
     }
 
     [RelayCommand]
@@ -305,6 +379,7 @@ public partial class JukeboxViewModel
     [RelayCommand]
     private void Pause()
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         _activeEngine?.Pause();
         _playbackTimer?.Stop();
         CanPlay = true;
@@ -315,24 +390,19 @@ public partial class JukeboxViewModel
     [RelayCommand]
     private void Stop()
     {
-        Interlocked.Increment(ref _playGeneration);
+        if (_isDisposed || _isPlaybackDisposed) return;
+        long generation = Interlocked.Increment(ref _playGeneration);
+        _playbackAttemptCts?.Cancel();
         _playbackTimer?.Stop();
-
-        // Stop all playback engines unconditionally so no native backend
-        // is left running audio/video in the background.
-        DetachEngineHandlers(_bassEngine);
-        _bassEngine.Stop();
-
-        DetachEngineHandlers(_mpvEngine);
-        _mpvEngine.Stop();
-
-        if (VgmEngine != null)
-        {
-            DetachEngineHandlers(VgmEngine);
-            VgmEngine.Stop();
-        }
-
         _activeEngine = null;
+
+        // An open may still be inside native code. Stop after it has unwound,
+        // using the same gate as starts and tracking the task for shutdown.
+        lock (_disposeLock)
+        {
+            TrackPlaybackOperation(StopEnginesAsync(generation))
+                .SafeFireAndForget(nameof(StopEnginesAsync));
+        }
 
         // Cancel any in-flight URL-stream connection attempt — covers the
         // user pressing Stop while a stream is still connecting.
@@ -359,6 +429,7 @@ public partial class JukeboxViewModel
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task PreviousAsync()
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         var playlist = GetPlayQueue();
         if (playlist.Count == 0) return;
         var index = CurrentTrack != null ? playlist.IndexOf(CurrentTrack) : -1;
@@ -376,6 +447,7 @@ public partial class JukeboxViewModel
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task NextAsync()
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         var playlist = GetPlayQueue();
         if (playlist.Count == 0) return;
 
@@ -388,12 +460,86 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Core Playback
-    private async Task StartTrackAsync()
+    private Task StartTrackAsync()
     {
-        if (CurrentTrack == null || string.IsNullOrWhiteSpace(CurrentTrack.PlaybackSource)) return;
+        lock (_disposeLock)
+        {
+            if (_isDisposed || _isPlaybackDisposed || CurrentTrack == null ||
+                string.IsNullOrWhiteSpace(CurrentTrack.PlaybackSource)) return Task.CompletedTask;
 
-        var trackToStart = CurrentTrack;
-        long playGeneration = Interlocked.Increment(ref _playGeneration);
+            var track = CurrentTrack;
+            long generation = Interlocked.Increment(ref _playGeneration);
+            _playbackAttemptCts?.Cancel();
+            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+            _playbackAttemptCts = cancellation;
+            return TrackPlaybackOperation(StartTrackSerializedAsync(track, generation, cancellation));
+        }
+    }
+
+    private Task TrackPlaybackOperation(Task operation)
+    {
+        _pendingPlaybackOperations.Add(operation);
+        return ObservePlaybackOperationAsync(operation);
+    }
+
+    private async Task ObservePlaybackOperationAsync(Task operation)
+    {
+        try { await operation; }
+        finally
+        {
+            lock (_disposeLock) _pendingPlaybackOperations.Remove(operation);
+        }
+    }
+
+    private async Task StartTrackSerializedAsync(
+        JukeboxTrack track, long generation, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await _playbackStartGate.WaitAsync(cancellation.Token);
+            try
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                await StartTrackCoreAsync(track, generation, cancellation.Token);
+            }
+            finally { _playbackStartGate.Release(); }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // Stop, a newer request, or shutdown owns the subsequent state.
+        }
+        finally
+        {
+            lock (_disposeLock)
+            {
+                if (ReferenceEquals(_playbackAttemptCts, cancellation)) _playbackAttemptCts = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private async Task StopEnginesAsync(long generation)
+    {
+        await _playbackStartGate.WaitAsync();
+        try
+        {
+            if (!IsCurrentPlayGeneration(generation)) return;
+            DetachEngineHandlers(_bassEngine);
+            _bassEngine.Stop();
+            DetachEngineHandlers(_mpvEngine);
+            _mpvEngine.Stop();
+            if (VgmEngine != null)
+            {
+                DetachEngineHandlers(VgmEngine);
+                VgmEngine.Stop();
+            }
+        }
+        finally { _playbackStartGate.Release(); }
+    }
+
+    private async Task StartTrackCoreAsync(
+        JukeboxTrack trackToStart, long playGeneration, CancellationToken cancellationToken)
+    {
 
         _streamConnectCts?.Cancel();
         _streamConnectCts?.Dispose();
@@ -442,7 +588,7 @@ public partial class JukeboxViewModel
         // Resolve stable plugin-owned URLs only after the previous engine has
         // been stopped. OriginalUrl remains unchanged; only FilePath is
         // refreshed for this playback attempt.
-        var resolutionCts = new CancellationTokenSource();
+        var resolutionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _urlResolutionCts = resolutionCts;
         try
         {
@@ -654,33 +800,20 @@ public partial class JukeboxViewModel
         // only used for URL streams when the URL itself is .pls/.ashx
         // (those need MPV's ffmpeg-based resolver).
         //
-        // Capture the local token at entry; if a newer StartTrackAsync
-        // call swaps _streamConnectCts out from under us, our local
-        // reference still points to the (now-cancelled) old CTS so the
-        // cancellation check below fires correctly.
-        CancellationToken? connectToken = null;
+        // Every source, including a local file, must confirm playback before
+        // it can enter history. The timeout covers both opening and first output.
+        int connectionTimeoutMs = isUrl && isVideo
+            ? Constants.RemoteVideoConnectionTimeoutMs
+            : Constants.StreamConnectionTimeoutMs;
+        using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        startupCts.CancelAfter(connectionTimeoutMs);
         if (isUrl)
         {
-            // Create a fresh CTS for this connection attempt. The previous
-            // attempt's CTS was already cancelled at the top of StartTrackAsync,
-            // so we just need a new one here.
-            _streamConnectCts = new CancellationTokenSource();
-            connectToken = _streamConnectCts.Token;
-
-            // Hand the token to the BASS engine so OpenUrlStreamAsync can
-            // link it into the HttpClient.SendAsync call. Only BASS uses it
-            // (MPV/pls/.ashx paths don't go through this code path).
-            if (engineForAttempt is BassPlaybackEngine bassForToken)
-            {
-                bassForToken.SetStreamCancellationToken(connectToken.Value);
-            }
-
+            _streamConnectCts = CancellationTokenSource.CreateLinkedTokenSource(startupCts.Token);
             ConnectingMessage = $"Connecting to {ExtractStreamHost(playbackPath)}...";
             IsConnecting = true;
         }
 
-        // One-shot TCS set when the engine raises PlaybackStarted (first
-        // PCM buffer for BASS/VGM, first positive time-pos for MPV).
         var playbackStartedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         EventHandler startedHandler = (_, _) => playbackStartedTcs.TrySetResult(true);
         engineForAttempt.PlaybackStarted += startedHandler;
@@ -688,62 +821,19 @@ public partial class JukeboxViewModel
         Exception? playError = null;
         bool timedOut = false;
         bool cancelled = false;
-        int connectionTimeoutMs = isUrl && isVideo
-            ? Constants.RemoteVideoConnectionTimeoutMs
-            : Constants.StreamConnectionTimeoutMs;
         try
         {
-            // PlayAsync itself may throw (HTTP/SSL failure happens inside
-            // BassPlaybackEngine.OpenUrlStreamAsync).
-            await engineForAttempt.PlayAsync(trackToStart);
-
-            // If our connection token was cancelled while PlayAsync was
-            // running (a newer StartTrackAsync superseded us), bail out
-            // silently. Don't even reach the timeout wait.
-            if (!IsCurrentPlayGeneration(playGeneration) ||
-                (connectToken is { } t && t.IsCancellationRequested))
-            {
-                cancelled = true;
-                Debug.WriteLine("[Playback] Connection superseded by a newer StartTrackAsync call (post-PlayAsync).");
-            }
-            else if (isUrl)
-            {
-                // PlayAsync returned without throwing — now wait for
-                // PlaybackStarted, but cap the wait. We also
-                // race against connectToken so a superseding call unblocks
-                // us immediately instead of waiting for the timeout.
-                Task timeoutTask = Task.Delay(connectionTimeoutMs);
-                Task cancelTask = connectToken is { } ct2
-                    ? Task.Delay(Timeout.Infinite, ct2)
-                    : Task.FromResult(false);
-                var winner = await Task.WhenAny(
-                    playbackStartedTcs.Task,
-                    timeoutTask,
-                    cancelTask);
-
-                if (winner == playbackStartedTcs.Task)
-                {
-                    // Success — playback actually started.
-                }
-                else if (winner == cancelTask && connectToken!.Value.IsCancellationRequested)
-                {
-                    cancelled = true;
-                    Debug.WriteLine("[Playback] Connection superseded by a newer StartTrackAsync call (during PlaybackStarted wait).");
-                }
-                else
-                {
-                    timedOut = true;
-                    Debug.WriteLine($"[Playback] Connection timed out after {connectionTimeoutMs}ms without a playback-start signal.");
-                }
-            }
+            await engineForAttempt.PlayAsync(trackToStart, startupCts.Token);
+            await playbackStartedTcs.Task.WaitAsync(startupCts.Token);
+            cancelled = !IsCurrentPlayGeneration(playGeneration);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Our connectToken was cancelled — a newer StartTrackAsync call
-            // superseded us. Bail out silently; the new call is responsible
-            // for all subsequent UI state.
             cancelled = true;
-            Debug.WriteLine("[Playback] Connection cancelled (OperationCanceledException) — superseded by a newer StartTrackAsync call.");
+        }
+        catch (OperationCanceledException) when (startupCts.IsCancellationRequested)
+        {
+            timedOut = true;
         }
         catch (Exception ex)
         {
@@ -753,6 +843,9 @@ public partial class JukeboxViewModel
         finally
         {
             engineForAttempt.PlaybackStarted -= startedHandler;
+            // Cancellation is for startup only; successful streams keep running
+            // until Stop or disposal cancels their engine-owned stream token.
+            startupCts.CancelAfter(Timeout.Infinite);
         }
 
         // Clean up the connecting overlay regardless of outcome — it must
@@ -867,6 +960,7 @@ public partial class JukeboxViewModel
             vgm.InitializeEqBands(gains, centerFreqs);
         }
 
+        PlaylistViewModel.RecordRecentlyPlayed(trackToStart);
         SetPlayingState();
     }
 
@@ -1064,7 +1158,7 @@ public partial class JukeboxViewModel
     }
 
     private bool IsCurrentPlayGeneration(long generation)
-        => generation == Volatile.Read(ref _playGeneration);
+        => !_isDisposed && !_isPlaybackDisposed && generation == Volatile.Read(ref _playGeneration);
 
     private void DetachEngineHandlers(IMediaPlayerEngine engine)
     {
@@ -1328,7 +1422,9 @@ public partial class JukeboxViewModel
         bool autoPlay,
         PlaylistTarget target)
     {
+        if (_isDisposed || _isPlaybackDisposed) return;
         await _backendReadyTcs.Task;
+        if (_isDisposed || _isPlaybackDisposed) return;
         var importedTracks = await PlaylistViewModel.ProcessAndAddFilesAsync(
             mediaFiles,
             target,
@@ -1349,11 +1445,25 @@ public partial class JukeboxViewModel
     #endregion
 
     #region Dispose
-    public async Task DisposePlaybackAsync()
+    public Task DisposePlaybackAsync()
     {
-        if (_isPlaybackDisposed) return;
-        _isPlaybackDisposed = true;
-        Interlocked.Increment(ref _playGeneration);
+        lock (_disposeLock)
+        {
+            return _playbackDisposeTask ??= DisposePlaybackCoreAsync();
+        }
+    }
+
+    private async Task DisposePlaybackCoreAsync()
+    {
+        Task[] pendingOperations;
+        lock (_disposeLock)
+        {
+            if (_isPlaybackDisposed) return;
+            _isPlaybackDisposed = true;
+            Interlocked.Increment(ref _playGeneration);
+            _playbackAttemptCts?.Cancel();
+            pendingOperations = _pendingPlaybackOperations.ToArray();
+        }
 
         try
         {
@@ -1363,17 +1473,15 @@ public partial class JukeboxViewModel
             EqViewModel.EqBandUpdated -= OnEqBandUpdated;
 
             // Stop the playback timer before disposing engines. The timer
-            // is a DispatcherTimer (fires on UI thread), and DisposePlaybackAsync
-            // also runs on the UI thread, so there is no race between
-            // PlaybackTimer_Tick and the dispose — they're serialized by the
-            // UI thread's message pump. The timer.Stop() call ensures no
-            // further ticks fire after this point.
-            //
-            // (Note: ARCHITECTURE.md previously claimed a _bassStreamLock
-            // protected this path — that lock never existed in the code. The
-            // actual safety comes from DispatcherTimer's UI-thread affinity,
-            // which is sufficient.)
+            // is a DispatcherTimer (fires on the UI thread). This synchronous
+            // preamble runs on that same thread and stops/unhooks the timer
+            // before native teardown moves to a worker thread.
             _playbackTimer?.Stop();
+            if (_playbackTimer != null)
+            {
+                _playbackTimer.Tick -= PlaybackTimer_Tick;
+                _playbackTimer = null;
+            }
 
             // Cancel any in-flight URL-stream connection attempt so the
             // engine's HTTP send unblocks immediately during shutdown.
@@ -1389,22 +1497,58 @@ public partial class JukeboxViewModel
             {
                 DetachEngineHandlers(_activeEngine);
             }
+            _activeEngine = null;
+            PcmDataAvailable = null;
 
-            // Both engine dispose calls are synchronous.
-            // This avoids racing with the window close and leaving native MPV
-            // resources being freed after process exit. The synchronous call
-            // blocks for ~50-100ms during close — acceptable within the
-            // 3-second DisposeTimeoutMs cap in JukeboxView.CloseAsync.
-            _bassEngine.Dispose();
-            _mpvEngine.Dispose();
-            VgmEngine?.Dispose();
+            // Native opens cannot be interrupted safely by freeing their handles.
+            // Wait for cancelled operations to return before destroying any engine.
+            try { await Task.WhenAll(pendingOperations); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Dispose] Playback operation ended with an error: {ex.Message}");
+            }
+
+            // VGM owns a BASS push stream, so it must be torn down before the
+            // shared BASS device. Run native teardown off the UI thread so the
+            // window's bounded WaitAsync can actually enforce its timeout.
+            var vgmEngine = VgmEngine;
+            VgmEngine = null;
+            await Task.Run(() =>
+            {
+                bool vgmDisposed = DisposeEngineSafely(vgmEngine, "VGM");
+                if (vgmDisposed)
+                {
+                    DisposeEngineSafely(_bassEngine, "BASS");
+                }
+                else
+                {
+                    Debug.WriteLine(
+                        "[Dispose] Skipping BASS teardown because VGM may still be using its push stream.");
+                }
+                DisposeEngineSafely(_mpvEngine, "MPV");
+            });
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Dispose] Error cleaning up playback backend: {ex.Message}");
         }
 
-        await Task.CompletedTask;
+    }
+
+    private static bool DisposeEngineSafely(IDisposable? engine, string name)
+    {
+        if (engine == null) return true;
+
+        try
+        {
+            engine.Dispose();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Dispose] {name} cleanup failed: {ex.Message}");
+            return false;
+        }
     }
     #endregion
 }

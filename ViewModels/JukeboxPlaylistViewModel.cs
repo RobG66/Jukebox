@@ -19,6 +19,7 @@ public enum PlaylistTabType
 {
     PlayQueue,
     SavedPlaylists,
+    PlaybackHistory,
     Plugins
 }
 
@@ -35,7 +36,11 @@ public enum PlaylistTarget
 public partial class JukeboxPlaylistViewModel : ViewModelBase
 {
     #region Fields & Constants
+    private const int MaxPlaybackHistoryEntries = 100;
     private bool _isSwitchingPlaylist = false;
+    private string? _loadedLibraryPlaylist;
+    private int _libraryPlaylistOperationCount;
+    private Task _historySaveTask = Task.CompletedTask;
     private int _playlistVersion = 0;
     private int _scrollVersion = 0;
     private int _pendingFirst = 0;
@@ -43,10 +48,14 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     private readonly IUserDialogService _dialogService;
     private readonly SemaphoreSlim _playQueueImportGate = new(1, 1);
+    private readonly SemaphoreSlim _libraryPlaylistSwitchGate = new(1, 1);
+    private readonly SemaphoreSlim _historySaveGate = new(1, 1);
     #endregion
 
     #region Observable Properties
     [ObservableProperty] private string? _selectedLibraryPlaylist;
+
+    [ObservableProperty] private bool _isLibraryPlaylistBusy;
 
     [ObservableProperty] private string _libraryPlaylistSummary = "0 Tracks";
 
@@ -55,6 +64,14 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     [ObservableProperty] private string _searchLibraryText = "";
 
     [ObservableProperty] private bool _hasMultipleTracks = false;
+
+    [ObservableProperty] private bool _hasPlayQueueItems;
+
+    [ObservableProperty] private bool _hasLibraryItems;
+
+    [ObservableProperty] private bool _hasPlaybackHistory;
+
+    [ObservableProperty] private string _playbackHistorySummary = "No recently played tracks";
 
     [ObservableProperty] private int _activeTabIndex;
 
@@ -78,10 +95,14 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
 
     public ObservableCollection<string> SavedLibraryPlaylists { get; } = new();
 
+    // Newest-first record of tracks that actually reached the playing state.
+    public ObservableCollection<PlaybackHistoryEntry> RecentlyPlayed { get; } = new();
+
     public PlaylistTabType ActiveTab => ActiveTabIndex switch
     {
         0 => PlaylistTabType.PlayQueue,
         1 => PlaylistTabType.SavedPlaylists,
+        2 => PlaylistTabType.PlaybackHistory,
         _ => PlaylistTabType.Plugins
     };
     #endregion
@@ -147,12 +168,12 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     partial void OnSelectedLibraryPlaylistChanged(string? oldValue, string? newValue)
     {
         if (_isSwitchingPlaylist) return;
-        SwitchLibraryPlaylistAsync(oldValue, newValue).SafeFireAndForget(nameof(SwitchLibraryPlaylistAsync));
+        SwitchLibraryPlaylistAsync(newValue).SafeFireAndForget(nameof(SwitchLibraryPlaylistAsync));
     }
 
     partial void OnActiveTabIndexChanged(int value)
     {
-        if (value is 0 or 1)
+        if (value is >= 0 and <= 2)
         {
             LastHostTabIndex = value;
         }
@@ -213,6 +234,65 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     public void AppendToPlayQueue(IEnumerable<JukeboxTrack> tracks)
     {
         AppendNewToPlayQueue(tracks);
+    }
+
+    /// <summary>
+    /// Records a confirmed playback start. Consecutive or repeated plays of
+    /// the same source move that source to the top rather than filling the
+    /// history with duplicates.
+    /// </summary>
+    public void RecordRecentlyPlayed(JukeboxTrack track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+
+        string? identity = GetQueueTrackIdentity(track);
+        var existing = RecentlyPlayed.FirstOrDefault(entry =>
+            string.Equals(
+                GetQueueTrackIdentity(entry.Track),
+                identity,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (existing != null)
+        {
+            RecentlyPlayed.Remove(existing);
+        }
+
+        RecentlyPlayed.Insert(0, new PlaybackHistoryEntry
+        {
+            Track = CopyTrack(track),
+            PlayedAt = DateTimeOffset.Now
+        });
+
+        while (RecentlyPlayed.Count > MaxPlaybackHistoryEntries)
+        {
+            RecentlyPlayed.RemoveAt(RecentlyPlayed.Count - 1);
+        }
+
+        UpdatePlaybackHistorySummary();
+        _historySaveTask = SavePlaybackHistoryAfterAsync(_historySaveTask);
+        _historySaveTask.SafeFireAndForget(nameof(SavePlaybackHistoryAsync));
+    }
+
+    [RelayCommand]
+    private async Task ClearPlaybackHistoryAsync()
+    {
+        if (RecentlyPlayed.Count == 0)
+        {
+            return;
+        }
+
+        bool confirm = await _dialogService.ShowConfirmAsync(
+            "Clear Recently Played",
+            "Clear your recently played history? This will not remove tracks from playlists or the queue.");
+        if (!confirm)
+        {
+            return;
+        }
+
+        RecentlyPlayed.Clear();
+        UpdatePlaybackHistorySummary();
+        _historySaveTask = SavePlaybackHistoryAfterAsync(_historySaveTask);
+        await _historySaveTask;
     }
 
     /// <summary>
@@ -559,12 +639,25 @@ public partial class JukeboxPlaylistViewModel : ViewModelBase
     public void UpdatePlaylistSummary()
     {
         HasMultipleTracks = PlayQueue.Count > 1;
+        HasPlayQueueItems = PlayQueue.Count > 0;
+        HasLibraryItems = LibraryPlaylist.Count > 0;
 
         var queueTracks = PlayQueue.ToList();
         PlayQueueSummary = BuildSummary(queueTracks);
 
         var libTracks = LibraryPlaylist.ToList();
         LibraryPlaylistSummary = BuildSummary(libTracks);
+    }
+
+    private void UpdatePlaybackHistorySummary()
+    {
+        HasPlaybackHistory = RecentlyPlayed.Count > 0;
+        PlaybackHistorySummary = RecentlyPlayed.Count switch
+        {
+            0 => "No recently played tracks",
+            1 => "1 recently played track",
+            _ => $"{RecentlyPlayed.Count} recently played tracks"
+        };
     }
 
     private static string BuildSummary(IReadOnlyCollection<JukeboxTrack> tracks)

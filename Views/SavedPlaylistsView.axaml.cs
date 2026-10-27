@@ -46,10 +46,21 @@ public partial class SavedPlaylistsView : UserControl
             return;
         }
 
-        if (vm.PlayTrackCommand.CanExecute(track))
+        if (vm.PlaySavedTrackNowCommand.CanExecute(track))
         {
-            vm.PlayTrackCommand.Execute(track);
+            vm.PlaySavedTrackNowCommand.Execute(track);
         }
+    }
+
+    private void LibraryDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        bool hasSelection = LibraryDataGrid.SelectedItems.Count > 0;
+        bool hasSingleSelection = LibraryDataGrid.SelectedItems.Count == 1;
+
+        RemoveLibrarySelectionButton.IsEnabled = hasSelection;
+        RenameLibrarySelectionButton.IsEnabled = hasSingleSelection;
+        MoveLibrarySelectionUpButton.IsEnabled = hasSelection;
+        MoveLibrarySelectionDownButton.IsEnabled = hasSelection;
     }
 
     private void LibraryContextMenu_Opened(object? sender, RoutedEventArgs e)
@@ -76,7 +87,11 @@ public partial class SavedPlaylistsView : UserControl
             var item = new MenuItem
             {
                 Header = playlistName,
-                Tag = playlistName
+                Tag = playlistName,
+                IsEnabled = !string.Equals(
+                    playlistName,
+                    vm.PlaylistViewModel.SelectedLibraryPlaylist,
+                    StringComparison.OrdinalIgnoreCase)
             };
             item.Click += AddToPlaylist_Click;
             AddToPlaylistMenuItem.Items.Add(item);

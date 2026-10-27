@@ -36,6 +36,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     private int _dspHandle;
     private int _endSyncHandle;
     private bool _ownsBassContext;
+    private bool _flacPluginLoaded;
     private double _volume = 100;
     private BassNative.BassSyncProcedure? _metaSyncProcedure;
     private int _metaSyncHandle;
@@ -276,6 +277,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 // FLAC natively (unlike MP3/OGG/WAV), so local .flac files
                 // (already in Constants.AudioExtensions) fail to open via
                 // BassNative.CreateStream without this plugin loaded.
+                // Ogg FLAC radio streams also require this plugin even when
+                // the server advertises audio/ogg as the content type.
                 //
                 // Note: StreamTheWorld/Triton MediaGateway URLs are routed
                 // through BASS via BassPlaybackEngine.OpenUrlStreamAsync
@@ -286,7 +289,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "basshls.dll" : "libbasshls.so"));
                 BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bass_aac.dll" : "libbass_aac.so"));
                 BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassopus.dll" : "libbassopus.so"));
-                BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassflac.dll" : "libbassflac.so"));
+                _flacPluginLoaded = BassNative.LoadPlugin(Path.Combine(libDir, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassflac.dll" : "libbassflac.so")) != 0;
             }
             else
             {
@@ -299,7 +302,9 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         }
     }
 
-    public async Task PlayAsync(JukeboxTrack track)
+    public Task PlayAsync(JukeboxTrack track) => PlayAsync(track, CancellationToken.None);
+
+    public async Task PlayAsync(JukeboxTrack track, CancellationToken cancellationToken)
     {
         if (!IsAvailable)
         {
@@ -309,7 +314,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         Stop();
 
         BassNative.BassErrors error = BassNative.BassErrors.OK;
-        CancellationToken localCt = _externalStreamCt;
+        using var playbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _externalStreamCt);
+        CancellationToken localCt = playbackCts.Token;
         try
         {
             localCt.ThrowIfCancellationRequested();
@@ -338,6 +344,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                     // Use native BASS StreamCreateURL for static files.
                     // This supports duration detection and seeking natively.
                     int createdHandle = await Task.Run(() => {
+                        localCt.ThrowIfCancellationRequested();
                         int handle = BassNative.CreateUrlStream(urlToPlay);
                         if (handle == 0) error = BassNative.GetLastError();
                         return handle;
@@ -357,7 +364,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
                 else
                 {
                     // Use HttpClient + BASS_StreamCreateFileUser for live URL streams (radio).
-                    _bassStream = await OpenUrlStreamAsync(urlToPlay).ConfigureAwait(false);
+                    _bassStream = await OpenUrlStreamAsync(urlToPlay, localCt).ConfigureAwait(false);
                     if (_bassStream == 0)
                     {
                         error = BassNative.GetLastError();
@@ -367,6 +374,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
             else
             {
                 int createdHandle = await Task.Run(() => {
+                    localCt.ThrowIfCancellationRequested();
                     int handle = BassNative.CreateStream(urlToPlay, BassNative.BassFlags.Default);
                     if (handle == 0) error = BassNative.GetLastError();
                     return handle;
@@ -412,7 +420,20 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         if (_bassStream == 0)
         {
             Debug.WriteLine($"[BASS Engine] CreateStream failed for '{track.FilePath}'. Error: {error}");
-            throw new InvalidOperationException($"Could not open audio stream:\n{track.FilePath}\n\nReason: {error}");
+            string reason = error.ToString();
+            string sourcePath = Uri.TryCreate(track.FilePath, UriKind.Absolute, out var sourceUri)
+                ? sourceUri.AbsolutePath
+                : track.FilePath;
+            if (error == BassNative.BassErrors.FileFormat && !_flacPluginLoaded &&
+                Path.GetExtension(sourcePath).Equals(".flac", StringComparison.OrdinalIgnoreCase))
+            {
+                string pluginFile = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "bassflac.dll" : "libbassflac.so";
+                reason = $"FLAC decoding is unavailable ({error}). The BASS FLAC decoder {pluginFile} " +
+                    "could not be loaded. Place the decoder matching the application's architecture " +
+                    "in the lib/ folder beside the application, then restart Jukebox. " +
+                    "FLAC radio streams, including Ogg FLAC, also require this decoder.";
+            }
+            throw new InvalidOperationException($"Could not open audio stream:\n{track.FilePath}\n\nReason: {reason}");
         }
 
         if (localCt.IsCancellationRequested || _externalStreamCt.IsCancellationRequested)
@@ -790,7 +811,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     // right before the CreateStream call. The per-host UA override map
     // (GetUserAgentForHost) is applied to HLS streams too, so CDNs that need
     // a bare UA (streamtheworld.com) or a browser UA (zeno.fm) are handled.
-    private async Task<int> OpenUrlStreamAsync(string url)
+    private async Task<int> OpenUrlStreamAsync(string url, CancellationToken cancellationToken)
     {
         // ── HLS path: route through BASS's native URL streaming client ──
         // basshls intercepts the URL and handles playlist parsing + segment
@@ -819,15 +840,8 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
         // by the next OpenUrlStreamAsync), keeping its lifetime aligned with
         // the stream it protects.
         _linkedStreamCts?.Dispose();
-        if (_externalStreamCt.CanBeCanceled)
-        {
-            _linkedStreamCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _externalStreamCt);
-            ct = _linkedStreamCts.Token;
-        }
-        else
-        {
-            _linkedStreamCts = null;
-        }
+        _linkedStreamCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _externalStreamCt, cancellationToken);
+        ct = _linkedStreamCts.Token;
 
         // Open the HTTP connection with headers that match what curl/MPV
         // send, so CDNs like StreamTheWorld serve the real live stream
@@ -1304,6 +1318,7 @@ public sealed class BassPlaybackEngine : IMediaPlayerEngine
     #region Dispose
     public void Dispose()
     {
+        CleanupHttpStream();
         // Detach listeners first so any in-flight DSP callback sees null
         // and skips the Invoke (see OnDsp local-copy pattern).
         PcmDataAvailable = null;

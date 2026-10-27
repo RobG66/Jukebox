@@ -62,7 +62,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="64,275,*">
+    <Grid ColumnDefinitions="64,340,*">
         <!-- Persistent host-owned navigation rail. -->
         <Border Grid.Column="0" Classes="media-rail">
             <Grid RowDefinitions="Auto,*,Auto">
@@ -83,6 +83,15 @@
                         <Image Source="avares://Jukebox/Assets/Icons/folder.png"
                                Width="27" Height="27"
                                Stretch="Uniform"/>
+                    </ToggleButton>
+
+                    <ToggleButton x:Name="HistoryNavButton"
+                                  Classes="media-nav"
+                                  ToolTip.Tip="Recently Played"
+                                  Click="HistoryNavButton_Click">
+                        <PathIcon Classes="media-vector"
+                                  Data="{StaticResource MediaIconHistory}"
+                                  Width="25" Height="25"/>
                     </ToggleButton>
 
                     <Border Height="1"
@@ -119,6 +128,7 @@
                 <Grid Grid.Row="0" Margin="0">
                     <views:PlayQueueView x:Name="QueueView"/>
                     <views:SavedPlaylistsView x:Name="PlaylistsView" IsVisible="False"/>
+                    <views:RecentlyPlayedView x:Name="HistoryView" IsVisible="False"/>
                 </Grid>
 
                 <Border Grid.Row="1"

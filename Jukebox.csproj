@@ -72,6 +72,8 @@
     <!-- The nested project is also under the host directory, so exclude
          its source files from the host's default SDK compile glob. -->
     <Compile Remove="Jukebox.Plugin.Abstractions\**" />
+    <Compile Remove="Tests\**" />
+    <InternalsVisibleTo Include="Jukebox.Tests" />
     <ProjectReference Include="..\Avalonia.Controls.DataGrid\src\Avalonia.Controls.DataGrid\Avalonia.Controls.DataGrid.csproj" />
     <ProjectReference Include="..\Avalonia.Controls.TreeDataGrid\src\Avalonia.Controls.TreeDataGrid\Avalonia.Controls.TreeDataGrid.csproj" />
     <ProjectReference Include="Jukebox.Plugin.Abstractions\Jukebox.Plugin.Abstractions.csproj" />
